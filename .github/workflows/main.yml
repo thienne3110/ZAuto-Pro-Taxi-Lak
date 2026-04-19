@@ -1,6 +1,7 @@
 name: Build ZAuto Pro Production
 on: [push, workflow_dispatch]
 
+# Ép chạy Node 24 để xóa cảnh báo vàng, tăng tốc máy ảo
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -11,7 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ⚡ CACHE 
+      # ⚡ CACHE (Giữ nguyên cấu trúc ổn định của anh)
       - name: Cache Buildozer
         uses: actions/cache@v4
         with:
@@ -19,14 +20,16 @@ jobs:
             ~/.buildozer
             .buildozer
             ~/.gradle
-          key: buildozer-${{ runner.os }}-zauto
+          key: buildozer-${{ runner.os }}-v2026-zauto
           restore-keys: |
             buildozer-${{ runner.os }}-
 
+      # 🧹 Dọn dẹp bộ nhớ máy ảo
       - name: Cleanup System
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc "/usr/local/share/boost"
 
+      # 🧱 Cài môi trường (Giữ nguyên Java 17 chuẩn của anh)
       - name: Install dependencies
         run: |
           sudo apt update
@@ -37,56 +40,58 @@ jobs:
             openjdk-17-jdk \
             python3-pip python3-setuptools \
             libgl1-mesa-dev libgles2-mesa-dev \
-            ffmpeg
+            ffmpeg \
+            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
           pip3 install --user --upgrade pip
           pip3 install --user "Cython==0.29.36" buildozer virtualenv
 
-      # 🔑 Đổi thông tin Keystore cho hợp với ZAuto
+      # 🔑 Tạo Keystore (Giữ nguyên mật khẩu 123456)
       - name: Generate Keystore
         run: |
           if [ ! -f mykeystore.keystore ]; then
             keytool -genkey -v \
               -keystore mykeystore.keystore \
-              -alias zautoalias \
+              -alias myalias \
               -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=ZAutoPro, OU=Assistant, O=Taxi, L=DakLak, ST=VN, C=VN" \
+              -dname "CN=ZAutoPro, OU=Taxi, O=TaxiLak, L=DakLak, ST=VN, C=VN" \
               -storepass 123456 \
               -keypass 123456
           fi
 
-      # ⚙️ CẤU HÌNH BUILDOZER CHO ZAUTO PRO (QUAN TRỌNG NHẤT)
+      # ⚙️ Cấu hình Buildozer (Chỉ chỉnh sửa phần căn bản để chạy ZAuto)
       - name: Configure Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
           if [ ! -f buildozer.spec ]; then buildozer init; fi
 
+          # Chấp nhận License tự động
           sed -i 's/^#* *android.accept_sdk_license *=.*/android.accept_sdk_license = True/' buildozer.spec
 
-          # 1. Thông tin App
+          # 1. Thông tin App (Chỉnh về ZAuto)
           sed -i 's/^#* *package.domain *=.*/package.domain = org.zauto/' buildozer.spec
           sed -i 's/^#* *package.name *=.*/package.name = taxi/' buildozer.spec
           sed -i 's/^#* *title *=.*/title = ZAuto Pro/' buildozer.spec
-          
-          # 2. Định dạng file cần đóng gói (Thêm json để lưu cấu hình)
+          sed -i 's|^#* *icon.filename *=.*|icon.filename = icon.png|' buildozer.spec
+
+          # 2. Thư viện (Thêm kivymd và pyjnius để đọc Zalo)
           sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json/' buildozer.spec
+          sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd,pyjnius/' buildozer.spec
           
-          # 3. Thư viện Python (THÊM KIVYMD VÀ PYJNIUS)
-          sed -i 's/^#* *requirements *=.*/requirements = python3,kivy,kivymd,pyjnius/' buildozer.spec
-          
-          # 4. Quyền hệ thống sinh tử của ZAuto
+          # 3. Quyền hạn (Thêm quyền đọc thông báo và chạy ngầm)
           sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK/' buildozer.spec
           
-          # 6. Cấu hình SDK/NDK
-          sed -i 's/^#* *android.api *=.*/android.api = 33/' buildozer.spec
-          sed -i 's/^#* *android.minapi *=.*/android.minapi = 26/' buildozer.spec
+          # 4. API & Kiến trúc (Giữ API 31 để ổn định cho máy cũ)
+          sed -i 's/^#* *android.api *=.*/android.api = 31/' buildozer.spec
+          sed -i 's/^#* *android.minapi *=.*/android.minapi = 21/' buildozer.spec
           sed -i 's/^#* *android.ndk *=.*/android.ndk = 25b/' buildozer.spec
           sed -i 's/^#* *android.archs *=.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
+          sed -i 's/^#* *android.enable_androidx *=.*/android.enable_androidx = True/' buildozer.spec
           sed -i 's/^#* *android.release_artifact *=.*/android.release_artifact = apk/' buildozer.spec
 
-          # 7. Nạp chữ ký
+          # Nạp chữ ký Keystore
           sed -i 's|^#* *android.release_keystore *=.*|android.release_keystore = '"$(pwd)"'/mykeystore.keystore|' buildozer.spec
-          sed -i 's/^#* *android.release_keyalias *=.*/android.release_keyalias = zautoalias/' buildozer.spec
+          sed -i 's/^#* *android.release_keyalias *=.*/android.release_keyalias = myalias/' buildozer.spec
 
       # 🚀 BẮT ĐẦU ĐÚC APK
       - name: Build APK
@@ -97,19 +102,23 @@ jobs:
           mkdir -p ~/.android && touch ~/.android/repositories.cfg
           yes | buildozer android p4a --accept-sdk-license || true
 
-          # RAM
+          # Dọn dẹp cache cũ
+          rm -rf ~/.buildozer/android/platform/android-ndk-*
+          rm -rf .buildozer/build
+
+          # Tối ưu RAM cho Gradle
           export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.daemon=false"
 
-          # Passwords
+          # Nạp mật khẩu Keystore
           export P4A_RELEASE_KEYSTORE=$(pwd)/mykeystore.keystore
           export P4A_RELEASE_KEYSTORE_PASSWD=123456
           export P4A_RELEASE_KEYALIAS_PASSWD=123456
-          export P4A_RELEASE_KEYALIAS=zautoalias
+          export P4A_RELEASE_KEYALIAS=myalias
 
-          # Build Release
+          # Lệnh đúc chính thức
           buildozer -v android release
 
-      # 📦 GỬI APK 
+      # 📦 GỬI APK VỀ
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
