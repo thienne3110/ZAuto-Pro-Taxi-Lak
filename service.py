@@ -79,4 +79,42 @@ class ZaloListenerService(PythonJavaClass):
                 self.evaluate_message(msg, sbn)
 
     def evaluate_message(self, msg, sbn):
-        # ... (Code chấm điểm như cũ) ...
+        cfg = self.get_config()
+        score = 0
+        
+        # Kiểm tra từ khóa loại trừ và nhận
+        if self.pattern_loai and self.pattern_loai.search(msg): return
+        if self.pattern_nhan and self.pattern_nhan.search(msg): score += 5
+            
+        if score >= 5:
+            # LẤY CHỮ ANH ĐÃ CÀI TRONG MỤC CÀI ĐẶT
+            reply_text = cfg.get('reply_msg', 'Ok nhận')
+            self.auto_reply_and_open(sbn, reply_text)
+
+    def auto_reply_and_open(self, sbn, reply_text):
+        notification = sbn.getNotification()
+        
+        # BƯỚC 1: TỰ ĐỘNG GỬI TIN NHẮN "OK/NHẬN" NGẦM (Nếu Zalo hỗ trợ)
+        try:
+            for action in notification.actions:
+                if action.getRemoteInputs():
+                    remote_inputs = action.getRemoteInputs()
+                    bundle = autoclass('android.os.Bundle')()
+                    # Nhét chữ anh cài đặt vào đây
+                    bundle.putCharSequence(remote_inputs[0].getResultKey(), reply_text)
+                    
+                    intent = autoclass('android.content.Intent')()
+                    autoclass('android.app.RemoteInput').addResultsToIntent(remote_inputs, intent, bundle)
+                    
+                    # Phát lệnh gửi tin nhắn đi ngay lập tức
+                    action.actionIntent.send(self.context, 0, intent)
+                    Log.d(self.TAG, f"Đã tự động gửi: {reply_text}")
+        except Exception as e:
+            Log.e(self.TAG, f"Lỗi gửi ngầm: {str(e)}")
+
+        # BƯỚC 2: MỞ APP ZALO LÊN ĐỂ ANH KIỂM TRA
+        intent = notification.contentIntent
+        if intent:
+            try:
+                intent.send()
+            except Exception: pass
