@@ -6,11 +6,12 @@ from kivy.clock import Clock
 from kivymd.uix.list import OneLineRightIconListItem, TwoLineListItem, OneLineListItem
 from kivy.properties import StringProperty, BooleanProperty
 
-# Cấu hình đường dẫn file
+# Cấu hình đường dẫn file chuẩn theo Package Name: org.zauto.taxi
 if platform == 'android':
-    CONFIG_FILE = '/data/data/org.zauto.taxi/files/config.json'
-    HISTORY_FILE = '/data/data/org.zauto.taxi/files/history.json'
-    MATCHES_FILE = '/data/data/org.zauto.taxi/files/matches.json'
+    BASE_PATH = '/data/data/org.zauto.taxi/files/'
+    CONFIG_FILE = BASE_PATH + 'config.json'
+    HISTORY_FILE = BASE_PATH + 'history.json'
+    MATCHES_FILE = BASE_PATH + 'matches.json'
     from android.runnable import run_on_ui_thread
     from jnius import autoclass, cast
     PythonActivity = autoclass('org.kivy.android.PythonActivity')
@@ -34,46 +35,50 @@ MDScreen:
         panel_color: 1, 1, 1, 1
         text_color_active: 0.1, 0.4, 0.8, 1
 
-        # TAB 1: CANH ME (RADAR)
         MDBottomNavigationItem:
             name: 'tab_canhme'
-            text: 'Canh me'
-            icon: 'home-outline'
+            text: 'Radar'
+            icon: 'radar'
             MDBoxLayout:
                 orientation: 'vertical'
                 padding: "20dp"
+                spacing: "20dp"
                 MDLabel:
                     text: "ZAUTO PRO - TAXI LẮK"
                     halign: "center"
-                    font_style: "H6"
+                    font_style: "H5"
+                    bold: True
                 MDIconButton:
                     id: status_icon
-                    icon: "shield-check-outline"
-                    icon_size: "80sp"
+                    icon: "shield-check"
+                    icon_size: "100sp"
                     pos_hint: {"center_x": .5}
+                MDLabel:
+                    id: lbl_status
+                    text: "Trạng thái: Sẵn sàng"
+                    halign: "center"
                 MDRaisedButton:
-                    text: "KHỞI ĐỘNG RADAR"
+                    text: "KÍCH HOẠT HỆ THỐNG"
                     pos_hint: {"center_x": .5}
+                    size_hint_x: 0.8
                     on_release: app.start_zauto_service()
 
-        # TAB 2: NHẬT KÝ QUÉT (TẤT CẢ TIN NHẮN)
         MDBottomNavigationItem:
             name: 'tab_tinnhan'
-            text: 'Tin nhắn'
-            icon: 'message-outline'
+            text: 'Nhật ký'
+            icon: 'message-bulleted'
             MDBoxLayout:
                 orientation: 'vertical'
                 MDTopAppBar:
-                    title: "Nhật ký quét Radar"
+                    title: "Lịch sử quét tin"
                     right_action_items: [["delete-sweep", lambda x: app.clear_history(HISTORY_FILE)]]
                 ScrollView:
                     MDList:
                         id: msg_history_list
 
-        # TAB 3: CÀI ĐẶT (THUẬT TOÁN & GIÁ)
         MDBottomNavigationItem:
             name: 'tab_caidat'
-            text: 'Cài đặt'
+            text: 'Cấu hình'
             icon: 'cog-outline'
             MDBoxLayout:
                 orientation: 'vertical'
@@ -82,75 +87,75 @@ MDScreen:
                         orientation: 'vertical'
                         adaptive_height: True
                         padding: "15dp"
-                        spacing: "10dp"
+                        spacing: "15dp"
                         MDTextField:
                             id: inp_reply
                             hint_text: "Câu chốt tự động"
                             mode: "rectangle"
                         MDTextField:
                             id: inp_nhan
-                            hint_text: "Từ khóa NHẬN"
+                            hint_text: "Từ khóa NHẬN (cách nhau dấu phẩy)"
                             mode: "rectangle"
                         MDTextField:
                             id: inp_loai
-                            hint_text: "Từ khóa LOẠI"
+                            hint_text: "Từ khóa LOẠI (cách nhau dấu phẩy)"
                             mode: "rectangle"
                         MDTextField:
                             id: inp_gia_km
-                            hint_text: "Giá tiền/KM (VD: 12000)"
+                            hint_text: "Giá cước/KM (VD: 12000)"
                             mode: "rectangle"
                             input_filter: "int"
                         MDRaisedButton:
                             text: "LƯU CẤU HÌNH"
+                            pos_hint: {"center_x": .5}
                             on_release: app.save_config()
                         MDSeparator:
                         MDLabel:
-                            text: "Nhóm đang Radar tìm được:"
+                            text: "Danh sách nhóm Radar đang tìm:"
                             bold: True
                         MDList:
                             id: group_list
 
-        # TAB 4: THÔNG BÁO (CUỐC ĐÃ CHỐT)
         MDBottomNavigationItem:
             name: 'tab_thongbao'
-            text: 'Thông báo'
-            icon: 'bell-outline'
+            text: 'Chốt cuốc'
+            icon: 'bell-check'
             MDBoxLayout:
                 orientation: 'vertical'
                 MDTopAppBar:
-                    title: "Cuốc xe đã chốt"
+                    title: "Cuốc xe đã nhận"
                 ScrollView:
                     MDList:
                         id: match_history_list
 
-        # TAB 5: TÀI KHOẢN (ZALO WEB)
         MDBottomNavigationItem:
-            name: 'tab_taikhoan'
-            text: 'Tài khoản'
-            icon: 'account-outline'
+            name: 'tab_zalo'
+            text: 'Zalo Web'
+            icon: 'web'
             MDBoxLayout:
                 orientation: 'vertical'
                 padding: "10dp"
                 MDCard:
+                    orientation: 'vertical'
                     size_hint: 1, None
-                    height: "120dp"
-                    padding: "10dp"
+                    height: "180dp"
+                    padding: "15dp"
+                    radius: [15, ]
                     FitImage:
                         source: 'profile.jpg'
                         size_hint: None, None
-                        size: "60dp", "60dp"
-                        radius: [30, ]
+                        size: "80dp", "80dp"
+                        radius: [40, ]
+                        pos_hint: {"center_x": .5}
                     MDLabel:
-                        text: "Vũ Văn Thành\\nTaxi Huyện Lắk"
+                        text: "Vũ Văn Thành - Taxi Lắk"
                         halign: "center"
+                        bold: True
                 MDRaisedButton:
-                    text: "LIÊN KẾT ZALO WEB (QUÉT QR)"
+                    text: "ĐĂNG NHẬP ZALO (QUÉT QR)"
                     md_bg_color: 0, 0.5, 0, 1
                     pos_hint: {"center_x": .5}
                     on_release: app.open_zalo_web_qr()
-                MDLabel:
-                    text: "Logs hệ thống:"
-                    font_style: "Caption"
                 ScrollView:
                     MDList:
                         id: log_list
@@ -170,8 +175,7 @@ class ZAutoProApp(MDApp):
         return self.root
 
     def on_start(self):
-        # Trì hoãn 3 giây để tránh sập app lúc mới mở
-        Clock.schedule_once(self.check_permissions_and_guide, 3)
+        Clock.schedule_once(self.check_permissions_and_guide, 4)
 
     def add_log(self, text):
         self.root.ids.log_list.add_widget(OneLineListItem(text=text), index=0)
@@ -207,34 +211,28 @@ class ZAutoProApp(MDApp):
         with open(CONFIG_FILE, 'w') as f: json.dump(self.config_data, f)
 
     def auto_refresh_ui(self, dt):
-        # Cập nhật danh sách nhóm
         if os.path.exists(CONFIG_FILE):
             try:
-                with open(CONFIG_FILE, 'r') as f:
-                    new_data = json.load(f)
+                with open(CONFIG_FILE, 'r') as f: new_data = json.load(f)
                 if len(new_data.get('groups', {})) != len(self.config_data.get('groups', {})):
                     self.config_data = new_data
                     self.refresh_group_list()
             except: pass
-        
-        # Cập nhật Tab 2 (Lịch sử quét)
-        self.update_list_from_file(HISTORY_FILE, self.root.ids.msg_history_list)
-        # Cập nhật Tab 4 (Cuốc xe chốt)
-        self.update_list_from_file(MATCHES_FILE, self.root.ids.match_history_list)
+        self.update_list(HISTORY_FILE, self.root.ids.msg_history_list)
+        self.update_list(MATCHES_FILE, self.root.ids.match_history_list)
 
-    def update_list_from_file(self, file_path, list_widget):
-        if os.path.exists(file_path):
+    def update_list(self, path, widget):
+        if os.path.exists(path):
             try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                list_widget.clear_widgets()
-                for item in reversed(data[-20:]):
-                    list_widget.add_widget(TwoLineListItem(text=item['group'], secondary_text=item['msg']))
+                with open(path, 'r', encoding='utf-8') as f: data = json.load(f)
+                widget.clear_widgets()
+                for i in reversed(data[-20:]):
+                    widget.add_widget(TwoLineListItem(text=i['group'], secondary_text=i['msg']))
             except: pass
 
     def clear_history(self, path):
         if os.path.exists(path): os.remove(path)
-        self.add_log("Đã xóa nhật ký")
+        self.add_log("Đã dọn dẹp nhật ký")
 
     @run_on_ui_thread
     def open_zalo_web_qr(self):
@@ -248,32 +246,31 @@ class ZAutoProApp(MDApp):
             wv.getSettings().setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36")
             wv.loadUrl("https://chat.zalo.me")
             Activity.setContentView(wv)
-        except Exception as e: self.add_log(f"Lỗi: {e}")
+        except Exception as e: self.add_log(f"Lỗi Zalo Web: {e}")
 
     def check_permissions_and_guide(self, dt):
         if platform != 'android': return
         try:
+            from android.permissions import request_permissions, Permission
+            request_permissions([Permission.ACCESS_FINE_LOCATION, Permission.ACCESS_COARSE_LOCATION, Permission.ACCESS_BACKGROUND_LOCATION])
+            
             activity = PythonActivity.mActivity
             package_name = activity.getPackageName()
             enabled = Settings.Secure.getString(activity.getContentResolver(), "enabled_notification_listeners")
             if package_name not in (enabled or ""):
-                intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                activity.startActivity(intent)
+                activity.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                 return
             pm = cast(autoclass('android.os.PowerManager'), activity.getSystemService("power"))
             if not pm.isIgnoringBatteryOptimizations(package_name):
-                intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                intent.setData(Uri.parse(f"package:{package_name}"))
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).setData(Uri.parse(f"package:{package_name}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 activity.startActivity(intent)
         except: pass
 
     def start_zauto_service(self):
         if platform == 'android':
             try:
-                service = autoclass('org.zauto.taxi.ServiceZaloservice')
-                service.start(PythonActivity.mActivity, '')
+                autoclass('org.zauto.taxi.ServiceZaloservice').start(PythonActivity.mActivity, '')
+                self.root.ids.lbl_status.text = "Radar: ĐANG QUÉT..."
                 self.add_log("Đã bật Radar ngầm!")
             except Exception as e: self.add_log(f"Lỗi: {e}")
 
