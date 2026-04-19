@@ -11,7 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ⚡ CACHE (Giữ nguyên cấu trúc ổn định của anh)
+      # ⚡ CACHE (Dùng lại cache để build nhanh hơn)
       - name: Cache Buildozer
         uses: actions/cache@v4
         with:
@@ -23,12 +23,10 @@ jobs:
           restore-keys: |
             buildozer-${{ runner.os }}-
 
-      # 🧹 Dọn dẹp bộ nhớ máy ảo
       - name: Cleanup System
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc "/usr/local/share/boost"
 
-      # 🧱 Cài môi trường (Java 17 chuẩn)
       - name: Install dependencies
         run: |
           sudo apt update
@@ -45,7 +43,7 @@ jobs:
           pip3 install --user --upgrade pip
           pip3 install --user "Cython==0.29.36" buildozer virtualenv
 
-      # 🔑 Tạo Keystore (Mật khẩu 123456)
+      # 🔑 Keystore (Mật khẩu 123456 y hệt bản cũ)
       - name: Generate Keystore
         run: |
           if [ ! -f mykeystore.keystore ]; then
@@ -58,13 +56,12 @@ jobs:
               -keypass 123456
           fi
 
-      # ⚙️ Cấu hình Buildozer (Chỉ chỉnh sửa phần căn bản)
+      # ⚙️ Cấu hình (Ép ra APK)
       - name: Configure Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
           if [ ! -f buildozer.spec ]; then buildozer init; fi
 
-          # Chấp nhận License
           sed -i 's/^#* *android.accept_sdk_license *=.*/android.accept_sdk_license = True/' buildozer.spec
 
           # 1. Thông tin App
@@ -73,24 +70,17 @@ jobs:
           sed -i 's/^#* *title *=.*/title = ZAuto Pro/' buildozer.spec
           sed -i 's|^#* *icon.filename *=.*|icon.filename = icon.png|' buildozer.spec
 
-          # 2. Thư viện & File (Đảm bảo có json để lưu cấu hình)
+          # 2. Thư viện & Quyền (Dùng kivymd và pyjnius để đọc thông báo)
           sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json/' buildozer.spec
           sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd,pyjnius/' buildozer.spec
-          
-          # 3. Quyền hạn hệ thống
           sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK/' buildozer.spec
           
-          # 4. API & ÉP RA FILE APK (QUAN TRỌNG)
+          # 3. ÉP RA FILE APK (Dòng này cực kỳ quan trọng)
           sed -i 's/^#* *android.api *=.*/android.api = 31/' buildozer.spec
           sed -i 's/^#* *android.minapi *=.*/android.minapi = 21/' buildozer.spec
-          sed -i 's/^#* *android.ndk *=.*/android.ndk = 25b/' buildozer.spec
-          sed -i 's/^#* *android.archs *=.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
-          sed -i 's/^#* *android.enable_androidx *=.*/android.enable_androidx = True/' buildozer.spec
-          
-          # Dòng này ép Buildozer xuất APK thay vì AAB
           sed -i 's/^#* *android.release_artifact *=.*/android.release_artifact = apk/' buildozer.spec
 
-          # 5. Chữ ký Keystore
+          # 4. Nạp chữ ký
           sed -i 's|^#* *android.release_keystore *=.*|android.release_keystore = '"$(pwd)"'/mykeystore.keystore|' buildozer.spec
           sed -i 's/^#* *android.release_keyalias *=.*/android.release_keyalias = myalias/' buildozer.spec
 
@@ -103,13 +93,11 @@ jobs:
           mkdir -p ~/.android && touch ~/.android/repositories.cfg
           yes | buildozer android p4a --accept-sdk-license || true
 
-          # Xóa rác bin cũ để đảm bảo lấy đúng file mới đúc
-          rm -rf bin/*
+          # Dọn sạch file .aab cũ (nếu có) để tránh nhầm
+          rm -rf bin/*.aab
+          rm -rf bin/*.apk
 
-          # Tối ưu RAM cho Gradle
           export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.daemon=false"
-
-          # Nạp mật khẩu Keystore
           export P4A_RELEASE_KEYSTORE=$(pwd)/mykeystore.keystore
           export P4A_RELEASE_KEYSTORE_PASSWD=123456
           export P4A_RELEASE_KEYALIAS_PASSWD=123456
@@ -118,7 +106,7 @@ jobs:
           # Lệnh đúc chính thức
           buildozer -v android release
 
-      # 📦 GỬI APK VỀ (Giống bản Bầu Cua của anh)
+      # 📦 GỬI APK VỀ (Đảm bảo đường dẫn chuẩn bin/*.apk)
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
