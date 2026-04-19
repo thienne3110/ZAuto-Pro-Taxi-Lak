@@ -3,6 +3,9 @@ import os
 from kivymd.app import MDApp
 from kivy.lang import Builder
 from kivy.utils import platform
+from kivy.clock import Clock
+from kivymd.uix.list import OneLineRightIconListItem
+from kivy.properties import StringProperty
 
 # Đường dẫn lưu file cấu hình dùng chung giữa UI và Service
 if platform == 'android':
@@ -28,8 +31,15 @@ KV = '''
         id: root.id_switch
         pos_hint: {'center_y': .5}
 
+<GroupListItem>:
+    text: root.group_name
+    MDSwitch:
+        pos_hint: {'center_y': .5, 'center_x': .9}
+        active: root.is_active
+        on_active: app.toggle_group(root.group_name, self.active)
+
 MDScreen:
-    md_bg_color: 1, 1, 1, 1
+    md_bg_color: 0.95, 0.95, 0.95, 1
 
     MDBottomNavigation:
         panel_color: 1, 1, 1, 1
@@ -90,16 +100,7 @@ MDScreen:
                     Widget:
                         size_hint_y: 0.4
 
-        # ================= TAB 2: TIN NHẮN (Mockup) =================
-        MDBottomNavigationItem:
-            name: 'tab_tinnhan'
-            text: 'Tin nhắn'
-            icon: 'message-outline'
-            MDLabel:
-                text: "Lịch sử tin nhắn sẽ hiển thị tại đây"
-                halign: "center"
-
-        # ================= TAB 3: CÀI ĐẶT (Core System) =================
+        # ================= TAB 2: CÀI ĐẶT (Core System) =================
         MDBottomNavigationItem:
             name: 'tab_caidat'
             text: 'Cài đặt'
@@ -108,7 +109,7 @@ MDScreen:
             MDBoxLayout:
                 orientation: 'vertical'
                 MDTopAppBar:
-                    title: "Cài đặt Hệ thống"
+                    title: "Cấu hình & Nhóm Zalo"
                     elevation: 0
                     md_bg_color: 1, 1, 1, 1
                     specific_text_color: 0, 0, 0, 1
@@ -135,11 +136,25 @@ MDScreen:
                             id_switch: "sw_auto"
 
                         MDRaisedButton:
-                            text: "LƯU CẤU HÌNH THUẬT TOÁN"
+                            text: "LƯU TỪ KHÓA & TỰ ĐỘNG"
                             pos_hint: {"center_x": .5}
                             on_release: app.save_config()
 
-        # ================= TAB 4 & 5: THÔNG BÁO & TÀI KHOẢN =================
+                        MDSeparator:
+                        
+                        MDLabel:
+                            text: "Danh sách Nhóm Radar quét được:"
+                            font_style: "Subtitle2"
+                            theme_text_color: "Secondary"
+
+                        MDList:
+                            id: group_list
+                            
+                        Widget:
+                            size_hint_y: None
+                            height: "50dp"
+
+        # ================= TAB 3 & 4: THÔNG BÁO & TÀI KHOẢN =================
         MDBottomNavigationItem:
             name: 'tab_thongbao'
             text: 'Thông báo'
@@ -149,47 +164,93 @@ MDScreen:
             name: 'tab_taikhoan'
             text: 'Tài khoản'
             icon: 'account-outline'
-            # Giao diện tài khoản đã thiết kế ở bước trước
             MDLabel:
                 text: "Tài khoản: vu van thanh\\nĐã liên kết: Taxi Huyện Lắk"
                 halign: "center"
 '''
 
+class GroupListItem(OneLineRightIconListItem):
+    group_name = StringProperty()
+    is_active = False
+
 class ZAutoProApp(MDApp):
     def build(self):
-        self.theme_cls.theme_style = "Light"
         self.theme_cls.primary_palette = "Blue"
+        self.config_data = {'nhan': '', 'loai': '', 'auto': True, 'groups': {}}
         self.root = Builder.load_string(KV)
         self.load_config()
+        
+        # Radar quét lại file config mỗi 3 giây
+        Clock.schedule_interval(self.auto_refresh_ui, 3.0)
+        
         return self.root
+
+    def auto_refresh_ui(self, dt):
+        if os.path.exists(CONFIG_FILE):
+            try:
+                current_time = os.path.getmtime(CONFIG_FILE)
+                if not hasattr(self, 'last_modified_time') or current_time > self.last_modified_time:
+                    self.last_modified_time = current_time
+                    
+                    with open(CONFIG_FILE, 'r') as f:
+                        new_data = json.load(f)
+                    
+                    # Nếu thấy Radar ngầm có thêm nhóm mới vào file -> Cập nhật UI
+                    if len(new_data.get('groups', {})) != len(self.config_data.get('groups', {})):
+                        self.config_data = new_data
+                        self.refresh_group_list()
+                        print("Radar: Đã cập nhật nhóm mới lên giao diện!")
+            except Exception as e:
+                pass 
 
     def load_config(self):
         try:
             if os.path.exists(CONFIG_FILE):
                 with open(CONFIG_FILE, 'r') as f:
-                    cfg = json.load(f)
-                    self.root.ids.inp_nhan.text = cfg.get('nhan', '')
-                    self.root.ids.inp_loai.text = cfg.get('loai', '')
-                    # Note: Cần mapping ID switch chuẩn trong KV
+                    self.config_data = json.load(f)
+                    
+                self.root.ids.inp_nhan.text = self.config_data.get('nhan', '')
+                self.root.ids.inp_loai.text = self.config_data.get('loai', '')
+                self.root.ids.sw_auto.active = self.config_data.get('auto', True)
+                
+                # Hiển thị các nhóm đã lưu
+                self.refresh_group_list()
         except Exception as e:
             print("Lỗi đọc config:", e)
 
+    def refresh_group_list(self):
+        # Xóa list cũ, vẽ lại list mới
+        self.root.ids.group_list.clear_widgets()
+        for g_name, is_on in self.config_data.get('groups', {}).items():
+            item = GroupListItem(group_name=g_name, is_active=is_on)
+            self.root.ids.group_list.add_widget(item)
+
+    def toggle_group(self, group_name, is_active):
+        # Bật/Tắt nhóm ngay trên giao diện
+        if 'groups' not in self.config_data:
+            self.config_data['groups'] = {}
+        self.config_data['groups'][group_name] = is_active
+        self.save_to_disk()
+
     def save_config(self):
-        cfg = {
-            'nhan': self.root.ids.inp_nhan.text.lower(),
-            'loai': self.root.ids.inp_loai.text.lower(),
-            'auto': True # Mặc định bật để test
-        }
+        # Lấy từ khóa mới nhập
+        self.config_data['nhan'] = self.root.ids.inp_nhan.text.lower()
+        self.config_data['loai'] = self.root.ids.inp_loai.text.lower()
+        self.config_data['auto'] = self.root.ids.sw_auto.active
+        
+        # LƯU Ý: Không được khai báo 'groups' mới ở đây, để giữ nguyên dữ liệu nhóm cũ
+        self.save_to_disk()
+        print("Đã lưu Cấu hình thành công!")
+
+    def save_to_disk(self):
         try:
             os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
             with open(CONFIG_FILE, 'w') as f:
-                json.dump(cfg, f)
-            print("Đã lưu config thành công vào bộ nhớ máy.")
+                json.dump(self.config_data, f)
         except Exception as e:
-            print("Lỗi lưu config:", e)
+            print("Lỗi ghi file:", e)
 
     def start_zauto_service(self):
-        # Hàm gọi Service Android chạy nền
         self.root.ids.lbl_status.text = "Service đang chạy..."
         self.root.ids.lbl_status.text_color = (0, 0.6, 0.1, 1)
         if platform == 'android':
