@@ -1,7 +1,6 @@
 name: Build ZAuto Pro Production
 on: [push, workflow_dispatch]
 
-# Ép chạy Node 24 để xóa cảnh báo vàng, tăng tốc máy ảo
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -29,7 +28,7 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc "/usr/local/share/boost"
 
-      # 🧱 Cài môi trường (Giữ nguyên Java 17 chuẩn của anh)
+      # 🧱 Cài môi trường (Java 17 chuẩn)
       - name: Install dependencies
         run: |
           sudo apt update
@@ -46,7 +45,7 @@ jobs:
           pip3 install --user --upgrade pip
           pip3 install --user "Cython==0.29.36" buildozer virtualenv
 
-      # 🔑 Tạo Keystore (Giữ nguyên mật khẩu 123456)
+      # 🔑 Tạo Keystore (Mật khẩu 123456)
       - name: Generate Keystore
         run: |
           if [ ! -f mykeystore.keystore ]; then
@@ -59,37 +58,39 @@ jobs:
               -keypass 123456
           fi
 
-      # ⚙️ Cấu hình Buildozer (Chỉ chỉnh sửa phần căn bản để chạy ZAuto)
+      # ⚙️ Cấu hình Buildozer (Chỉ chỉnh sửa phần căn bản)
       - name: Configure Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
           if [ ! -f buildozer.spec ]; then buildozer init; fi
 
-          # Chấp nhận License tự động
+          # Chấp nhận License
           sed -i 's/^#* *android.accept_sdk_license *=.*/android.accept_sdk_license = True/' buildozer.spec
 
-          # 1. Thông tin App (Chỉnh về ZAuto)
+          # 1. Thông tin App
           sed -i 's/^#* *package.domain *=.*/package.domain = org.zauto/' buildozer.spec
           sed -i 's/^#* *package.name *=.*/package.name = taxi/' buildozer.spec
           sed -i 's/^#* *title *=.*/title = ZAuto Pro/' buildozer.spec
           sed -i 's|^#* *icon.filename *=.*|icon.filename = icon.png|' buildozer.spec
 
-          # 2. Thư viện (Thêm kivymd và pyjnius để đọc Zalo)
+          # 2. Thư viện & File (Đảm bảo có json để lưu cấu hình)
           sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json/' buildozer.spec
           sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd,pyjnius/' buildozer.spec
           
-          # 3. Quyền hạn (Thêm quyền đọc thông báo và chạy ngầm)
+          # 3. Quyền hạn hệ thống
           sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK/' buildozer.spec
           
-          # 4. API & Kiến trúc (Giữ API 31 để ổn định cho máy cũ)
+          # 4. API & ÉP RA FILE APK (QUAN TRỌNG)
           sed -i 's/^#* *android.api *=.*/android.api = 31/' buildozer.spec
           sed -i 's/^#* *android.minapi *=.*/android.minapi = 21/' buildozer.spec
           sed -i 's/^#* *android.ndk *=.*/android.ndk = 25b/' buildozer.spec
           sed -i 's/^#* *android.archs *=.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^#* *android.enable_androidx *=.*/android.enable_androidx = True/' buildozer.spec
+          
+          # Dòng này ép Buildozer xuất APK thay vì AAB
           sed -i 's/^#* *android.release_artifact *=.*/android.release_artifact = apk/' buildozer.spec
 
-          # Nạp chữ ký Keystore
+          # 5. Chữ ký Keystore
           sed -i 's|^#* *android.release_keystore *=.*|android.release_keystore = '"$(pwd)"'/mykeystore.keystore|' buildozer.spec
           sed -i 's/^#* *android.release_keyalias *=.*/android.release_keyalias = myalias/' buildozer.spec
 
@@ -102,9 +103,8 @@ jobs:
           mkdir -p ~/.android && touch ~/.android/repositories.cfg
           yes | buildozer android p4a --accept-sdk-license || true
 
-          # Dọn dẹp cache cũ
-          rm -rf ~/.buildozer/android/platform/android-ndk-*
-          rm -rf .buildozer/build
+          # Xóa rác bin cũ để đảm bảo lấy đúng file mới đúc
+          rm -rf bin/*
 
           # Tối ưu RAM cho Gradle
           export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.daemon=false"
@@ -118,11 +118,10 @@ jobs:
           # Lệnh đúc chính thức
           buildozer -v android release
 
-      # 📦 GỬI APK VỀ
+      # 📦 GỬI APK VỀ (Giống bản Bầu Cua của anh)
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ZAuto_Pro_Release
-          path: |
-            bin/*.apk
+          name: ZAuto_Pro_Taxi_Lak_APK
+          path: bin/*.apk
