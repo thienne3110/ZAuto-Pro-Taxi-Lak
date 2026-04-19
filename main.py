@@ -258,6 +258,22 @@ class ZAutoProApp(MDApp):
             service = autoclass('org.zauto.taxi.ServiceZaloservice')
             mActivity = autoclass('org.kivy.android.PythonActivity').mActivity
             service.start(mActivity, '')
+    def load_config(self):
+        try:
+            if os.path.exists(CONFIG_FILE):
+                with open(CONFIG_FILE, 'r') as f:
+                    self.config_data = json.load(f)
+                self.root.ids.inp_reply.text = self.config_data.get('reply_msg', 'Ok nhận')
+                # ... (load các id khác)
+        except Exception: pass
+
+    def save_config(self):
+        # Lấy thêm nội dung trả lời từ ô nhập liệu
+        self.config_data['reply_msg'] = self.root.ids.inp_reply.text
+        self.config_data['nhan'] = self.root.ids.inp_nhan.text.lower()
+        self.config_data['loai'] = self.root.ids.inp_loai.text.lower()
+        self.config_data['auto'] = self.root.ids.sw_auto.active
+        self.save_to_disk()        
 
 if __name__ == '__main__':
     ZAutoProApp().run()
