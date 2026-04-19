@@ -20,8 +20,7 @@ android.minapi = 26
 android.release_artifact = apk
 
 # CẤP QUYỀN SINH TỬ
-android.permissions = INTERNET, FOREGROUND_SERVICE, RECEIVE_BOOT_COMPLETED, BIND_NOTIFICATION_LISTENER_SERVICE, WAKE_LOCK
-
+android.permissions = INTERNET, FOREGROUND_SERVICE, RECEIVE_BOOT_COMPLETED, BIND_NOTIFICATION_LISTENER_SERVICE, WAKE_LOCK, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
 # KHAI BÁO DỊCH VỤ CHẠY NGẦM
 services = Zaloservice:service.py
 android.foreground_service = True
