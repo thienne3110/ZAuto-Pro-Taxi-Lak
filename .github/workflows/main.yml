@@ -77,10 +77,6 @@ jobs:
           # 4. Quyền hệ thống sinh tử của ZAuto
           sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK/' buildozer.spec
           
-          # 5. Khai báo Service chạy ngầm (Nối thêm vào cuối file spec nếu chưa có)
-          echo "services = Zaloservice:service.py" >> buildozer.spec
-          echo "android.foreground_service = True" >> buildozer.spec
-
           # 6. Cấu hình SDK/NDK
           sed -i 's/^#* *android.api *=.*/android.api = 33/' buildozer.spec
           sed -i 's/^#* *android.minapi *=.*/android.minapi = 26/' buildozer.spec
