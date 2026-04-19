@@ -1,120 +1,74 @@
-import time
-import json
-import re
-import os
-from jnius import autoclass, PythonJavaClass, java_method
+import json, os
+from jnius import autoclass
 
-Log = autoclass('android.util.Log')
+# Đường dẫn file
 CONFIG_FILE = '/data/data/org.zauto.taxi/files/config.json'
 
-class ZaloListenerService(PythonJavaClass):
-    __javainterfaces__ = ['android/service/notification/NotificationListenerService']
-    __javacontext__ = 'app'
-    
-    def __init__(self):
-        super(ZaloListenerService, self).__init__()
-        self.TAG = "ZAuto_Engine"
-        self.pattern_nhan = None
-        self.pattern_loai = None
-        self.active_groups = []
-        self.load_rules()
+PythonService = autoclass('org.kivy.android.PythonService')
+service = PythonService.mService
+NotificationListenerService = autoclass('android.service.notification.NotificationListenerService')
+Intent = autoclass('android.content.Intent')
 
-    def load_rules(self):
-        # ... (Phần code cũ: Đọc config, compile Regex) ...
-        try:
-            if os.path.exists(CONFIG_FILE):
-                with open(CONFIG_FILE, 'r') as f:
-                    cfg = json.load(f)
-                    # ... compile regex ...
-                    groups = cfg.get('groups', {})
-                    self.active_groups = [g_name.lower() for g_name, is_on in groups.items() if is_on]
-        except Exception as e:
-            Log.e(self.TAG, f"Lỗi load config: {e}")
-
-    # ================= BẢN NÂNG CẤP RADAR TỰ ĐỘNG =================
-    def auto_discover_group(self, title):
-        """Tự động thêm nhóm mới vào file config nếu chưa tồn tại"""
-        try:
-            cfg = {'nhan': '', 'loai': '', 'groups': {}}
-            if os.path.exists(CONFIG_FILE):
-                with open(CONFIG_FILE, 'r') as f:
-                    cfg = json.load(f)
-            
-            # Nếu tên này hoàn toàn mới
-            if title not in cfg.get('groups', {}):
-                cfg['groups'][title] = False # MẶC ĐỊNH TẮT ĐỂ AN TOÀN
-                
-                with open(CONFIG_FILE, 'w') as f:
-                    json.dump(cfg, f)
-                    
-                Log.d(self.TAG, f"RADAR: Đã bắt được nhóm/người mới -> {title}")
-                # Load lại luật ngay lập tức
-                self.load_rules()
-        except Exception as e:
-            Log.e(self.TAG, f"Lỗi Radar: {e}")
-    # ==============================================================
-
-    @java_method('(Landroid/service/notification/StatusBarNotification;)V')
+class Zaloservice(NotificationListenerService):
     def onNotificationPosted(self, sbn):
-        if sbn.getPackageName() == "com.zing.zalo":
-            extras = sbn.getNotification().extras
-            
-            # Lấy tên chính xác 100% từ Zalo (có phân biệt hoa/thường)
-            raw_title = str(extras.getString("android.title")) 
-            text = extras.getCharSequence("android.text")
-            
-            if text:
-                msg = str(text).lower()
-                
-                # 1. KÍCH HOẠT RADAR LƯU TÊN NHÓM
-                self.auto_discover_group(raw_title)
-                
-                title_lower = raw_title.lower()
-                
-                # 2. KIỂM TRA NHÓM CÓ ĐƯỢC BẬT KHÔNG?
-                if not any(g in title_lower for g in self.active_groups):
-                    return # Nhóm đang TẮT -> Bỏ qua ngay
-                
-                # 3. NẾU ĐANG BẬT -> CHẤM ĐIỂM
-                self.evaluate_message(msg, sbn)
+        pkg = sbn.getPackageName()
+        if pkg != "com.zing.zalo": return
 
-    def evaluate_message(self, msg, sbn):
-        cfg = self.get_config()
-        score = 0
-        
-        # Kiểm tra từ khóa loại trừ và nhận
-        if self.pattern_loai and self.pattern_loai.search(msg): return
-        if self.pattern_nhan and self.pattern_nhan.search(msg): score += 5
-            
-        if score >= 5:
-            # LẤY CHỮ ANH ĐÃ CÀI TRONG MỤC CÀI ĐẶT
-            reply_text = cfg.get('reply_msg', 'Ok nhận')
-            self.auto_reply_and_open(sbn, reply_text)
+        notif = sbn.getNotification()
+        extras = notif.extras
+        title = str(extras.getCharSequence("android.title"))
+        msg = str(extras.getCharSequence("android.text"))
 
-    def auto_reply_and_open(self, sbn, reply_text):
-        notification = sbn.getNotification()
-        
-        # BƯỚC 1: TỰ ĐỘNG GỬI TIN NHẮN "OK/NHẬN" NGẦM (Nếu Zalo hỗ trợ)
+        self.process_logic(title, msg, sbn)
+
+    def process_logic(self, group, msg, sbn):
+        # Đọc cấu hình
         try:
-            for action in notification.actions:
-                if action.getRemoteInputs():
-                    remote_inputs = action.getRemoteInputs()
-                    bundle = autoclass('android.os.Bundle')()
-                    # Nhét chữ anh cài đặt vào đây
-                    bundle.putCharSequence(remote_inputs[0].getResultKey(), reply_text)
-                    
-                    intent = autoclass('android.content.Intent')()
-                    autoclass('android.app.RemoteInput').addResultsToIntent(remote_inputs, intent, bundle)
-                    
-                    # Phát lệnh gửi tin nhắn đi ngay lập tức
-                    action.actionIntent.send(self.context, 0, intent)
-                    Log.d(self.TAG, f"Đã tự động gửi: {reply_text}")
-        except Exception as e:
-            Log.e(self.TAG, f"Lỗi gửi ngầm: {str(e)}")
-
-        # BƯỚC 2: MỞ APP ZALO LÊN ĐỂ ANH KIỂM TRA
-        intent = notification.contentIntent
-        if intent:
+            with open(CONFIG_FILE, 'r') as f:
+                cfg = json.load(f)
+        except Exception:
+            return
+        
+        # Cập nhật danh sách nhóm mới vào Radar
+        if group not in cfg.get('groups', {}):
+            if 'groups' not in cfg: cfg['groups'] = {}
+            cfg['groups'][group] = False
             try:
-                intent.send()
+                with open(CONFIG_FILE, 'w') as f: json.dump(cfg, f)
             except Exception: pass
+        
+        # Nếu nhóm đang tắt (Off) thì bỏ qua
+        if not cfg['groups'].get(group): return
+
+        # LOGIC CHẤM ĐIỂM VIP
+        is_voice = "[Tin nhắn thoại]" in msg
+        keywords = cfg.get('nhan', '').split(',')
+        is_match = any(k.strip() in msg.lower() for k in keywords if k.strip())
+
+        if is_match or is_voice:
+            reply = cfg.get('reply_msg', 'Ok nhận')
+            self.execute_auto(sbn, reply, is_voice)
+
+    def execute_auto(self, sbn, reply, is_voice):
+        notif = sbn.getNotification()
+        
+        # CHỈ BẮN TIN NHẮN NGẦM (Không nhắn nếu khách gửi Voice)
+        if not is_voice:
+            try:
+                for action in notif.actions:
+                    if action.getRemoteInputs():
+                        remote_inputs = action.getRemoteInputs()
+                        bundle = autoclass('android.os.Bundle')()
+                        bundle.putCharSequence(remote_inputs[0].getResultKey(), reply)
+                        intent = Intent()
+                        autoclass('android.app.RemoteInput').addResultsToIntent(remote_inputs, intent, bundle)
+                        action.actionIntent.send(service, 0, intent)
+            except Exception:
+                pass
+
+        # ĐÃ XÓA LỆNH MỞ ZALO GỐC. 
+        # Hệ thống giờ đây hoạt động ngầm 100%. Anh sẽ giao tiếp qua Zalo Web trên App.
+
+# Khởi chạy Service
+if __name__ == '__main__':
+    pass
