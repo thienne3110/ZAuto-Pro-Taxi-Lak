@@ -7,6 +7,7 @@ from kivymd.uix.list import OneLineRightIconListItem, TwoLineListItem, OneLineLi
 from kivy.properties import StringProperty, BooleanProperty
 from kivymd.toast import toast
 
+# Cấu hình đường dẫn trên Android và Windows
 if platform == 'android':
     BASE_PATH = '/data/data/org.zauto.taxi/files/'
     from android.runnable import run_on_ui_thread
@@ -47,7 +48,7 @@ MDScreen:
                 padding: "20dp"
                 spacing: "20dp"
                 MDLabel:
-                    text: "ZAUTO PRO V5.3 - TAXI LẮK"
+                    text: "ZAUTO VIP V12 - TAXI LẮK"
                     halign: "center"
                     font_style: "H5"
                     bold: True
@@ -71,7 +72,7 @@ MDScreen:
                     md_bg_color: 0.1, 0.4, 0.8, 1
                     on_release: app.toggle_radar()
 
-        # TAB 2: GOM GỌN TIN NHẮN & ZALO WEB
+        # TAB 2: LIVE CHAT & ZALO WEB
         MDBottomNavigationItem:
             name: 'tab_tinnhan'
             text: 'Tin nhắn'
@@ -83,7 +84,6 @@ MDScreen:
                     elevation: 2
                     right_action_items: [["delete-sweep", lambda x: app.clear_history(HISTORY_FILE)]]
                 
-                # NÚT THAO TÁC WEB NẰM NGAY TRONG TAB TIN NHẮN
                 MDBoxLayout:
                     orientation: 'horizontal'
                     size_hint_y: None
@@ -133,7 +133,7 @@ MDScreen:
                     MDList:
                         id: match_history_list
 
-        # TAB 4: CÀI ĐẶT BỘ LỌC & QUYỀN
+        # TAB 4: CÀI ĐẶT & HỆ THỐNG
         MDBottomNavigationItem:
             name: 'tab_caidat'
             text: 'Cài đặt'
@@ -147,7 +147,6 @@ MDScreen:
                         padding: "15dp"
                         spacing: "15dp"
                         
-                        # PROFILE TÀI XẾ
                         MDCard:
                             size_hint: 1, None
                             height: "90dp"
@@ -172,37 +171,41 @@ MDScreen:
                             pos_hint: {"center_x": .5}
                             size_hint_x: 1
                             on_release: app.check_permissions_and_guide()
+
                         MDTextField:
                             id: inp_reply
-                            hint_text: "Câu chốt tự động"
+                            hint_text: "Câu chốt (Spintax: Ok|Nhận|Dạ)"
                             mode: "rectangle"
                         MDTextField:
                             id: inp_nhan
-                            hint_text: "Từ khóa NHẬN (vd: taxi, xe)"
+                            hint_text: "Từ khóa NHẬN (cách nhau dấu phẩy)"
                             mode: "rectangle"
                         MDTextField:
                             id: inp_loai
-                            hint_text: "Từ khóa LOẠI (để trống cũng đc)"
+                            hint_text: "Từ khóa LOẠI (để trống cũng được)"
                             mode: "rectangle"
                         MDTextField:
                             id: inp_gia_km
                             hint_text: "Giá taxi/km (VD: 12000)"
                             mode: "rectangle"
                             input_filter: "int"
+                        
                         MDBoxLayout:
                             MDLabel:
-                                text: "AI Tính giá tự động"
+                                text: "AI Tính giá & Sinh tồn"
                                 bold: True
                             MDSwitch:
                                 id: sw_ai_price
                                 active: False
+
                         MDRaisedButton:
                             text: "LƯU CẤU HÌNH"
                             pos_hint: {"center_x": .5}
                             on_release: app.save_config()
+
                         MDSeparator:
                         MDLabel:
-                            text: "Danh sách Nhóm/Người nhắn (Bật để canh):"
+                            text: "Quản lý Nhóm quét (Bật/Tắt):"
                             bold: True
                         MDList:
                             id: group_list
@@ -220,6 +223,7 @@ class ZAutoProApp(MDApp):
         self.config_data = {'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận', 'gia_km': '12000', 'ai_active': False, 'groups': {}}
         self.root = Builder.load_string(KV)
         self.load_config()
+        # Cập nhật UI mỗi giây
         Clock.schedule_interval(self.auto_refresh_ui, 1.0) 
         return self.root
 
@@ -235,7 +239,8 @@ class ZAutoProApp(MDApp):
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
             try:
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f: self.config_data = json.load(f)
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f: 
+                    self.config_data = json.load(f)
                 self.root.ids.inp_nhan.text = self.config_data.get('nhan', '')
                 self.root.ids.inp_loai.text = self.config_data.get('loai', '')
                 self.root.ids.inp_reply.text = self.config_data.get('reply_msg', 'Ok nhận')
@@ -255,7 +260,7 @@ class ZAutoProApp(MDApp):
             })
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f: 
                 json.dump(self.config_data, f, ensure_ascii=False)
-            toast("Đã lưu cấu hình thành công!")
+            toast("Lưu cấu hình thành công!")
         except Exception as e: toast(f"Lỗi: {e}")
 
     def refresh_group_list(self):
@@ -266,37 +271,40 @@ class ZAutoProApp(MDApp):
     def toggle_group(self, name, state):
         try:
             self.config_data['groups'][name] = state
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f: json.dump(self.config_data, f, ensure_ascii=False)
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f: 
+                json.dump(self.config_data, f, ensure_ascii=False)
         except: pass
 
     def auto_refresh_ui(self, dt):
         if os.path.exists(CONFIG_FILE):
             try:
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f: new_data = json.load(f)
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f: 
+                    new_data = json.load(f)
                 if len(new_data.get('groups', {})) != len(self.config_data.get('groups', {})):
                     self.config_data = new_data
                     self.refresh_group_list()
             except: pass
-        
         self.update_list(HISTORY_FILE, self.root.ids.msg_history_list)
         self.update_matches_and_revenue()
 
     def update_list(self, path, widget):
         if os.path.exists(path):
             try:
-                with open(path, 'r', encoding='utf-8') as f: data = json.load(f)
+                with open(path, 'r', encoding='utf-8') as f: 
+                    data = json.load(f)
                 widget.clear_widgets()
-                for i in reversed(data[-40:]):
+                for i in reversed(data[-30:]):
                     widget.add_widget(TwoLineListItem(text=f"Từ: {i['group']}", secondary_text=i['msg']))
             except: pass
 
     def update_matches_and_revenue(self):
         if os.path.exists(MATCHES_FILE):
             try:
-                with open(MATCHES_FILE, 'r', encoding='utf-8') as f: data = json.load(f)
+                with open(MATCHES_FILE, 'r', encoding='utf-8') as f: 
+                    data = json.load(f)
                 self.root.ids.match_history_list.clear_widgets()
                 total_revenue = 0
-                for i in reversed(data[-40:]):
+                for i in reversed(data[-30:]):
                     self.root.ids.match_history_list.add_widget(TwoLineListItem(text=f"Chốt: {i['group']}", secondary_text=i['msg']))
                     total_revenue += i.get('revenue', 0)
                 self.root.ids.lbl_doanhthu.text = f"Doanh thu tạm tính: {total_revenue:,} đ"
@@ -315,13 +323,11 @@ class ZAutoProApp(MDApp):
             WebStorage = autoclass('android.webkit.WebStorage')
             Activity = PythonActivity.mActivity
             wv = WebView(Activity)
-            
             wv.clearCache(True)
-            WebStorage.getInstance().deleteAllData() # Xóa gốc rễ IndexedDB lỗi
+            WebStorage.getInstance().deleteAllData()
             autoclass('android.webkit.CookieManager').getInstance().removeAllCookies(None)
-            autoclass('android.webkit.CookieManager').getInstance().flush()
-            toast("Đã dọn sạch bộ nhớ Web! Hãy mở lại Zalo Web.")
-        except Exception as e: pass
+            toast("Đã xóa bộ nhớ đệm Web!")
+        except: pass
 
     @run_on_ui_thread
     def open_zalo_web_qr(self):
@@ -331,21 +337,20 @@ class ZAutoProApp(MDApp):
             WebChromeClient = autoclass('android.webkit.WebChromeClient')
             CookieManager = autoclass('android.webkit.CookieManager')
             Activity = PythonActivity.mActivity
-            Dialog = autoclass('android.app.Dialog') # CÔNG CỤ CỬA SỔ NỔI BẢO VỆ GIAO DIỆN APP
+            Dialog = autoclass('android.app.Dialog')
             
             wv = WebView(Activity)
-            wv.setWebChromeClient(WebChromeClient())
+            wv.setWebChromeClient(WebChromeClient()) 
             settings = wv.getSettings()
             
             settings.setJavaScriptEnabled(True)
             settings.setDomStorageEnabled(True)
             settings.setDatabaseEnabled(True)
             settings.setAllowFileAccess(True)
-            settings.setAllowContentAccess(True)
             settings.setUseWideViewPort(True)
             settings.setLoadWithOverviewMode(True)
             
-            # GIẢ LẬP MACBOOK SAFARI ĐỂ ÉP ZALO NHẢ MÃ QR NHANH
+            # Giả lập Safari Mac OS để Zalo nhả mã QR nhanh
             user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15"
             settings.setUserAgentString(user_agent)
             
@@ -356,12 +361,12 @@ class ZAutoProApp(MDApp):
             wv.evaluateJavascript("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})", None)
             wv.loadUrl("https://chat.zalo.me")
             
-            # ĐÂY LÀ ĐIỂM ĂN TIỀN: Mở Zalo dạng Dialog. Khi nhấn nút Back trên điện thoại, Zalo sẽ tắt trả lại Tab Tin nhắn
-            dialog = Dialog(Activity, 16973830) # Mã 16973830: Fullscreen không thanh tiêu đề
+            # Mở Dialog toàn màn hình (Style: 16973830)
+            dialog = Dialog(Activity, 16973830)
             dialog.setContentView(wv)
             dialog.show()
             
-            toast("Nhấn nút QUAY LẠI (Back) trên điện thoại để thu nhỏ Web về App!")
+            toast("Nhấn nút QUAY LẠI để về App!")
         except Exception as e: pass
 
     def check_permissions_and_guide(self, dt=None):
@@ -370,24 +375,23 @@ class ZAutoProApp(MDApp):
             activity = PythonActivity.mActivity
             package_name = activity.getPackageName()
             pm = cast(autoclass('android.os.PowerManager'), activity.getSystemService("power"))
-            enabled = Settings.Secure.getString(activity.getContentResolver(), "enabled_notification_listeners")
+            enabled_notif = Settings.Secure.getString(activity.getContentResolver(), "enabled_notification_listeners")
             
-            if package_name not in (enabled or ""):
-                toast("Vui lòng BẬT quyền cho ZAuto đọc tin nhắn!")
-                intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                activity.startActivity(intent)
-                return 
+            # 1. Quyền Accessibility (BẮT BUỘC ĐỂ CÀO PHÍM)
+            toast("Hãy bật ZAuto trong mục Hỗ trợ (Accessibility)")
+            intent_acc = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+            activity.startActivity(intent_acc)
+
+            # 2. Quyền Đọc Thông Báo
+            if package_name not in (enabled_notif or ""):
+                Clock.schedule_once(lambda x: activity.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)), 2)
             
+            # 3. Chạy ngầm (Pin)
             if not pm.isIgnoringBatteryOptimizations(package_name):
-                toast("Vui lòng BẬT quyền Chạy ngầm (Tắt tối ưu pin)!")
-                intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
-                intent.setData(Uri.parse(f"package:{package_name}"))
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                activity.startActivity(intent)
-                return
-                
-            toast("Tuyệt vời! App đã đủ 100% quyền hệ thống.")
+                intent_pin = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                intent_pin.setData(Uri.parse(f"package:{package_name}"))
+                Clock.schedule_once(lambda x: activity.startActivity(intent_pin), 4)
+
         except Exception as e: pass
 
     def toggle_radar(self):
@@ -399,7 +403,8 @@ class ZAutoProApp(MDApp):
             self.root.ids.btn_radar.text = "DỪNG HỆ THỐNG"
             self.root.ids.btn_radar.md_bg_color = (0.8, 0.2, 0.2, 1)
             if platform == 'android':
-                try: autoclass('org.zauto.taxi.ServiceZaloservice').start(PythonActivity.mActivity, '')
+                try: 
+                    autoclass('org.zauto.taxi.ServiceZaloservice').start(PythonActivity.mActivity, '')
                 except: pass
         else:
             self.root.ids.status_icon.icon = "shield-off"
