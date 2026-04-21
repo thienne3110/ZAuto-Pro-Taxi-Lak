@@ -56,7 +56,7 @@ jobs:
               -keypass 123456
           fi
 
-      # ⚙️ Cấu hình (Ép ra APK)
+      # ⚙️ Cấu hình Buildozer Chuẩn VIP V4
       - name: Configure Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
@@ -70,17 +70,23 @@ jobs:
           sed -i 's/^#* *title *=.*/title = ZAuto Pro/' buildozer.spec
           sed -i 's|^#* *icon.filename *=.*|icon.filename = icon.png|' buildozer.spec
 
-          # 2. Thư viện & Quyền (Dùng kivymd và pyjnius để đọc thông báo)
+          # 2. Thư viện & Quyền Full
           sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json/' buildozer.spec
           sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd,pyjnius/' buildozer.spec
-          sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK/' buildozer.spec
-          
-          # 3. ÉP RA FILE APK (Dòng này cực kỳ quan trọng)
-          sed -i 's/^#* *android.api *=.*/android.api = 31/' buildozer.spec
+          sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,ACCESS_BACKGROUND_LOCATION/' buildozer.spec
+
+          # 3. ÉP SERVICE CHẠY NGẦM VÀ BẢO VỆ DỮ LIỆU (Cốt lõi V4)
+          sed -i 's/^#* *services *=.*/services = Zaloservice:service.py/' buildozer.spec
+          sed -i 's/^#* *android.foreground_service *=.*/android.foreground_service = True/' buildozer.spec
+          sed -i 's/^#* *android.preserve_data *=.*/android.preserve_data = True/' buildozer.spec
+
+          # 4. ÉP RA FILE APK & API ĐỜI MỚI CHỐNG LỖI
+          sed -i 's/^#* *android.api *=.*/android.api = 33/' buildozer.spec
           sed -i 's/^#* *android.minapi *=.*/android.minapi = 21/' buildozer.spec
+          sed -i 's/^#* *android.archs *=.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^#* *android.release_artifact *=.*/android.release_artifact = apk/' buildozer.spec
 
-          # 4. Nạp chữ ký
+          # 5. Nạp chữ ký
           sed -i 's|^#* *android.release_keystore *=.*|android.release_keystore = '"$(pwd)"'/mykeystore.keystore|' buildozer.spec
           sed -i 's/^#* *android.release_keyalias *=.*/android.release_keyalias = myalias/' buildozer.spec
 
@@ -93,7 +99,7 @@ jobs:
           mkdir -p ~/.android && touch ~/.android/repositories.cfg
           yes | buildozer android p4a --accept-sdk-license || true
 
-          # Dọn sạch file .aab cũ (nếu có) để tránh nhầm
+          # Dọn sạch file cũ
           rm -rf bin/*.aab
           rm -rf bin/*.apk
 
@@ -106,7 +112,7 @@ jobs:
           # Lệnh đúc chính thức
           buildozer -v android release
 
-      # 📦 GỬI APK VỀ (Đảm bảo đường dẫn chuẩn bin/*.apk)
+      # 📦 GỬI APK VỀ
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
