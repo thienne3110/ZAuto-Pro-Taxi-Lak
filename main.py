@@ -47,7 +47,7 @@ MDScreen:
                 padding: "20dp"
                 spacing: "20dp"
                 MDLabel:
-                    text: "ZAUTO PRO V5 - TAXI LẮK"
+                    text: "ZAUTO PRO V5.3 - TAXI LẮK"
                     halign: "center"
                     font_style: "H5"
                     bold: True
@@ -71,7 +71,7 @@ MDScreen:
                     md_bg_color: 0.1, 0.4, 0.8, 1
                     on_release: app.toggle_radar()
 
-        # TAB 2: LIVE CHAT (MỌI TIN NHẮN)
+        # TAB 2: GOM GỌN TIN NHẮN & ZALO WEB
         MDBottomNavigationItem:
             name: 'tab_tinnhan'
             text: 'Tin nhắn'
@@ -82,6 +82,25 @@ MDScreen:
                     title: "Live Chat Zalo"
                     elevation: 2
                     right_action_items: [["delete-sweep", lambda x: app.clear_history(HISTORY_FILE)]]
+                
+                # NÚT THAO TÁC WEB NẰM NGAY TRONG TAB TIN NHẮN
+                MDBoxLayout:
+                    orientation: 'horizontal'
+                    size_hint_y: None
+                    height: "60dp"
+                    padding: "10dp"
+                    spacing: "10dp"
+                    MDRaisedButton:
+                        text: "MỞ ZALO WEB"
+                        md_bg_color: 0, 0.5, 0, 1
+                        size_hint_x: 0.7
+                        on_release: app.open_zalo_web_qr()
+                    MDRaisedButton:
+                        text: "XÓA CACHE"
+                        md_bg_color: 0.8, 0.2, 0.2, 1
+                        size_hint_x: 0.3
+                        on_release: app.clear_web_cache()
+                
                 ScrollView:
                     MDList:
                         id: msg_history_list
@@ -127,6 +146,26 @@ MDScreen:
                         adaptive_height: True
                         padding: "15dp"
                         spacing: "15dp"
+                        
+                        # PROFILE TÀI XẾ
+                        MDCard:
+                            size_hint: 1, None
+                            height: "90dp"
+                            padding: "10dp"
+                            radius: [10, ]
+                            MDBoxLayout:
+                                orientation: 'horizontal'
+                                spacing: "15dp"
+                                FitImage:
+                                    source: 'profile.jpg'
+                                    size_hint: None, None
+                                    size: "70dp", "70dp"
+                                    radius: [35, ]
+                                MDLabel:
+                                    text: "Vũ Văn Thành - Taxi Huyện Lắk"
+                                    bold: True
+                                    valign: "center"
+                        
                         MDRaisedButton:
                             text: "KIỂM TRA & CẤP QUYỀN HỆ THỐNG"
                             md_bg_color: 0.8, 0.4, 0.1, 1
@@ -167,47 +206,6 @@ MDScreen:
                             bold: True
                         MDList:
                             id: group_list
-
-        # TAB 5: ZALO WEB BYPASS ANTI-BOT
-        MDBottomNavigationItem:
-            name: 'tab_taikhoan'
-            text: 'Zalo Web'
-            icon: 'laptop'
-            MDBoxLayout:
-                orientation: 'vertical'
-                padding: "10dp"
-                spacing: "15dp"
-                MDCard:
-                    orientation: 'vertical'
-                    size_hint: 1, None
-                    height: "150dp"
-                    padding: "15dp"
-                    radius: [15, ]
-                    FitImage:
-                        source: 'profile.jpg'
-                        size_hint: None, None
-                        size: "70dp", "70dp"
-                        radius: [35, ]
-                        pos_hint: {"center_x": .5}
-                    MDLabel:
-                        text: "Vũ Văn Thành - Taxi Huyện Lắk"
-                        halign: "center"
-                        bold: True
-                MDBoxLayout:
-                    orientation: 'horizontal'
-                    spacing: "10dp"
-                    size_hint_y: None
-                    height: "50dp"
-                    MDRaisedButton:
-                        text: "MỞ ZALO WEB"
-                        md_bg_color: 0, 0.5, 0, 1
-                        size_hint_x: 0.7
-                        on_release: app.open_zalo_web_qr()
-                    MDRaisedButton:
-                        text: "XÓA CACHE"
-                        md_bg_color: 0.8, 0.2, 0.2, 1
-                        size_hint_x: 0.3
-                        on_release: app.clear_web_cache()
 '''
 
 class GroupListItem(OneLineRightIconListItem):
@@ -226,14 +224,12 @@ class ZAutoProApp(MDApp):
         return self.root
 
     def on_start(self):
-        # Tự động xin quyền Vị trí & Popup Thông báo khi mở app
         if platform == 'android':
             request_permissions([
                 Permission.ACCESS_FINE_LOCATION, 
                 Permission.ACCESS_COARSE_LOCATION, 
                 Permission.POST_NOTIFICATIONS
             ])
-            # Sau 3 giây tự ép kiểm tra các quyền đặc biệt
             Clock.schedule_once(self.check_permissions_and_guide, 3)
 
     def load_config(self):
@@ -316,22 +312,31 @@ class ZAutoProApp(MDApp):
         if platform != 'android': return
         try:
             WebView = autoclass('android.webkit.WebView')
-            WebView(PythonActivity.mActivity).clearCache(True)
+            WebStorage = autoclass('android.webkit.WebStorage')
+            Activity = PythonActivity.mActivity
+            wv = WebView(Activity)
+            
+            wv.clearCache(True)
+            WebStorage.getInstance().deleteAllData() # Xóa gốc rễ IndexedDB lỗi
             autoclass('android.webkit.CookieManager').getInstance().removeAllCookies(None)
-            toast("Đã xóa bộ nhớ đệm Web!")
-        except: pass
+            autoclass('android.webkit.CookieManager').getInstance().flush()
+            toast("Đã dọn sạch bộ nhớ Web! Hãy mở lại Zalo Web.")
+        except Exception as e: pass
 
     @run_on_ui_thread
     def open_zalo_web_qr(self):
         if platform != 'android': return
         try:
             WebView = autoclass('android.webkit.WebView')
+            WebChromeClient = autoclass('android.webkit.WebChromeClient')
             CookieManager = autoclass('android.webkit.CookieManager')
             Activity = PythonActivity.mActivity
+            Dialog = autoclass('android.app.Dialog') # CÔNG CỤ CỬA SỔ NỔI BẢO VỆ GIAO DIỆN APP
+            
             wv = WebView(Activity)
+            wv.setWebChromeClient(WebChromeClient())
             settings = wv.getSettings()
             
-            # BYPASS BẢO MẬT ZALO
             settings.setJavaScriptEnabled(True)
             settings.setDomStorageEnabled(True)
             settings.setDatabaseEnabled(True)
@@ -339,9 +344,9 @@ class ZAutoProApp(MDApp):
             settings.setAllowContentAccess(True)
             settings.setUseWideViewPort(True)
             settings.setLoadWithOverviewMode(True)
-            settings.setMixedContentMode(0) 
             
-            user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            # GIẢ LẬP MACBOOK SAFARI ĐỂ ÉP ZALO NHẢ MÃ QR NHANH
+            user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15"
             settings.setUserAgentString(user_agent)
             
             cookie_manager = CookieManager.getInstance()
@@ -350,7 +355,13 @@ class ZAutoProApp(MDApp):
 
             wv.evaluateJavascript("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})", None)
             wv.loadUrl("https://chat.zalo.me")
-            Activity.setContentView(wv)
+            
+            # ĐÂY LÀ ĐIỂM ĂN TIỀN: Mở Zalo dạng Dialog. Khi nhấn nút Back trên điện thoại, Zalo sẽ tắt trả lại Tab Tin nhắn
+            dialog = Dialog(Activity, 16973830) # Mã 16973830: Fullscreen không thanh tiêu đề
+            dialog.setContentView(wv)
+            dialog.show()
+            
+            toast("Nhấn nút QUAY LẠI (Back) trên điện thoại để thu nhỏ Web về App!")
         except Exception as e: pass
 
     def check_permissions_and_guide(self, dt=None):
@@ -361,7 +372,6 @@ class ZAutoProApp(MDApp):
             pm = cast(autoclass('android.os.PowerManager'), activity.getSystemService("power"))
             enabled = Settings.Secure.getString(activity.getContentResolver(), "enabled_notification_listeners")
             
-            # 1. Kiểm tra quyền Đọc Thông Báo Zalo (Quan trọng nhất)
             if package_name not in (enabled or ""):
                 toast("Vui lòng BẬT quyền cho ZAuto đọc tin nhắn!")
                 intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
@@ -369,7 +379,6 @@ class ZAutoProApp(MDApp):
                 activity.startActivity(intent)
                 return 
             
-            # 2. Kiểm tra quyền Chạy ngầm (Chống tắt app)
             if not pm.isIgnoringBatteryOptimizations(package_name):
                 toast("Vui lòng BẬT quyền Chạy ngầm (Tắt tối ưu pin)!")
                 intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
