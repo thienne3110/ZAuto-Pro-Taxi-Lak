@@ -4,7 +4,7 @@ package.name = taxi
 package.domain = org.zauto
 source.dir = .
 source.include_exts = py,png,jpg,kv,json
-version = 5.0
+version = 5.3
 requirements = python3,kivy==2.2.1,kivymd,pyjnius,requests
 orientation = portrait
 
