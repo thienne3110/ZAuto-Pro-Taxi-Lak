@@ -1,4 +1,4 @@
-name: Build ZAuto Pro Production
+name: Build ZAuto VIP Production 24/7
 on: [push, workflow_dispatch]
 
 env:
@@ -11,7 +11,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ⚡ CACHE (Dùng lại cache để build nhanh hơn)
       - name: Cache Buildozer
         uses: actions/cache@v4
         with:
@@ -30,67 +29,52 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt update
-          sudo apt install -y \
-            git zip unzip autoconf automake libtool pkg-config \
-            zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 \
-            cmake libffi-dev libssl-dev \
-            openjdk-17-jdk \
-            python3-pip python3-setuptools \
-            libgl1-mesa-dev libgles2-mesa-dev \
-            ffmpeg \
-            libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
-
+          sudo apt install -y git zip unzip autoconf automake libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev openjdk-17-jdk python3-pip python3-setuptools libgl1-mesa-dev libgles2-mesa-dev ffmpeg libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
           pip3 install --user --upgrade pip
           pip3 install --user "Cython==0.29.36" buildozer virtualenv
 
-      # 🔑 Keystore (Mật khẩu 123456 y hệt bản cũ)
       - name: Generate Keystore
         run: |
           if [ ! -f mykeystore.keystore ]; then
-            keytool -genkey -v \
-              -keystore mykeystore.keystore \
-              -alias myalias \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=ZAutoPro, OU=Taxi, O=TaxiLak, L=DakLak, ST=VN, C=VN" \
-              -storepass 123456 \
-              -keypass 123456
+            keytool -genkey -v -keystore mykeystore.keystore -alias myalias -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ZAutoPro, OU=Taxi, O=TaxiLak, L=DakLak, ST=VN, C=VN" -storepass 123456 -keypass 123456
           fi
 
-      # ⚙️ Cấu hình Buildozer Chuẩn VIP V4
-      - name: Configure Buildozer
+      - name: Configure Buildozer (VIP INJECTION)
         run: |
           export PATH=$PATH:~/.local/bin
           if [ ! -f buildozer.spec ]; then buildozer init; fi
 
           sed -i 's/^#* *android.accept_sdk_license *=.*/android.accept_sdk_license = True/' buildozer.spec
-
-          # 1. Thông tin App
           sed -i 's/^#* *package.domain *=.*/package.domain = org.zauto/' buildozer.spec
           sed -i 's/^#* *package.name *=.*/package.name = taxi/' buildozer.spec
-          sed -i 's/^#* *title *=.*/title = ZAuto Pro/' buildozer.spec
-          sed -i 's|^#* *icon.filename *=.*|icon.filename = icon.png|' buildozer.spec
-
-          # 2. Thư viện & Quyền Full
-          sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json/' buildozer.spec
+          sed -i 's/^#* *title *=.*/title = ZAuto VIP/' buildozer.spec
+          
+          # THÊM ĐỊNH DẠNG FILE JAVA, XML
+          sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json,xml,java/' buildozer.spec
           sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd,pyjnius/' buildozer.spec
-          sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,ACCESS_BACKGROUND_LOCATION/' buildozer.spec
+          
+          # CẤP QUYỀN HỆ THỐNG FULL
+          sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,ACCESS_BACKGROUND_LOCATION,SYSTEM_ALERT_WINDOW/' buildozer.spec
 
-          # 3. ÉP SERVICE CHẠY NGẦM VÀ BẢO VỆ DỮ LIỆU (Cốt lõi V4)
+          # INJECT JAVA NATIVE, RESOURCES VÀ CUSTOM MANIFEST
+          sed -i '/^#* *android.permissions/a android.add_src = java' buildozer.spec
+          sed -i '/^#* *android.permissions/a android.add_resources = res' buildozer.spec
+          sed -i '/^#* *android.permissions/a android.manifest.template = custom_manifest.xml' buildozer.spec
+          sed -i '/^#* *android.permissions/a android.gradle_dependencies = com.google.android.gms:play-services-location:21.0.1' buildozer.spec
+
+          # CẤU HÌNH DỊCH VỤ PYTHON CHẠY NGẦM
           sed -i 's/^#* *services *=.*/services = Zaloservice:service.py/' buildozer.spec
           sed -i 's/^#* *android.foreground_service *=.*/android.foreground_service = True/' buildozer.spec
           sed -i 's/^#* *android.preserve_data *=.*/android.preserve_data = True/' buildozer.spec
 
-          # 4. ÉP RA FILE APK & API ĐỜI MỚI CHỐNG LỖI
           sed -i 's/^#* *android.api *=.*/android.api = 33/' buildozer.spec
           sed -i 's/^#* *android.minapi *=.*/android.minapi = 21/' buildozer.spec
           sed -i 's/^#* *android.archs *=.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^#* *android.release_artifact *=.*/android.release_artifact = apk/' buildozer.spec
-
-          # 5. Nạp chữ ký
+          
           sed -i 's|^#* *android.release_keystore *=.*|android.release_keystore = '"$(pwd)"'/mykeystore.keystore|' buildozer.spec
           sed -i 's/^#* *android.release_keyalias *=.*/android.release_keyalias = myalias/' buildozer.spec
 
-      # 🚀 BẮT ĐẦU ĐÚC APK
       - name: Build APK
         run: |
           export PATH=$PATH:~/.local/bin
@@ -99,7 +83,6 @@ jobs:
           mkdir -p ~/.android && touch ~/.android/repositories.cfg
           yes | buildozer android p4a --accept-sdk-license || true
 
-          # Dọn sạch file cũ
           rm -rf bin/*.aab
           rm -rf bin/*.apk
 
@@ -109,13 +92,11 @@ jobs:
           export P4A_RELEASE_KEYALIAS_PASSWD=123456
           export P4A_RELEASE_KEYALIAS=myalias
 
-          # Lệnh đúc chính thức
           buildozer -v android release
 
-      # 📦 GỬI APK VỀ
       - name: Upload APK
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ZAuto_Pro_Taxi_Lak_APK
+          name: ZAuto_VIP_Production
           path: bin/*.apk
