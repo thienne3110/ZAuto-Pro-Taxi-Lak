@@ -1,96 +1,29 @@
-name: Build ZAuto VIP Production 24/7
-on: [push, workflow_dispatch]
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
-jobs:
-  build:
-    runs-on: ubuntu-22.04
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Cache Buildozer
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.buildozer
-            .buildozer
-            ~/.gradle
-          key: buildozer-${{ runner.os }}-v2026-zauto-v5
-          restore-keys: |
-            buildozer-${{ runner.os }}-
-
-      - name: Cleanup System
-        run: |
-          sudo rm -rf /usr/share/dotnet /opt/ghc "/usr/local/share/boost"
-
-      - name: Install dependencies
-        run: |
-          sudo apt update
-          sudo apt install -y git zip unzip autoconf automake libtool pkg-config zlib1g-dev libncurses5-dev libncursesw5-dev libtinfo6 cmake libffi-dev libssl-dev openjdk-17-jdk python3-pip python3-setuptools libgl1-mesa-dev libgles2-mesa-dev ffmpeg libsdl2-dev libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
-          pip3 install --user --upgrade pip
-          pip3 install --user "Cython==0.29.36" buildozer virtualenv
-
-      - name: Generate Keystore
-        run: |
-          if [ ! -f mykeystore.keystore ]; then
-            keytool -genkey -v -keystore mykeystore.keystore -alias myalias -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ZAutoPro, OU=Taxi, O=TaxiLak, L=DakLak, ST=VN, C=VN" -storepass 123456 -keypass 123456
-          fi
-
-      - name: Configure Buildozer (VIP PRODUCTION INJECTION)
+- name: Configure Buildozer (VIP PRODUCTION INJECTION)
         run: |
           export PATH=$PATH:~/.local/bin
           if [ ! -f buildozer.spec ]; then buildozer init; fi
-
+          
           sed -i 's/^#* *android.accept_sdk_license *=.*/android.accept_sdk_license = True/' buildozer.spec
           sed -i 's/^#* *package.domain *=.*/package.domain = org.zauto/' buildozer.spec
           sed -i 's/^#* *package.name *=.*/package.name = taxi/' buildozer.spec
           sed -i 's/^#* *title *=.*/title = ZAuto VIP/' buildozer.spec
-          
-          # --- CHỈ ĐỊNH ICON NGOÀI MÀN HÌNH LÀ FILE icon.png CHUẨN ---
           sed -i 's/^#* *icon.filename *=.*/icon.filename = icon.png/' buildozer.spec
-          
-          # --- ĐÓNG GÓI ĐỦ ĐUÔI FILE (CÓ .dat ĐỂ CHẠY BẢN QUYỀN) ---
           sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json,xml,java,db,dat/' buildozer.spec
-          
-          # --- KHÓA CỨNG KIVYMD BẢN 1.1.1 ĐỂ KHÔNG LỖI GIAO DIỆN ---
           sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd==1.1.1,pyjnius/' buildozer.spec
-          
           sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,ACCESS_FINE_LOCATION,SYSTEM_ALERT_WINDOW,QUERY_ALL_PACKAGES/' buildozer.spec
           sed -i 's/^#* *android.add_src *=.*/android.add_src = java/' buildozer.spec
           sed -i 's/^#* *android.add_resources *=.*/android.add_resources = res/' buildozer.spec
-          sed -i 's/^#* *android.manifest.template *=.*/# android.manifest.template = /' buildozer.spec
-          sed -i 's/^#* *services *=.*/# services = /' buildozer.spec
           sed -i 's/^#* *android.api *=.*/android.api = 34/' buildozer.spec
           sed -i 's/^#* *android.minapi *=.*/android.minapi = 24/' buildozer.spec
           sed -i 's/^#* *android.archs *=.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^#* *android.foreground_service *=.*/android.foreground_service = True/' buildozer.spec
           sed -i 's|^#* *android.release_keystore *=.*|android.release_keystore = '"$(pwd)"'/mykeystore.keystore|' buildozer.spec
           sed -i 's/^#* *android.release_keyalias *=.*/android.release_keyalias = myalias/' buildozer.spec
-
-          sed -i '/^android.manifest.extra_manifest_application_arguments/d' buildozer.spec
-          echo 'android.manifest.extra_manifest_application_arguments = <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver> <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true"><intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter></service> <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config" /></service> <service android:name="org.zauto.ZaloForegroundService" android:exported="false" android:foregroundServiceType="dataSync"/>' >> buildozer.spec
+          
+          sed -i '/^android.gradle_dependencies/d' buildozer.spec
+          echo 'android.gradle_dependencies = androidx.core:core:1.12.0' >> buildozer.spec
+          
+          sed -i '/^android.extra_manifest_application/d' buildozer.spec
+          echo 'android.extra_manifest_application = <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver> <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true"><intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter></service> <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="ZAuto VIP"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config" /></service> <service android:name="org.zauto.ZaloForegroundService" android:exported="false" android:foregroundServiceType="dataSync"/>' >> buildozer.spec
 
       - name: Build APK
-        run: |
-          export PATH=$PATH:~/.local/bin
-          export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-          mkdir -p ~/.android && touch ~/.android/repositories.cfg
-          yes | buildozer android p4a --accept-sdk-license || true
-          rm -rf bin/*.aab
-          rm -rf bin/*.apk
-          export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.daemon=false"
-          export P4A_RELEASE_KEYSTORE=$(pwd)/mykeystore.keystore
-          export P4A_RELEASE_KEYSTORE_PASSWD=123456
-          export P4A_RELEASE_KEYALIAS_PASSWD=123456
-          export P4A_RELEASE_KEYALIAS=myalias
-          buildozer -v android release
-
-      - name: Upload APK
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZAuto_VIP_Production
-          path: bin/*.apk
