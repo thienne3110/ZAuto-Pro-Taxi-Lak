@@ -11,6 +11,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # =====================================================
+      # GIỮ NGUYÊN CACHE CŨ ĐỂ BUILD TỐC ĐỘ CAO
+      # =====================================================
       - name: Cache Buildozer
         uses: actions/cache@v4
         with:
@@ -18,8 +21,7 @@ jobs:
             ~/.buildozer
             .buildozer
             ~/.gradle
-          # ĐÃ ĐỔI SANG v6 ĐỂ ÉP GITHUB XÓA CACHE CŨ BỊ LỖI
-          key: buildozer-${{ runner.os }}-v2026-zauto-v6
+          key: buildozer-${{ runner.os }}-v2026-zauto-v5
           restore-keys: |
             buildozer-${{ runner.os }}-
 
@@ -40,11 +42,37 @@ jobs:
             keytool -genkey -v -keystore mykeystore.keystore -alias myalias -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ZAutoPro, OU=Taxi, O=TaxiLak, L=DakLak, ST=VN, C=VN" -storepass 123456 -keypass 123456
           fi
 
-      - name: Configure Buildozer (VIP PRODUCTION INJECTION)
+      # =====================================================
+      # CẤU HÌNH & TẠO FILE HỆ THỐNG (CỰC KỲ QUAN TRỌNG)
+      # =====================================================
+      - name: Configure Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
-          if [ ! -f buildozer.spec ]; then buildozer init; fi
+          mkdir -p res/xml res/values java/org/zauto
           
+          # 1. Tạo file cấu hình Trợ năng
+          cat > res/xml/accessibility_config.xml <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:description="@string/accessibility_desc"
+    android:notificationTimeout="100" />
+EOF
+
+          # 2. Tạo file Strings (BẮT BUỘC ĐỂ FIX LỖI AAPT)
+          cat > res/values/strings.xml <<EOF
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ZAuto VIP</string>
+    <string name="accessibility_desc">Dịch vụ hỗ trợ tự động nhận cuốc ZAuto VIP</string>
+</resources>
+EOF
+
+          # 3. Tạo Buildozer Spec
+          if [ ! -f buildozer.spec ]; then buildozer init; fi
           sed -i 's/^#* *android.accept_sdk_license *=.*/android.accept_sdk_license = True/' buildozer.spec
           sed -i 's/^#* *package.domain *=.*/package.domain = org.zauto/' buildozer.spec
           sed -i 's/^#* *package.name *=.*/package.name = taxi/' buildozer.spec
@@ -62,25 +90,28 @@ jobs:
           sed -i 's|^#* *android.release_keystore *=.*|android.release_keystore = '"$(pwd)"'/mykeystore.keystore|' buildozer.spec
           sed -i 's/^#* *android.release_keyalias *=.*/android.release_keyalias = myalias/' buildozer.spec
           
+          # Fix Dependencies & Manifest
           sed -i '/^android.gradle_dependencies/d' buildozer.spec
           echo 'android.gradle_dependencies = androidx.core:core:1.12.0' >> buildozer.spec
-          
           sed -i '/^android.extra_manifest_application/d' buildozer.spec
           echo 'android.extra_manifest_application = <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver> <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true"><intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter></service> <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="ZAuto VIP"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config" /></service> <service android:name="org.zauto.ZaloForegroundService" android:exported="false" android:foregroundServiceType="dataSync"/>' >> buildozer.spec
 
+      # =====================================================
+      # PHẪU THUẬT ĐIỂM: XÓA RÁC LỖI - ÉP BUILD MỚI
+      # =====================================================
       - name: Build APK
         run: |
           export PATH=$PATH:~/.local/bin
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-          mkdir -p ~/.android && touch ~/.android/repositories.cfg
+          
+          # LỆNH THẦN THÁNH: Xóa đúng thư mục phân phối bị lỗi để nạp Resource mới
+          # Việc này giữ lại SDK/NDK cực nặng trong cache giúp build nhanh hơn 10 phút
+          rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi/build
+          rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi/src/main/res/values/strings.xml
+          
           yes | buildozer android p4a --accept-sdk-license || true
-          
-          # ĐÃ THÊM DÒNG CLEAN NÀY ĐỂ DỌN RÁC BẢN CŨ TRƯỚC KHI ĐÓNG GÓI
-          buildozer android clean
-          
-          rm -rf bin/*.aab
           rm -rf bin/*.apk
-          export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.daemon=false"
+          export GRADLE_OPTS="-Xmx4096m -Dorg.gradle.daemon=false"
           export P4A_RELEASE_KEYSTORE=$(pwd)/mykeystore.keystore
           export P4A_RELEASE_KEYSTORE_PASSWD=123456
           export P4A_RELEASE_KEYALIAS_PASSWD=123456
