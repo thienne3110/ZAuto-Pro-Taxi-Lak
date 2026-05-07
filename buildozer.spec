@@ -1,58 +1,56 @@
 [app]
-# (str) Title of your application
+# (str) Tiêu đề ứng dụng
 title = ZAuto VIP
 
-# (str) Package name
+# (str) Tên gói
 package.name = taxi
 
-# (str) Package domain (needed for android packaging)
+# (str) Tên miền gói
 package.domain = org.zauto
 
-# (str) Source code where the main.py live
+# (str) Thư mục chứa mã nguồn main.py
 source.dir = .
 
-# (list) Source files to include (let empty to include all the files)
+# (list) Các loại file bao gồm khi build
 source.include_exts = py,png,jpg,kv,json,xml,java,db
 
-# (str) Application version
+# (str) Phiên bản ứng dụng
 version = 7.0
 
-# (list) Application requirements
-# MD5, SQLite3, và Threading có sẵn trong python3
+# (list) Thư viện yêu cầu
 requirements = python3,kivy==2.2.1,kivymd,pyjnius
 
-# (str) Supported orientation (one of landscape, portrait or all)
+# (str) Hướng màn hình
 orientation = portrait
 
-# (str) Icon of the application
+# (str) Icon ứng dụng
 icon.filename = profile.jpg
 
 # ==========================================================
 # CẤU HÌNH HỆ THỐNG VÀ QUYỀN CHỐNG KILL (ANTI-KILL)
 # ==========================================================
 
-# Cấp đầy đủ quyền cho Android 10 đến Android 15
-android.permissions = INTERNET, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, RECEIVE_BOOT_COMPLETED, BIND_NOTIFICATION_LISTENER_SERVICE, WAKE_LOCK, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, POST_NOTIFICATIONS, SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES
+# Cấp đầy đủ quyền bao gồm cả Trợ năng (BIND_ACCESSIBILITY_SERVICE)
+android.permissions = INTERNET, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, RECEIVE_BOOT_COMPLETED, BIND_NOTIFICATION_LISTENER_SERVICE, WAKE_LOCK, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, POST_NOTIFICATIONS, SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, BIND_ACCESSIBILITY_SERVICE
 
-# Target API mới nhất để chạy ổn định trên các dòng máy 2024-2026
+# Target API mới nhất 2024-2026
 android.api = 34
 android.minapi = 24
 
-# Kiến trúc CPU phổ biến nhất cho Box Phone và Máy thật
+# Kiến trúc CPU cho Box Phone và Máy thật
 android.archs = arm64-v8a, armeabi-v7a
 
-# Nạp thư mục mã nguồn Java và tài nguyên XML
+# Nạp mã nguồn Java và tài nguyên XML (Thư mục res/xml/accessibility_config.xml)
 android.add_src = java
 android.add_resources = res
 
-# Cho phép ứng dụng chạy dịch vụ Foreground chuyên nghiệp
+# Chạy dịch vụ Foreground
 android.foreground_service = True
 
 # ==========================================================
-# CHÍCH KHAI BÁO TẤT CẢ DỊCH VỤ NATIVE VÀO MANIFEST
-# (Bao gồm: A11y, Notification, Foreground, BootReceiver)
+# KHAI BÁO DỊCH VỤ NATIVE VÀO MANIFEST (FIX TÊN FILE XML)
 # ==========================================================
-android.manifest.extra_manifest_application_arguments = \
+android.extra_manifest_application = \
     <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"> \
         <intent-filter> \
             <action android:name="android.intent.action.BOOT_COMPLETED" /> \
@@ -72,22 +70,21 @@ android.manifest.extra_manifest_application_arguments = \
     <service android:name="org.zauto.ZaloForegroundService" android:exported="false" android:foregroundServiceType="dataSync" />
 
 # ==========================================================
-# CẤU HÌNH BUILD
+# CẤU HÌNH BUILD NÂNG CAO
 # ==========================================================
 
-# (bool) Use AndroidX (Bắt buộc cho KivyMD mới)
+# Sử dụng AndroidX cho KivyMD
 android.enable_androidx = True
 
-# Định dạng đầu ra
+# Định dạng APK
 android.release_artifact = apk
 
-# Giữ lại dữ liệu khi cập nhật app
+# Giữ dữ liệu khi cài đè
 android.preserve_data = True
 
-# Mức độ log (1 = Lỗi, 2 = Cảnh báo)
+# Mức độ log
 log_level = 1
 
 [buildozer]
-# Thư mục build tạm
 build_dir = ./.buildozer
 bin_dir = ./bin
