@@ -640,23 +640,23 @@ class ZAutoProApp(MDApp):
             toast("Radar đã TẠM DỪNG!")
 
     def sync_auto_switch(self, active_state):
-        """Đồng bộ trạng thái công tắc Auto Chốt giữa các Tab"""
-        # 1. Cập nhật trạng thái cho công tắc ở Tab Canh me
-        if self.root.ids.get('sw_auto_main'):
-            self.root.ids.sw_auto_main.active = active_state
-            
-        # 2. Cập nhật trạng thái cho công tắc ở Tab Cài đặt
-        if self.root.ids.get('sw_auto_settings'):
-            self.root.ids.sw_auto_settings.active = active_state
-            
-        # 3. Lưu trạng thái vào bộ nhớ để lần sau mở app không phải bật lại
-        self.save_config_silent()
-        
-        # Thông báo nhẹ cho người dùng biết
-        if active_state:
-            toast("Đã bật chế độ TỰ ĐỘNG chốt cuốc!")
-        else:
-            toast("Đã tắt chế độ tự động (Chuyển sang chốt tay)")
+        try:
+            if self.root.ids.sw_auto_main.active != active_state:
+                self.root.ids.sw_auto_main.active = active_state
+
+            if self.root.ids.sw_auto_settings.active != active_state:
+                self.root.ids.sw_auto_settings.active = active_state
+
+            self.save_config_silent()
+
+            toast(
+                "Đã bật AUTO CHỐT"
+                if active_state else
+                "Đã tắt AUTO CHỐT"
+            )
+
+        except Exception:
+            print(traceback.format_exc())
     def build(self):
         self.icon = 'profile.jpg'
         self.theme_cls.primary_palette = "Blue"
