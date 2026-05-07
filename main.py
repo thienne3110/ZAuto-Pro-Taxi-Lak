@@ -258,7 +258,19 @@ MDScreen:
                 ScrollView:
                     MDList:
                         id: msg_history_list
-
+        # ---------- TAB MỚI: QUẢN LÝ NHÓM ----------
+        MDBottomNavigationItem:
+            name: 'tab_nhom'
+            text: 'Nhóm'
+            icon: 'account-group'
+            MDBoxLayout:
+                orientation: 'vertical'
+                MDTopAppBar:
+                    title: "Danh sách nhóm Zalo"
+                    elevation: 1
+                ScrollView:
+                    MDList:
+                        id: group_filter_list # Nơi hiện danh sách nhóm và nút gạt
         # ================= TAB 3: TÀI KHOẢN ZALO (QUẢN LÝ KẾT NỐI) =================
         MDBottomNavigationItem:
             name: 'tab_zalo'
@@ -606,7 +618,7 @@ class ZAutoProApp(MDApp):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.is_radar_running = False # Mặc định mở app lên là TẮT
-
+        self.enabled_groups = {} # Lưu trạng thái bật/tắt của từng nhóm
     def toggle_radar(self):
         """Hàm bật/tắt công tắc Radar (Chỉ quét, không quyết định Auto)"""
         self.is_radar_running = not self.is_radar_running
@@ -683,16 +695,64 @@ class ZAutoProApp(MDApp):
                 # 5. Đăng ký bộ lắng nghe Broadcast 3 Action (Động cơ Web + Động cơ Accessibility)
                 if not hasattr(self, 'receiver_started'):
                     self.br = BroadcastReceiver(self.on_broadcast_received, 
-                        actions=[
-                            'org.zauto.taxi.NEW_MSG',       # NGUỒN 1: Tin nhắn bắt từ màn hình (Accessibility)
-                            'org.zauto.taxi.LOGIN_SUCCESS', # TÍN HIỆU: Đăng nhập Zalo Web thành công
-                            'org.zauto.taxi.WEB_NEW_MSG'    # NGUỒN 2: Tin nhắn cào ngầm từ Zalo Web (Main)
-                        ])
+                            actions=[
+                                'org.zauto.taxi.NEW_MSG', 
+                                'org.zauto.taxi.LOGIN_SUCCESS', 
+                                'org.zauto.taxi.WEB_NEW_MSG',
+                                'org.zauto.taxi.GROUPS_DATA' # <-- THÊM DÒNG NÀY
+                            ])
                     self.br.start()
                     self.receiver_started = True
                     
             except Exception:
                 print(traceback.format_exc())
+    def update_group_list_ui(self, groups):
+        """Cập nhật danh sách nhóm từ Zalo Web lên giao diện Tab Nhóm"""
+        try:
+            group_list_widget = self.root.ids.group_filter_list
+            # Lấy danh sách các nhóm hiện đang hiển thị trên màn hình
+            current_ui_groups = [item.text for item in group_list_widget.children if hasattr(item, 'text')]
+            
+            from kivymd.uix.list import OneLineIconListItem, IconLeftWidget
+            from kivymd.uix.selectioncontrol import MDSwitch
+            from kivy.uix.boxlayout import BoxLayout
+
+            for g_name in groups:
+                # Nếu nhóm này chưa có trong giao diện thì mới thêm vào
+                if g_name not in current_ui_groups:
+                    # Mặc định nhóm mới là BẬT nếu chưa từng lưu trạng thái
+                    if g_name not in self.enabled_groups:
+                        self.enabled_groups[g_name] = True
+                    
+                    # Tạo item danh sách
+                    item = OneLineIconListItem(text=g_name)
+                    
+                    # Thêm icon đại diện bên trái cho chuyên nghiệp
+                    icon = IconLeftWidget(icon="account-group")
+                    item.add_widget(icon)
+                    
+                    # Tạo công tắc gạt bên phải
+                    switcher = MDSwitch(
+                        active=self.enabled_groups[g_name],
+                        pos_hint={'center_x': .9, 'center_y': .5}
+                    )
+                    
+                    # Gán sự kiện khi tài xế gạt nút
+                    # Dùng partial hoặc lambda có gán mặc định để tránh lỗi ghi đè biến name
+                    switcher.bind(active=lambda sw, val, name=g_name: self.toggle_group(name, val))
+                    
+                    item.add_widget(switcher)
+                    group_list_widget.add_widget(item)
+        except Exception as e:
+            print(f"Lỗi update_group_list_ui: {e}")
+
+    def toggle_group(self, name, status):
+        """Lưu trạng thái bật/tắt của từng nhóm và thông báo"""
+        self.enabled_groups[name] = status
+        self.save_config_silent() # Lưu ngay vào file config.json
+        
+        status_text = "BẬT" if status else "TẮT"
+        toast(f"{status_text} nhận cuốc nhóm: {name}")            
     def check_license_at_startup(self):
         m_id = get_machine_id()
         # Ưu tiên kiểm tra Key thật trước
@@ -744,8 +804,6 @@ class ZAutoProApp(MDApp):
         # --- 1. XỬ LÝ KHI ĐĂNG NHẬP ZALO WEB THÀNH CÔNG ---
         if action == 'org.zauto.taxi.LOGIN_SUCCESS':
             self.is_linked = True
-            
-            # Lấy thông tin Tên và Avatar từ Java gửi qua Broadcast
             zalo_name = intent.getStringExtra("zalo_name")
             zalo_avatar = intent.getStringExtra("zalo_avatar")
             
@@ -753,14 +811,27 @@ class ZAutoProApp(MDApp):
             if zalo_avatar: self.config_data['zalo_avatar'] = zalo_avatar
             
             self.save_config_silent()
-            self.update_profile_ui() # Cập nhật hiển thị lên Tab Cài đặt ngay
+            self.update_profile_ui()
             toast("Đã liên kết Zalo Web thành công!")
             return
 
-        # --- 2. XỬ LÝ KHI CÓ TIN NHẮN MỚI (ACCESSIBILITY & WEB) ---
+        # --- 2. XỬ LÝ KHI NHẬN DANH SÁCH NHÓM TỪ WEB ---
+        if action == 'org.zauto.taxi.GROUPS_DATA':
+            try:
+                import json
+                groups_json = intent.getStringExtra("groups_list")
+                if groups_json:
+                    groups = json.loads(groups_json)
+                    # Gọi hàm cập nhật giao diện danh sách nhóm ở Tab Nhóm
+                    Clock.schedule_once(lambda dt: self.update_group_list_ui(groups))
+            except Exception as e:
+                print(f"Lỗi xử lý danh sách nhóm: {e}")
+            return
+
+        # --- 3. XỬ LÝ KHI CÓ TIN NHẮN MỚI (TRỢ NĂNG & WEB) ---
         if action in ['org.zauto.taxi.NEW_MSG', 'org.zauto.taxi.WEB_NEW_MSG']:
             
-            # KIỂM TRA: Nếu chưa Bật Radar (Nút to màu xanh) thì không làm gì cả
+            # KIỂM TRA 1: Radar phải đang BẬT
             if not getattr(self, 'is_radar_running', False):
                 return
                 
@@ -768,34 +839,42 @@ class ZAutoProApp(MDApp):
             msg = intent.getStringExtra("msg")
             
             if group and msg:
-                # Kiểm tra trùng lặp tin nhắn (Spam Control)
+                # KIỂM TRA 2: Lọc theo danh sách Nhóm (Tab Nhóm)
+                # Nếu nhóm có trong danh sách và đang bị TẮT thì bỏ qua
+                if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]:
+                    return
+
+                # KIỂM TRA 3: Chống lặp tin nhắn (Spam Control)
                 msg_hash = str(hash(group + msg))
-                if msg_hash in self.processed_msg_hashes: return
+                if msg_hash in self.processed_msg_hashes: 
+                    return
                 self.processed_msg_hashes.add(msg_hash)
-                if len(self.processed_msg_hashes) > 500: self.processed_msg_hashes.clear()
+                if len(self.processed_msg_hashes) > 500: 
+                    self.processed_msg_hashes.clear()
                 
-                # --- LOGIC LỌC TỪ KHÓA ---
+                # KIỂM TRA 4: Logic lọc từ khóa (Tab Cài đặt)
                 if self.root.ids.sw_filter.active:
                     msg_low = msg.lower()
                     
-                    # Kiểm tra từ khóa LOẠI (Bỏ qua)
+                    # Lọc từ khóa BỎ QUA (Loại)
                     loai_keys = [k.strip() for k in self.root.ids.inp_loai.text.lower().split(',') if k.strip()]
                     if loai_keys and any(lk in msg_low for lk in loai_keys): 
-                        return # Có từ khóa cấm -> Bỏ qua ngay
+                        return
                     
-                    # Kiểm tra từ khóa NHẬN (Ưu tiên)
+                    # Lọc từ khóa NHẬN (Ưu tiên)
                     nhan_keys = [k.strip() for k in self.root.ids.inp_nhan.text.lower().split(',') if k.strip()]
                     if nhan_keys and not any(nk in msg_low for nk in nhan_keys): 
-                        return # Không chứa từ khóa cần tìm -> Bỏ qua
+                        return
 
-                # --- HIỂN THỊ LÊN MÀN HÌNH ---
-                # Hiện thẻ cuốc ở tab Canh Me để tài xế có thể bấm nhận tay
+                # --- NẾU VƯỢT QUA HẾT CÁC BỘ LỌC -> HIỂN THỊ & CHỐT ---
+                
+                # Hiện thẻ cuốc ở tab Canh Me
                 Clock.schedule_once(lambda dt: self.add_ride_card(group, msg))
-                # Lưu vào lịch sử tin nhắn
+                
+                # Lưu vào lịch sử tin nhắn (Tab Tin nhắn)
                 Clock.schedule_once(lambda dt: self.log_history(group, msg))
 
-                # --- LOGIC TỰ ĐỘNG CHỐT (AUTO REPLY) ---
-                # CHỈ tự động nhắn tin nếu công tắc "Auto chốt" (Nút nhỏ góc phải) đang BẬT
+                # TỰ ĐỘNG CHỐT: Nếu công tắc "Tự động" đang BẬT
                 if self.root.ids.sw_auto_main.active:
                     self.execute_reply(group, self.root.ids.inp_reply.text)
 
@@ -859,17 +938,18 @@ class ZAutoProApp(MDApp):
     
 
     def load_config(self):
-        """Nạp cấu hình từ file và cập nhật toàn bộ giao diện 4 Tab"""
+        """Nạp cấu hình từ file và cập nhật toàn bộ giao diện (Canh me, Nhóm, Tài khoản, Cài đặt)"""
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f: 
                     self.config_data = json.load(f)
                 
-                # 1. Nạp trạng thái liên kết Zalo (Dùng cho Tab Tài khoản)
+                # 1. NẠP TRẠNG THÁI LIÊN KẾT & DANH SÁCH NHÓM ĐÃ LƯU
                 self.is_linked = self.config_data.get('is_linked', False)
+                # Quan trọng: Nạp sổ cái các nhóm đã Bật/Tắt từ trước
+                self.enabled_groups = self.config_data.get('enabled_groups', {})
                 
-                # 2. Cập nhật các ô nhập liệu ở Tab Cài đặt
-                # Dùng .get() để tránh lỗi nếu ID chưa tồn tại trong KV
+                # 2. CẬP NHẬT CÁC Ô NHẬP LIỆU (TAB CÀI ĐẶT)
                 ids = self.root.ids
                 if ids.get('inp_nhan'):
                     ids.inp_nhan.text = self.config_data.get('nhan', '')
@@ -878,40 +958,44 @@ class ZAutoProApp(MDApp):
                 if ids.get('inp_reply'):
                     ids.inp_reply.text = self.config_data.get('reply_msg', 'Ok nhận')
                 
-                # 3. Nạp trạng thái Lọc từ khóa
+                # 3. NẠP TRẠNG THÁI LỌC TỪ KHÓA
                 if ids.get('sw_filter'):
                     ids.sw_filter.active = self.config_data.get('sw_filter', False)
 
-                # 4. ĐỒNG BỘ CÔNG TẮC AUTO CHỐT
-                # Quan trọng: Khi gán 'active', Kivy sẽ tự động gọi hàm sync_auto_switch
-                # giúp cái nút Radar ở Tab 1 cũng được cập nhật theo.
+                # 4. ĐỒNG BỘ CÔNG TẮC AUTO CHỐT (ĐỒNG BỘ GIỮA TAB 1 VÀ TAB 4)
+                # Khi gán lệnh này, hàm sync_auto_switch sẽ tự chạy để đổi màu nút Radar
                 is_auto = self.config_data.get('sw_auto', False)
                 if ids.get('sw_auto_settings'):
                     ids.sw_auto_settings.active = is_auto
                 
-                # 5. Vẽ lại giao diện Zalo (Tên, Avatar) lên Tab Tài khoản
-                # Hàm này sẽ dựa vào biến self.is_linked vừa nạp ở trên
+                # 5. VẼ LẠI GIAO DIỆN TÀI KHOẢN (Tên Zalo, Ảnh đại diện)
                 self.update_profile_ui()
+                
+                # 6. KHỞI TẠO LẠI DANH SÁCH NHÓM (Nếu đã có dữ liệu cũ)
+                # Giúp Tab Nhóm hiện lại các nhóm cũ ngay cả khi chưa kịp quét từ Web
+                if self.enabled_groups:
+                    Clock.schedule_once(lambda dt: self.update_group_list_ui(self.enabled_groups.keys()))
                 
             except Exception as e:
                 print(f"Lỗi nạp cấu hình: {e}")
-                # Nếu file lỗi, reset về mặc định để tránh treo App
+                # Reset về mặc định nếu file json bị lỗi cấu trúc
                 self.config_data = {
                     'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận',
-                    'sw_filter': False, 'sw_auto': False, 'is_linked': False
+                    'sw_filter': False, 'sw_auto': False, 'is_linked': False,
+                    'enabled_groups': {}
                 }
-
+                self.enabled_groups = {}
     def save_config_silent(self):
         try:
             self.config_data.update({
-                'nhan': self.root.ids.inp_nhan.text.lower(),
-                'loai': self.root.ids.inp_loai.text.lower(),
+                'nhan': self.root.ids.inp_nhan.text,
+                'loai': self.root.ids.inp_loai.text,
                 'reply_msg': self.root.ids.inp_reply.text,
-                'sw_filter': self.root.ids.sw_filter.active,
                 'sw_auto': self.root.ids.sw_auto_settings.active,
-                'is_linked': self.is_linked # Lưu trạng thái để tắt app bật lại không mất
+                'is_linked': self.is_linked,
+                'enabled_groups': self.enabled_groups # THÊM DÒNG NÀY ĐỂ LƯU DANH SÁCH NHÓM
             })
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f: 
+            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.config_data, f, ensure_ascii=False)
         except: pass
     def handle_zalo_auth(self):
