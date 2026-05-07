@@ -1,447 +1,149 @@
-```java
 package org.zauto;
 
 import android.accessibilityservice.AccessibilityService;
-import android.accessibilityservice.GestureDescription;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
-
-import android.graphics.Path;
-import android.graphics.Rect;
-
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.content.Intent;
+import android.app.Notification;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
-
+import android.graphics.Rect;
 import android.util.Log;
-
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Queue;
+import java.util.List;
 
 public class ZaloAccessibility extends AccessibilityService {
-
     public static ZaloAccessibility instance;
-
     private static final String TAG = "ZAutoVIP";
-
-    private final Handler handler = new Handler(Looper.getMainLooper());
-
-    private boolean isBusy = false;
 
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
-
         instance = this;
-
-        Log.d(TAG, "Accessibility Connected");
     }
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
+        // Đọc Notifications từ Zalo
+        if (event.getEventType() == AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED) {
+            if ("com.zing.zalo".equals(event.getPackageName()) && event.getParcelableData() instanceof Notification) {
+                Notification notification = (Notification) event.getParcelableData();
+                Bundle extras = notification.extras;
+                if (extras != null) {
+                    String title = extras.getString(Notification.EXTRA_TITLE, "");
+                    CharSequence text = extras.getCharSequence(Notification.EXTRA_TEXT);
+                    String msg = text != null ? text.toString() : "";
 
+                    if (!title.isEmpty() && !msg.isEmpty()) {
+                        Intent intent = new Intent("org.zauto.taxi.NEW_MSG");
+                        intent.putExtra("group", title);
+                        intent.putExtra("msg", msg);
+                        sendBroadcast(intent);
+                    }
+                }
+            }
+        }
     }
 
     @Override
-    public void onInterrupt() {
+    public void onInterrupt() {}
 
-    }
-
-    // =====================================================
-    // MAIN REPLY
-    // =====================================================
-
-    public boolean executeReplyContext(
-            final String groupName,
-            final String replyText
-    ) {
-
-        if (isBusy) {
-            Log.d(TAG, "BUSY");
-            return false;
-        }
-
-        isBusy = true;
-
-        handler.post(() -> {
-
+    // Auto Reply với Context (Bọc trong Thread chống Lag)
+    public boolean executeReplyContext(final String groupName, final String replyText) {
+        new Thread(() -> {
             try {
+                AccessibilityNodeInfo root = getRootInActiveWindow();
+                if (root == null) return;
 
-                openGroupAndReply(groupName, replyText);
+                // 1. Tìm tên nhóm và Click mở chat
+                List<AccessibilityNodeInfo> groupNodes = root.findAccessibilityNodeInfosByText(groupName);
+                boolean isChatOpened = false;
+                if (groupNodes != null && !groupNodes.isEmpty()) {
+                    for (AccessibilityNodeInfo node : groupNodes) {
+                        AccessibilityNodeInfo clickableParent = getClickableParent(node);
+                        if (clickableParent != null) {
+                            clickableParent.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                            isChatOpened = true;
+                            Thread.sleep(800); // Chờ load khung chat
+                            break;
+                        }
+                    }
+                }
+                if (!isChatOpened) return;
+
+                // 2. Tìm ô nhập liệu bằng Thuật toán BFS
+                root = getRootInActiveWindow();
+                AccessibilityNodeInfo inputBox = findNodeByClassBFS(root, "android.widget.EditText");
+                if (inputBox == null) {
+                    performGlobalAction(GLOBAL_ACTION_BACK);
+                    return;
+                }
+
+                // 3. Copy text và Paste
+                ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+                ClipData clip = ClipData.newPlainText("zauto", replyText);
+                clipboard.setPrimaryClip(clip);
+                inputBox.performAction(AccessibilityNodeInfo.ACTION_FOCUS);
+                inputBox.performAction(AccessibilityNodeInfo.ACTION_PASTE);
+                Thread.sleep(300);
+
+                // 4. Tìm Nút Gửi bên cạnh Ô nhập (Bypass giấu ID)
+                root = getRootInActiveWindow(); 
+                Rect inputRect = new Rect();
+                inputBox.getBoundsInScreen(inputRect);
+                AccessibilityNodeInfo sendBtn = findSendButtonBySpatial(inputBox, inputRect);
+                
+                if (sendBtn != null) {
+                    sendBtn.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                    Thread.sleep(500);
+                }
+
+                // 5. Back ra ngoài chờ cuốc mới
+                performGlobalAction(GLOBAL_ACTION_BACK);
 
             } catch (Exception e) {
-
-                Log.e(TAG, "ERROR: " + e.getMessage());
-
-                isBusy = false;
+                Log.e(TAG, "Lỗi Auto Thread: " + e.getMessage());
             }
-
-        });
-
+        }).start();
         return true;
     }
 
-    // =====================================================
-    // STEP 1
-    // =====================================================
-
-    private void openGroupAndReply(
-            final String groupName,
-            final String replyText
-    ) {
-
-        AccessibilityNodeInfo root = getRootWithRetry();
-
-        if (root == null) {
-            isBusy = false;
-            return;
-        }
-
-        AccessibilityNodeInfo groupNode = findNodeContainsText(root, groupName);
-
-        if (groupNode == null) {
-
-            Log.d(TAG, "Không tìm thấy nhóm");
-
-            isBusy = false;
-            return;
-        }
-
-        AccessibilityNodeInfo clickable = getClickableParent(groupNode);
-
-        if (clickable == null) {
-
-            isBusy = false;
-            return;
-        }
-
-        clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK);
-
-        handler.postDelayed(() -> {
-
-            focusInputAndSend(replyText);
-
-        }, 1200);
-    }
-
-    // =====================================================
-    // STEP 2
-    // =====================================================
-
-    private void focusInputAndSend(String replyText) {
-
-        AccessibilityNodeInfo root = getRootWithRetry();
-
-        if (root == null) {
-
-            backHome();
-
-            return;
-        }
-
-        AccessibilityNodeInfo input =
-                findFirstEditText(root);
-
-        if (input == null) {
-
-            Log.d(TAG, "Không tìm thấy ô nhập");
-
-            backHome();
-
-            return;
-        }
-
-        input.performAction(
-                AccessibilityNodeInfo.ACTION_FOCUS
-        );
-
-        Bundle args = new Bundle();
-
-        args.putCharSequence(
-                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                replyText
-        );
-
-        input.performAction(
-                AccessibilityNodeInfo.ACTION_SET_TEXT,
-                args
-        );
-
-        handler.postDelayed(() -> {
-
-            clickSendButton(input);
-
-        }, 500);
-    }
-
-    // =====================================================
-    // STEP 3
-    // =====================================================
-
-    private void clickSendButton(
-            AccessibilityNodeInfo input
-    ) {
-
-        AccessibilityNodeInfo root = getRootWithRetry();
-
-        if (root == null) {
-
-            backHome();
-
-            return;
-        }
-
-        AccessibilityNodeInfo sendBtn =
-                findSendButton(root);
-
-        if (sendBtn != null) {
-
-            sendBtn.performAction(
-                    AccessibilityNodeInfo.ACTION_CLICK
-            );
-
-            Log.d(TAG, "Đã gửi");
-
-        } else {
-
-            Log.d(TAG, "Không tìm thấy nút gửi");
-
-        }
-
-        handler.postDelayed(() -> {
-
-            backHome();
-
-        }, 800);
-    }
-
-    // =====================================================
-    // BACK
-    // =====================================================
-
-    private void backHome() {
-
-        performGlobalAction(GLOBAL_ACTION_BACK);
-
-        handler.postDelayed(() -> {
-
-            isBusy = false;
-
-        }, 600);
-    }
-
-    // =====================================================
-    // RETRY ROOT
-    // =====================================================
-
-    private AccessibilityNodeInfo getRootWithRetry() {
-
-        for (int i = 0; i < 5; i++) {
-
-            AccessibilityNodeInfo root =
-                    getRootInActiveWindow();
-
-            if (root != null) {
-                return root;
-            }
-
-            try {
-                Thread.sleep(200);
-            } catch (Exception e) {
-
-            }
-        }
-
-        return null;
-    }
-
-    // =====================================================
-    // FIND TEXT
-    // =====================================================
-
-    private AccessibilityNodeInfo findNodeContainsText(
-            AccessibilityNodeInfo root,
-            String text
-    ) {
-
-        Queue<AccessibilityNodeInfo> queue =
-                new LinkedList<>();
-
-        queue.add(root);
-
-        while (!queue.isEmpty()) {
-
-            AccessibilityNodeInfo node = queue.poll();
-
-            if (node == null) continue;
-
-            CharSequence cs = node.getText();
-
-            if (cs != null) {
-
-                String value =
-                        cs.toString().toLowerCase();
-
-                if (value.contains(
-                        text.toLowerCase()
-                )) {
-
-                    return node;
-                }
-            }
-
-            for (int i = 0;
-                 i < node.getChildCount();
-                 i++) {
-
-                queue.add(node.getChild(i));
-            }
-        }
-
-        return null;
-    }
-
-    // =====================================================
-    // FIND EDITTEXT
-    // =====================================================
-
-    private AccessibilityNodeInfo findFirstEditText(
-            AccessibilityNodeInfo root
-    ) {
-
-        Queue<AccessibilityNodeInfo> queue =
-                new LinkedList<>();
-
-        queue.add(root);
-
-        while (!queue.isEmpty()) {
-
-            AccessibilityNodeInfo node = queue.poll();
-
-            if (node == null) continue;
-
-            if (node.getClassName() != null &&
-                    node.getClassName()
-                            .toString()
-                            .contains("EditText")) {
-
-                return node;
-            }
-
-            for (int i = 0;
-                 i < node.getChildCount();
-                 i++) {
-
-                queue.add(node.getChild(i));
-            }
-        }
-
-        return null;
-    }
-
-    // =====================================================
-    // FIND SEND BUTTON
-    // =====================================================
-
-    private AccessibilityNodeInfo findSendButton(
-            AccessibilityNodeInfo root
-    ) {
-
-        Queue<AccessibilityNodeInfo> queue =
-                new LinkedList<>();
-
-        queue.add(root);
-
-        while (!queue.isEmpty()) {
-
-            AccessibilityNodeInfo node = queue.poll();
-
-            if (node == null) continue;
-
-            CharSequence desc =
-                    node.getContentDescription();
-
-            String viewId =
-                    node.getViewIdResourceName();
-
-            // contentDescription
-            if (desc != null) {
-
-                String d =
-                        desc.toString().toLowerCase();
-
-                if (d.contains("gửi")
-                        || d.contains("send")) {
-
-                    return node;
-                }
-            }
-
-            // resource id
-            if (viewId != null) {
-
-                String id =
-                        viewId.toLowerCase();
-
-                if (id.contains("send")) {
-
-                    return node;
-                }
-            }
-
-            // clickable icon
-            if (node.isClickable()
-                    && node.isEnabled()
-                    && node.isVisibleToUser()) {
-
-                Rect r = new Rect();
-
-                node.getBoundsInScreen(r);
-
-                if (r.width() < 250
-                        && r.height() < 250
-                        && r.right > 700) {
-
-                    return node;
-                }
-            }
-
-            for (int i = 0;
-                 i < node.getChildCount();
-                 i++) {
-
-                queue.add(node.getChild(i));
-            }
-        }
-
-        return null;
-    }
-
-    // =====================================================
-    // CLICKABLE PARENT
-    // =====================================================
-
-    private AccessibilityNodeInfo getClickableParent(
-            AccessibilityNodeInfo node
-    ) {
-
+    private AccessibilityNodeInfo getClickableParent(AccessibilityNodeInfo node) {
         AccessibilityNodeInfo p = node;
-
-        for (int i = 0; i < 6; i++) {
-
+        for (int i = 0; i < 3; i++) {
             if (p == null) return null;
-
-            if (p.isClickable()) {
-
-                return p;
-            }
-
+            if (p.isClickable()) return p;
             p = p.getParent();
         }
-
         return null;
     }
 
+    private AccessibilityNodeInfo findNodeByClassBFS(AccessibilityNodeInfo root, String className) {
+        Queue<AccessibilityNodeInfo> queue = new LinkedList<>();
+        queue.add(root);
+        while (!queue.isEmpty()) {
+            AccessibilityNodeInfo node = queue.poll();
+            if (node == null) continue;
+            if (className.equals(node.getClassName().toString())) return node;
+            for (int i = 0; i < node.getChildCount(); i++) queue.add(node.getChild(i));
+        }
+        return null;
+    }
+
+    private AccessibilityNodeInfo findSendButtonBySpatial(AccessibilityNodeInfo inputBox, Rect inputRect) {
+        AccessibilityNodeInfo p = inputBox.getParent();
+        if (p == null) return null;
+        for (int i = 0; i < p.getChildCount(); i++) {
+            AccessibilityNodeInfo sibling = p.getChild(i);
+            if (sibling != null && sibling.isClickable() && !sibling.equals(inputBox)) {
+                Rect r = new Rect();
+                sibling.getBoundsInScreen(r);
+                if (r.left >= inputRect.right) return sibling; // Nút ở bên phải input
+            }
+        }
+        return null;
+    }
 }
-```
