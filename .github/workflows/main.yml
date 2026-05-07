@@ -39,7 +39,7 @@ jobs:
             keytool -genkey -v -keystore mykeystore.keystore -alias myalias -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ZAutoPro, OU=Taxi, O=TaxiLak, L=DakLak, ST=VN, C=VN" -storepass 123456 -keypass 123456
           fi
 
-      - name: Configure Buildozer (VIP INJECTION)
+      - name: Configure Buildozer (NATIVE JAVA INJECTION)
         run: |
           export PATH=$PATH:~/.local/bin
           if [ ! -f buildozer.spec ]; then buildozer init; fi
@@ -53,22 +53,22 @@ jobs:
           sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json,xml,java/' buildozer.spec
           sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd,pyjnius/' buildozer.spec
           
-          # CẤP QUYỀN HỆ THỐNG FULL
-          sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,ACCESS_BACKGROUND_LOCATION,SYSTEM_ALERT_WINDOW/' buildozer.spec
+          # CẤP QUYỀN HỆ THỐNG FULL CHO ANDROID 13/14
+          sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,RECEIVE_BOOT_COMPLETED,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION,ACCESS_BACKGROUND_LOCATION,SYSTEM_ALERT_WINDOW/' buildozer.spec
 
-          # INJECT JAVA NATIVE, RESOURCES VÀ CUSTOM MANIFEST
+          # BƠM THƯ MỤC JAVA VÀ RES VÀO BUILDOZER
           sed -i '/^#* *android.permissions/a android.add_src = java' buildozer.spec
           sed -i '/^#* *android.permissions/a android.add_resources = res' buildozer.spec
-          sed -i '/^#* *android.permissions/a android.manifest.template = custom_manifest.xml' buildozer.spec
-          sed -i '/^#* *android.permissions/a android.gradle_dependencies = com.google.android.gms:play-services-location:21.0.1' buildozer.spec
 
-          # CẤU HÌNH DỊCH VỤ PYTHON CHẠY NGẦM
-          sed -i 's/^#* *services *=.*/services = Zaloservice:service.py/' buildozer.spec
-          sed -i 's/^#* *android.foreground_service *=.*/android.foreground_service = True/' buildozer.spec
-          sed -i 's/^#* *android.preserve_data *=.*/android.preserve_data = True/' buildozer.spec
+          # --- [QUAN TRỌNG] XÓA KHAI BÁO SERVICE PYTHON CŨ ---
+          sed -i 's/^#* *services *=.*//' buildozer.spec
+          
+          # --- [QUAN TRỌNG] CHÍCH THẲNG KHAI BÁO SERVICE JAVA VÀO MANIFEST ---
+          echo 'android.manifest.extra_manifest_application_arguments = <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config" /></service><service android:name="org.zauto.ZaloForegroundService" android:exported="false" />' >> buildozer.spec
 
-          sed -i 's/^#* *android.api *=.*/android.api = 33/' buildozer.spec
-          sed -i 's/^#* *android.minapi *=.*/android.minapi = 21/' buildozer.spec
+          # UPDATE API LEVEL CHO CHUẨN NATIVE
+          sed -i 's/^#* *android.api *=.*/android.api = 34/' buildozer.spec
+          sed -i 's/^#* *android.minapi *=.*/android.minapi = 24/' buildozer.spec
           sed -i 's/^#* *android.archs *=.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
           sed -i 's/^#* *android.release_artifact *=.*/android.release_artifact = apk/' buildozer.spec
           
