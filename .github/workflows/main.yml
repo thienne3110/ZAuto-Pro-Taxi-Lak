@@ -11,9 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # =====================================================
-      # GIỮ NGUYÊN CACHE CŨ ĐỂ BUILD TỐC ĐỘ CAO
-      # =====================================================
+      # --- DÙNG LẠI CACHE CŨ ĐỂ BUILD TỐC ĐỘ CAO ---
       - name: Cache Buildozer
         uses: actions/cache@v4
         with:
@@ -42,9 +40,7 @@ jobs:
             keytool -genkey -v -keystore mykeystore.keystore -alias myalias -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ZAutoPro, OU=Taxi, O=TaxiLak, L=DakLak, ST=VN, C=VN" -storepass 123456 -keypass 123456
           fi
 
-      # =====================================================
-      # CẤU HÌNH & TẠO FILE HỆ THỐNG (CỰC KỲ QUAN TRỌNG)
-      # =====================================================
+      # --- TỰ ĐỘNG TẠO FILE HỆ THỐNG VÀ FIX LỖI RES ---
       - name: Configure Buildozer
         run: |
           export PATH=$PATH:~/.local/bin
@@ -71,7 +67,7 @@ EOF
 </resources>
 EOF
 
-          # 3. Tạo Buildozer Spec
+          # 3. Tạo Buildozer Spec chuẩn
           if [ ! -f buildozer.spec ]; then buildozer init; fi
           sed -i 's/^#* *android.accept_sdk_license *=.*/android.accept_sdk_license = True/' buildozer.spec
           sed -i 's/^#* *package.domain *=.*/package.domain = org.zauto/' buildozer.spec
@@ -90,22 +86,18 @@ EOF
           sed -i 's|^#* *android.release_keystore *=.*|android.release_keystore = '"$(pwd)"'/mykeystore.keystore|' buildozer.spec
           sed -i 's/^#* *android.release_keyalias *=.*/android.release_keyalias = myalias/' buildozer.spec
           
-          # Fix Dependencies & Manifest
+          # Fix Dependencies & Manifest Injection
           sed -i '/^android.gradle_dependencies/d' buildozer.spec
           echo 'android.gradle_dependencies = androidx.core:core:1.12.0' >> buildozer.spec
           sed -i '/^android.extra_manifest_application/d' buildozer.spec
           echo 'android.extra_manifest_application = <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver> <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true"><intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter></service> <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="ZAuto VIP"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config" /></service> <service android:name="org.zauto.ZaloForegroundService" android:exported="false" android:foregroundServiceType="dataSync"/>' >> buildozer.spec
 
-      # =====================================================
-      # PHẪU THUẬT ĐIỂM: XÓA RÁC LỖI - ÉP BUILD MỚI
-      # =====================================================
       - name: Build APK
         run: |
           export PATH=$PATH:~/.local/bin
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
           
-          # LỆNH THẦN THÁNH: Xóa đúng thư mục phân phối bị lỗi để nạp Resource mới
-          # Việc này giữ lại SDK/NDK cực nặng trong cache giúp build nhanh hơn 10 phút
+          # --- PHẪU THUẬT: Xóa rác cũ nhưng giữ Cache nặng ---
           rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi/build
           rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi/src/main/res/values/strings.xml
           
