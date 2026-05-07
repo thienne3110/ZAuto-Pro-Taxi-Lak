@@ -18,7 +18,7 @@ jobs:
             ~/.buildozer
             .buildozer
             ~/.gradle
-          key: buildozer-${{ runner.os }}-v2026-zauto
+          key: buildozer-${{ runner.os }}-v2026-zauto-v5
           restore-keys: |
             buildozer-${{ runner.os }}-
 
@@ -49,10 +49,15 @@ jobs:
           sed -i 's/^#* *package.name *=.*/package.name = taxi/' buildozer.spec
           sed -i 's/^#* *title *=.*/title = ZAuto VIP/' buildozer.spec
           
-          # ĐÃ THÊM ĐUÔI .dat VÀO DÒNG NÀY ĐỂ ĐÓNG GÓI FILE BẢN QUYỀN
+          # --- CHỈ ĐỊNH ICON NGOÀI MÀN HÌNH LÀ FILE icon.png CHUẨN ---
+          sed -i 's/^#* *icon.filename *=.*/icon.filename = icon.png/' buildozer.spec
+          
+          # --- ĐÓNG GÓI ĐỦ ĐUÔI FILE (CÓ .dat ĐỂ CHẠY BẢN QUYỀN) ---
           sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json,xml,java,db,dat/' buildozer.spec
           
-          sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd,pyjnius/' buildozer.spec
+          # --- KHÓA CỨNG KIVYMD BẢN 1.1.1 ĐỂ KHÔNG LỖI GIAO DIỆN ---
+          sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd==1.1.1,pyjnius/' buildozer.spec
+          
           sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,ACCESS_FINE_LOCATION,SYSTEM_ALERT_WINDOW,QUERY_ALL_PACKAGES/' buildozer.spec
           sed -i 's/^#* *android.add_src *=.*/android.add_src = java/' buildozer.spec
           sed -i 's/^#* *android.add_resources *=.*/android.add_resources = res/' buildozer.spec
