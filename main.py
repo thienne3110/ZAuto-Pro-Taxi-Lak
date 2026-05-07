@@ -1,9 +1,10 @@
-import json, os, random
+import json, os, re, time, traceback
 from kivymd.app import MDApp
 from kivy.lang import Builder
 from kivy.utils import platform
 from kivy.clock import Clock
-from kivymd.uix.list import OneLineRightIconListItem, TwoLineListItem, OneLineListItem
+from kivymd.uix.card import MDCard
+from kivymd.uix.list import TwoLineAvatarIconListItem, ImageLeftWidget
 from kivy.properties import StringProperty, BooleanProperty
 from kivymd.toast import toast
 
@@ -12,64 +13,159 @@ if platform == 'android':
     from android.runnable import run_on_ui_thread
     from jnius import autoclass, cast
     from android.permissions import request_permissions, Permission
+    from android.broadcast import BroadcastReceiver
     PythonActivity = autoclass('org.kivy.android.PythonActivity')
     Settings = autoclass('android.provider.Settings')
     Intent = autoclass('android.content.Intent')
-    Uri = autoclass('android.net.Uri')
 else:
     BASE_PATH = './'
     def run_on_ui_thread(func): return func
 
 CONFIG_FILE = BASE_PATH + 'config.json'
 HISTORY_FILE = BASE_PATH + 'history.json'
-MATCHES_FILE = BASE_PATH + 'matches.json'
 
 KV = '''
-<GroupListItem>:
-    text: root.group_name
-    MDSwitch:
-        pos_hint: {'center_y': .5, 'center_x': .9}
-        active: root.is_active
-        on_active: app.toggle_group(root.group_name, self.active)
+# --- ĐỊNH NGHĨA THẺ CUỐC XE (RIDE CARD) ---
+<RideCard>:
+    orientation: "vertical"
+    padding: "16dp"
+    spacing: "12dp"
+    size_hint_y: None
+    height: "200dp"
+    elevation: 3
+    shadow_radius: 10
+    radius: [15, 15, 15, 15]
+    md_bg_color: 1, 1, 1, 1
 
+    MDBoxLayout:
+        orientation: "horizontal"
+        size_hint_y: None
+        height: "40dp"
+        spacing: "15dp"
+        FitImage:
+            source: "profile.jpg"
+            size_hint: None, None
+            size: "40dp", "40dp"
+            radius: [20, ]
+        MDBoxLayout:
+            orientation: "vertical"
+            MDLabel:
+                text: root.group_text
+                font_style: "Subtitle1"
+                bold: True
+                theme_text_color: "Primary"
+                shorten: True
+                shorten_from: "right"
+            MDLabel:
+                text: "Vừa xong lúc " + root.time_text
+                font_style: "Caption"
+                theme_text_color: "Secondary"
+
+    MDSeparator:
+
+    MDLabel:
+        text: root.msg_text
+        font_style: "Body1"
+        theme_text_color: "Custom"
+        text_color: 0.15, 0.15, 0.15, 1
+        valign: "top"
+        halign: "left"
+
+    MDBoxLayout:
+        orientation: "horizontal"
+        spacing: "15dp"
+        size_hint_y: None
+        height: "45dp"
+        MDRoundFlatButton:
+            text: "BỎ QUA"
+            size_hint_x: 0.4
+            text_color: 0.6, 0.2, 0.2, 1
+            line_color: 0.9, 0.5, 0.5, 1
+            font_name: "Roboto-Medium"
+            on_release: app.remove_ride(root)
+        MDRaisedButton:
+            text: "NHẬN CUỐC NGAY"
+            size_hint_x: 0.6
+            md_bg_color: 0.1, 0.5, 0.8, 1
+            font_name: "Roboto-Medium"
+            elevation: 2
+            on_release: app.manual_accept_ride(root)
+
+# --- GIAO DIỆN CHÍNH ---
 MDScreen:
+    md_bg_color: 0.95, 0.96, 0.98, 1
+
     MDBottomNavigation:
         panel_color: 1, 1, 1, 1
-        text_color_active: 0.1, 0.4, 0.8, 1
+        text_color_active: 0.1, 0.5, 0.8, 1
+        text_color_normal: 0.6, 0.6, 0.6, 1
+        use_text: True
 
+        # ================= TAB 1: CANH ME =================
         MDBottomNavigationItem:
             name: 'tab_canhme'
             text: 'Canh me'
             icon: 'radar'
+            
             MDBoxLayout:
-                orientation: 'vertical'
-                padding: "20dp"
-                spacing: "20dp"
-                MDLabel:
-                    text: "ZAUTO VIP V6 - TAXI LẮK"
-                    halign: "center"
-                    font_style: "H5"
-                    bold: True
-                MDIconButton:
-                    id: status_icon
-                    icon: "shield-off"
-                    icon_size: "120sp"
-                    theme_icon_color: "Custom"
-                    icon_color: 0.8, 0.2, 0.2, 1
-                    pos_hint: {"center_x": .5}
-                MDLabel:
-                    id: lbl_status
-                    text: "Hệ thống đang TẮT"
-                    halign: "center"
-                    font_style: "H6"
-                MDRaisedButton:
-                    id: btn_radar
-                    text: "BẬT RADAR VIP"
-                    pos_hint: {"center_x": .5}
-                    size_hint_x: 0.8
-                    md_bg_color: 0.1, 0.4, 0.8, 1
-                    on_release: app.toggle_radar()
+                orientation: "vertical"
+                
+                # Header Bar
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "60dp"
+                    padding: ["20dp", "0dp", "20dp", "0dp"]
+                    md_bg_color: 1, 1, 1, 1
+                    elevation: 1
+                    MDLabel:
+                        id: lbl_counter
+                        text: "RADAR VIP ĐANG QUÉT..."
+                        font_style: "Subtitle2"
+                        bold: True
+                        theme_text_color: "Custom"
+                        text_color: 0.1, 0.5, 0.8, 1
+                    MDBoxLayout:
+                        orientation: "horizontal"
+                        adaptive_width: True
+                        spacing: "10dp"
+                        MDLabel:
+                            text: "Auto:"
+                            font_style: "Subtitle2"
+                            halign: "right"
+                            valign: "center"
+                        MDSwitch:
+                            id: sw_auto_main
+                            pos_hint: {'center_y': .5}
+                            on_active: app.sync_auto_switch(self.active)
+                
+                # Banner cảnh báo
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "35dp"
+                    md_bg_color: 1, 0.95, 0.8, 1
+                    padding: ["10dp", "0dp"]
+                    MDIcon:
+                        icon: "alert-circle-outline"
+                        theme_text_color: "Custom"
+                        text_color: 0.8, 0.5, 0, 1
+                        pos_hint: {"center_y": .5}
+                        font_size: "18sp"
+                    MDLabel:
+                        text: " Hãy giữ màn hình sáng để ứng dụng bắt cuốc nhanh nhất."
+                        font_style: "Caption"
+                        theme_text_color: "Custom"
+                        text_color: 0.6, 0.4, 0, 1
+                        valign: "center"
 
+                ScrollView:
+                    MDBoxLayout:
+                        id: ride_list
+                        orientation: "vertical"
+                        padding: "16dp"
+                        spacing: "16dp"
+                        adaptive_height: True
+
+        # ================= TAB 2: LỊCH SỬ TIN NHẮN =================
         MDBottomNavigationItem:
             name: 'tab_tinnhan'
             text: 'Tin nhắn'
@@ -77,324 +173,356 @@ MDScreen:
             MDBoxLayout:
                 orientation: 'vertical'
                 MDTopAppBar:
-                    title: "Live Chat & Zalo Web"
-                    elevation: 2
-                    right_action_items: [["delete-sweep", lambda x: app.clear_history(HISTORY_FILE)]]
-                MDBoxLayout:
-                    orientation: 'horizontal'
-                    size_hint_y: None
-                    height: "60dp"
-                    padding: "10dp"
-                    spacing: "10dp"
-                    MDRaisedButton:
-                        text: "MỞ ZALO WEB (SYNC JS)"
-                        md_bg_color: 0, 0.5, 0, 1
-                        size_hint_x: 0.7
-                        on_release: app.open_zalo_web_qr()
-                    MDRaisedButton:
-                        text: "XÓA CACHE"
-                        md_bg_color: 0.8, 0.2, 0.2, 1
-                        size_hint_x: 0.3
-                        on_release: app.clear_web_cache()
+                    title: "Lịch sử tin nhắn"
+                    elevation: 1
+                    md_bg_color: 1, 1, 1, 1
+                    specific_text_color: 0.1, 0.1, 0.1, 1
+                    right_action_items: [["delete-sweep-outline", lambda x: app.clear_history()]]
                 ScrollView:
                     MDList:
                         id: msg_history_list
 
-        MDBottomNavigationItem:
-            name: 'tab_thongbao'
-            text: 'Chốt cuốc'
-            icon: 'bell-check'
-            MDBoxLayout:
-                orientation: 'vertical'
-                MDTopAppBar:
-                    title: "Cuốc xe thành công"
-                    elevation: 2
-                    right_action_items: [["delete-sweep", lambda x: app.clear_history(MATCHES_FILE)]]
-                MDCard:
-                    size_hint_y: None
-                    height: "80dp"
-                    padding: "10dp"
-                    md_bg_color: 0.9, 0.95, 1, 1
-                    MDLabel:
-                        id: lbl_doanhthu
-                        text: "Doanh thu tạm tính: 0 đ"
-                        halign: "center"
-                        font_style: "H6"
-                        bold: True
-                        theme_text_color: "Custom"
-                        text_color: 0.1, 0.6, 0.1, 1
-                ScrollView:
-                    MDList:
-                        id: match_history_list
-
+        # ================= TAB 3: CÀI ĐẶT =================
         MDBottomNavigationItem:
             name: 'tab_caidat'
             text: 'Cài đặt'
             icon: 'cog-outline'
             MDBoxLayout:
                 orientation: 'vertical'
+                MDTopAppBar:
+                    title: "Thiết lập hệ thống"
+                    elevation: 1
+                    md_bg_color: 1, 1, 1, 1
+                    specific_text_color: 0.1, 0.1, 0.1, 1
+                
                 ScrollView:
                     MDBoxLayout:
                         orientation: 'vertical'
                         adaptive_height: True
-                        padding: "15dp"
-                        spacing: "15dp"
+                        padding: "16dp"
+                        spacing: "20dp"
                         
+                        # --- THẺ PROFILE ---
                         MDCard:
                             size_hint: 1, None
                             height: "90dp"
-                            padding: "10dp"
-                            radius: [10, ]
+                            padding: "15dp"
+                            radius: [12, ]
+                            elevation: 2
+                            md_bg_color: 1, 1, 1, 1
                             MDBoxLayout:
                                 orientation: 'horizontal'
                                 spacing: "15dp"
                                 FitImage:
                                     source: 'profile.jpg'
                                     size_hint: None, None
-                                    size: "70dp", "70dp"
-                                    radius: [35, ]
-                                MDLabel:
-                                    text: "Vũ Văn Thành - Taxi Huyện Lắk"
-                                    bold: True
-                                    valign: "center"
+                                    size: "60dp", "60dp"
+                                    radius: [30, ]
+                                MDBoxLayout:
+                                    orientation: 'vertical'
+                                    MDLabel:
+                                        text: "Vũ Văn Thành"
+                                        font_style: "Subtitle1"
+                                        bold: True
+                                    MDLabel:
+                                        text: "Taxi Huyện Lắk - ZAuto VIP"
+                                        font_style: "Caption"
+                                        theme_text_color: "Secondary"
                         
-                        MDRaisedButton:
-                            text: "KIỂM TRA & CẤP QUYỀN FULL VIP"
-                            md_bg_color: 0.8, 0.4, 0.1, 1
-                            pos_hint: {"center_x": .5}
-                            size_hint_x: 1
-                            on_release: app.check_permissions_and_guide()
-                        MDTextField:
-                            id: inp_reply
-                            hint_text: "Câu chốt tự động (Spintax: Cách nhau dấu |)"
-                            mode: "rectangle"
-                        MDTextField:
-                            id: inp_nhan
-                            hint_text: "Từ khóa NHẬN (vd: taxi, xe)"
-                            mode: "rectangle"
-                        MDTextField:
-                            id: inp_loai
-                            hint_text: "Từ khóa LOẠI (để trống cũng đc)"
-                            mode: "rectangle"
-                        MDTextField:
-                            id: inp_gia_km
-                            hint_text: "Giá taxi/km (VD: 12000)"
-                            mode: "rectangle"
-                            input_filter: "int"
+                        # --- CỤM NÚT KẾT NỐI & QUYỀN ---
                         MDBoxLayout:
-                            MDLabel:
-                                text: "AI Tính giá & Anti-Ban"
-                                bold: True
-                            MDSwitch:
-                                id: sw_ai_price
-                                active: False
+                            orientation: "horizontal"
+                            spacing: "10dp"
+                            size_hint_y: None
+                            height: "45dp"
+                            MDRaisedButton:
+                                text: "LIÊN KẾT ZALO"
+                                icon: "qrcode-scan"
+                                size_hint_x: 0.5
+                                md_bg_color: 0.1, 0.6, 0.2, 1
+                                on_release: app.open_zalo_web_qr()
+                            MDRaisedButton:
+                                text: "CẤP QUYỀN APP"
+                                icon: "shield-check"
+                                size_hint_x: 0.5
+                                md_bg_color: 0.8, 0.4, 0.1, 1
+                                on_release: app.check_permissions_and_guide()
+                                
+                        # --- CỤM CÔNG TẮC ĐIỀU KHIỂN ---
+                        MDCard:
+                            orientation: "vertical"
+                            size_hint_y: None
+                            height: "110dp"
+                            padding: "10dp"
+                            radius: [12, ]
+                            elevation: 1
+                            md_bg_color: 1, 1, 1, 1
+                            MDBoxLayout:
+                                size_hint_y: None
+                                height: "45dp"
+                                MDLabel:
+                                    text: "Tự động chốt cuốc"
+                                    font_style: "Subtitle2"
+                                MDSwitch:
+                                    id: sw_auto_settings
+                                    pos_hint: {'center_y': .5}
+                                    on_active: app.sync_auto_switch(self.active)
+                            MDSeparator:
+                            MDBoxLayout:
+                                size_hint_y: None
+                                height: "45dp"
+                                MDLabel:
+                                    text: "Chỉ nhận tin chứa Từ Khóa"
+                                    font_style: "Subtitle2"
+                                MDSwitch:
+                                    id: sw_filter
+                                    pos_hint: {'center_y': .5}
+                        
+                        # --- CỤM TỪ KHÓA ---
+                        MDCard:
+                            orientation: "vertical"
+                            size_hint_y: None
+                            height: "220dp"
+                            padding: "15dp"
+                            spacing: "10dp"
+                            radius: [12, ]
+                            elevation: 1
+                            md_bg_color: 1, 1, 1, 1
+                            MDTextField:
+                                id: inp_nhan
+                                hint_text: "Từ khóa NHẬN (cách nhau dấu phẩy)"
+                                helper_text: "Ví dụ: taxi, xe, đón, book"
+                                helper_text_mode: "on_focus"
+                                icon_right: "check-circle-outline"
+                                icon_right_color: 0.1, 0.6, 0.2, 1
+                            MDTextField:
+                                id: inp_loai
+                                hint_text: "Từ khóa BỎ QUA (cách nhau dấu phẩy)"
+                                helper_text: "Ví dụ: gửi đồ, 16c, xe tải"
+                                helper_text_mode: "on_focus"
+                                icon_right: "close-circle-outline"
+                                icon_right_color: 0.8, 0.2, 0.2, 1
+                            MDTextField:
+                                id: inp_reply
+                                hint_text: "Nội dung trả lời tự động"
+                                helper_text: "Ví dụ: Dạ em nhận cuốc này ạ."
+                                helper_text_mode: "on_focus"
+                                icon_right: "message-reply-text-outline"
+                        
+                        # --- NÚT LƯU ---
                         MDRaisedButton:
-                            text: "LƯU CẤU HÌNH"
-                            pos_hint: {"center_x": .5}
+                            text: "LƯU CẤU HÌNH HỆ THỐNG"
+                            size_hint_x: 1
+                            size_hint_y: None
+                            height: "50dp"
+                            md_bg_color: 0.1, 0.5, 0.8, 1
+                            font_name: "Roboto-Bold"
+                            elevation: 2
                             on_release: app.save_config()
-                        MDSeparator:
-                        MDLabel:
-                            text: "Quản lý Nhóm/Người nhắn:"
-                            bold: True
-                        MDList:
-                            id: group_list
+                        
+                        # Khoảng trống đáy
+                        MDBoxLayout:
+                            size_hint_y: None
+                            height: "30dp"
 '''
 
-class GroupListItem(OneLineRightIconListItem):
-    group_name = StringProperty()
-    is_active = BooleanProperty(False)
+class RideCard(MDCard):
+    group_text = StringProperty()
+    msg_text = StringProperty()
+    time_text = StringProperty()
 
 class ZAutoProApp(MDApp):
-    radar_active = BooleanProperty(False)
-
     def build(self):
         self.icon = 'profile.jpg'
         self.theme_cls.primary_palette = "Blue"
-        self.config_data = {'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận', 'gia_km': '12000', 'ai_active': False, 'groups': {}}
+        self.config_data = {
+            'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận', 'gia_km': '12000',
+            'sw_filter': False, 'sw_auto': False, 'is_linked': False
+        }
+        self.is_linked = False # Khai báo mặc định là chưa liên kết
         self.root = Builder.load_string(KV)
         self.load_config()
-        Clock.schedule_interval(self.auto_refresh_ui, 1.0) 
         return self.root
 
     def on_start(self):
         if platform == 'android':
-            request_permissions([
-                Permission.ACCESS_FINE_LOCATION, 
-                Permission.ACCESS_COARSE_LOCATION, 
-                Permission.POST_NOTIFICATIONS
-            ])
-            Clock.schedule_once(self.check_permissions_and_guide, 3)
+            try:
+                # 1. Yêu cầu cấp quyền hệ thống
+                request_permissions([Permission.INTERNET, Permission.ACCESS_FINE_LOCATION, Permission.POST_NOTIFICATIONS])
+                
+                # 2. Khởi động dịch vụ chạy ngầm chống Kill App (Android 12+)
+                autoclass('org.zauto.ZaloForegroundService').startService(PythonActivity.mActivity)
+
+                # 3. Kích hoạt WakeLock để giữ CPU chạy khi tắt màn hình
+                PowerManager = autoclass('android.os.PowerManager')
+                Context = autoclass('android.content.Context')
+                pm = cast(PowerManager, PythonActivity.mActivity.getSystemService(Context.POWER_SERVICE))
+                self.wakelock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ZAuto::WakeLock")
+                if not self.wakelock.isHeld():
+                    self.wakelock.acquire()
+
+                # 4. Khởi tạo Cache chống bão tin nhắn & chống lặp (Spam Control)
+                self.processed_msg_hashes = set()
+                self.global_last_reply = 0
+                self.last_reply_time = {}
+
+                # 5. Đăng ký bộ lắng nghe Broadcast 3 Action (Động cơ Web + Động cơ Accessibility)
+                if not hasattr(self, 'receiver_started'):
+                    self.br = BroadcastReceiver(self.on_broadcast_received, 
+                        actions=[
+                            'org.zauto.taxi.NEW_MSG',       # NGUỒN 1: Tin nhắn bắt từ màn hình (Accessibility)
+                            'org.zauto.taxi.LOGIN_SUCCESS', # TÍN HIỆU: Đăng nhập Zalo Web thành công
+                            'org.zauto.taxi.WEB_NEW_MSG'    # NGUỒN 2: Tin nhắn cào ngầm từ Zalo Web (Main)
+                        ])
+                    self.br.start()
+                    self.receiver_started = True
+                    
+            except Exception:
+                print(traceback.format_exc())
+
+    def on_broadcast_received(self, context, intent):
+        action = intent.getAction()
+        
+        # Xử lý khi đăng nhập thành công
+        if action == 'org.zauto.taxi.LOGIN_SUCCESS':
+            self.is_linked = True
+            self.save_config_silent()
+            toast("Đã liên kết Zalo Web thành công!")
+            return
+
+        # Xử lý khi có tin nhắn mới (Gộp chung cả Accessibility và Web ẩn)
+        if action in ['org.zauto.taxi.NEW_MSG', 'org.zauto.taxi.WEB_NEW_MSG']:
+            group = intent.getStringExtra("group")
+            msg = intent.getStringExtra("msg")
+            
+            if group and msg:
+                msg_hash = str(hash(group + msg))
+                if msg_hash in self.processed_msg_hashes: return
+                self.processed_msg_hashes.add(msg_hash)
+                if len(self.processed_msg_hashes) > 500: self.processed_msg_hashes.clear()
+                
+                if self.root.ids.sw_filter.active:
+                    msg_low = msg.lower()
+                    loai_keys = [k.strip() for k in self.root.ids.inp_loai.text.lower().split(',') if k.strip()]
+                    if loai_keys and any(lk in msg_low for lk in loai_keys): return
+                    
+                    nhan_keys = [k.strip() for k in self.root.ids.inp_nhan.text.lower().split(',') if k.strip()]
+                    if nhan_keys and not any(nk in msg_low for nk in nhan_keys): return
+
+                Clock.schedule_once(lambda dt: self.add_ride_card(group, msg))
+                Clock.schedule_once(lambda dt: self.log_history(group, msg))
+
+                if self.root.ids.sw_auto_main.active:
+                    self.execute_reply(group, self.root.ids.inp_reply.text)
+
+    def add_ride_card(self, group, msg):
+        try:
+            if len(self.root.ids.ride_list.children) >= 50:
+                self.root.ids.ride_list.remove_widget(self.root.ids.ride_list.children[-1])
+            
+            card = RideCard(group_text=group, msg_text=msg, time_text=time.strftime("%H:%M"))
+            self.root.ids.ride_list.add_widget(card, index=0)
+        except Exception: print(traceback.format_exc())
+
+    def log_history(self, group, msg):
+        # Dùng List chuẩn Material của KivyMD
+        item = TwoLineAvatarIconListItem(text=f"[{time.strftime('%H:%M')}] {group}", secondary_text=msg)
+        item.add_widget(ImageLeftWidget(source="profile.jpg"))
+        self.root.ids.msg_history_list.add_widget(item, index=0)
+
+    def remove_ride(self, card_widget):
+        self.root.ids.ride_list.remove_widget(card_widget)
+
+    def manual_accept_ride(self, card_widget):
+        self.execute_reply(card_widget.group_text, self.root.ids.inp_reply.text)
+        self.remove_ride(card_widget)
+
+    def execute_reply(self, group, reply_text):
+        try:
+            now = time.time()
+            if now - getattr(self, 'global_last_reply', 0) < 3: return
+            self.global_last_reply = now
+            if now - self.last_reply_time.get(group, 0) < 30: return
+            self.last_reply_time[group] = now
+
+            if platform == 'android':
+                toast(f"Đang chốt cuốc thần tốc: {group}")
+                
+                # --- [LEVEL UP] ƯU TIÊN 1: BẮN TIN NGẦM QUA ZALO WEB ẨN ---
+                # Không giật màn hình, tốc độ bằng mili-giây
+                if self.is_linked: # Nếu đã quét QR
+                    js_command = f"window.sendHiddenMessage('{reply_text}');"
+                    autoclass('org.zauto.ZaloWebManager').executeJS(PythonActivity.mActivity, js_command)
+                    return # Đã bắn qua Web thành công thì thoát luôn
+
+                # --- [LEVEL UP] DỰ PHÒNG 2: DÙNG ACCESSIBILITY NATIVE ---
+                # Nếu chưa login Web, dùng Trợ năng vuốt màn hình
+                instance = autoclass('org.zauto.ZaloAccessibility').instance
+                if instance:
+                    instance.executeReplyContext(group, reply_text)
+                else:
+                    toast("LỖI: Chưa Link Web và Chưa Bật Trợ Năng!")
+        except Exception: 
+            print(traceback.format_exc())
+
+    def sync_auto_switch(self, active_state):
+        self.root.ids.sw_auto_main.active = active_state
+        self.root.ids.sw_auto_settings.active = active_state
+        self.save_config_silent()
 
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
             try:
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f: self.config_data = json.load(f)
+                with open(CONFIG_FILE, 'r', encoding='utf-8') as f: 
+                    self.config_data = json.load(f)
                 self.root.ids.inp_nhan.text = self.config_data.get('nhan', '')
                 self.root.ids.inp_loai.text = self.config_data.get('loai', '')
                 self.root.ids.inp_reply.text = self.config_data.get('reply_msg', 'Ok nhận')
-                self.root.ids.inp_gia_km.text = str(self.config_data.get('gia_km', '12000'))
-                self.root.ids.sw_ai_price.active = self.config_data.get('ai_active', False)
-                self.refresh_group_list()
+                
+                is_auto = self.config_data.get('sw_auto', False)
+                self.root.ids.sw_auto_main.active = is_auto
+                self.root.ids.sw_auto_settings.active = is_auto
+                self.root.ids.sw_filter.active = self.config_data.get('sw_filter', False)
+                self.is_linked = self.config_data.get('is_linked', False) # Nạp lại trạng thái
             except: pass
 
-    def save_config(self):
+    def save_config_silent(self):
         try:
             self.config_data.update({
                 'nhan': self.root.ids.inp_nhan.text.lower(),
                 'loai': self.root.ids.inp_loai.text.lower(),
                 'reply_msg': self.root.ids.inp_reply.text,
-                'gia_km': self.root.ids.inp_gia_km.text or '12000',
-                'ai_active': self.root.ids.sw_ai_price.active
+                'sw_filter': self.root.ids.sw_filter.active,
+                'sw_auto': self.root.ids.sw_auto_settings.active,
+                'is_linked': self.is_linked # Lưu trạng thái để tắt app bật lại không mất
             })
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f: 
                 json.dump(self.config_data, f, ensure_ascii=False)
-            toast("Đã lưu cấu hình VIP thành công!")
-        except Exception as e: toast(f"Lỗi: {e}")
-
-    def refresh_group_list(self):
-        self.root.ids.group_list.clear_widgets()
-        for g, active in self.config_data.get('groups', {}).items():
-            self.root.ids.group_list.add_widget(GroupListItem(group_name=g, is_active=active))
-
-    def toggle_group(self, name, state):
-        try:
-            self.config_data['groups'][name] = state
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f: json.dump(self.config_data, f, ensure_ascii=False)
         except: pass
 
-    def auto_refresh_ui(self, dt):
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f: new_data = json.load(f)
-                if len(new_data.get('groups', {})) != len(self.config_data.get('groups', {})):
-                    self.config_data = new_data
-                    self.refresh_group_list()
-            except: pass
-        self.update_list(HISTORY_FILE, self.root.ids.msg_history_list)
-        self.update_matches_and_revenue()
+    def clear_history(self):
+        self.root.ids.msg_history_list.clear_widgets()
+        toast("Đã dọn dẹp tin nhắn.")
 
-    def update_list(self, path, widget):
-        if os.path.exists(path):
+    def check_permissions_and_guide(self):
+        if platform == 'android':
             try:
-                with open(path, 'r', encoding='utf-8') as f: data = json.load(f)
-                widget.clear_widgets()
-                for i in reversed(data[-40:]):
-                    widget.add_widget(TwoLineListItem(text=f"Từ: {i['group']}", secondary_text=i['msg']))
+                toast("Hãy tìm và Bật ứng dụng ZAuto VIP")
+                PythonActivity.mActivity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             except: pass
 
-    def update_matches_and_revenue(self):
-        if os.path.exists(MATCHES_FILE):
-            try:
-                with open(MATCHES_FILE, 'r', encoding='utf-8') as f: data = json.load(f)
-                self.root.ids.match_history_list.clear_widgets()
-                total_revenue = 0
-                for i in reversed(data[-40:]):
-                    self.root.ids.match_history_list.add_widget(TwoLineListItem(text=f"Chốt: {i['group']}", secondary_text=i['msg']))
-                    total_revenue += i.get('revenue', 0)
-                self.root.ids.lbl_doanhthu.text = f"Doanh thu tạm tính: {total_revenue:,} đ"
-            except: pass
-
-    def clear_history(self, path):
-        if os.path.exists(path): os.remove(path)
-        if path == MATCHES_FILE: self.root.ids.lbl_doanhthu.text = "Doanh thu tạm tính: 0 đ"
-        toast("Đã dọn dẹp dữ liệu!")
-
-    @run_on_ui_thread
-    def clear_web_cache(self):
-        if platform != 'android': return
-        try:
-            WebView = autoclass('android.webkit.WebView')
-            WebStorage = autoclass('android.webkit.WebStorage')
-            Activity = PythonActivity.mActivity
-            WebView(Activity).clearCache(True)
-            WebStorage.getInstance().deleteAllData()
-            autoclass('android.webkit.CookieManager').getInstance().removeAllCookies(None)
-            autoclass('android.webkit.CookieManager').getInstance().flush()
-            toast("Đã xóa sạch bộ nhớ Web!")
-        except Exception as e: pass
-
-    @run_on_ui_thread
     def open_zalo_web_qr(self):
-        if platform != 'android': return
-        try:
-            WebView = autoclass('android.webkit.WebView')
-            WebChromeClient = autoclass('android.webkit.WebChromeClient')
-            CookieManager = autoclass('android.webkit.CookieManager')
-            Activity = PythonActivity.mActivity
-            Dialog = autoclass('android.app.Dialog')
-            
-            wv = WebView(Activity)
-            wv.setWebChromeClient(WebChromeClient())
-            settings = wv.getSettings()
-            
-            settings.setJavaScriptEnabled(True)
-            settings.setDomStorageEnabled(True)
-            settings.setDatabaseEnabled(True)
-            settings.setAllowFileAccess(True)
-            
-            user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Safari/605.1.15"
-            settings.setUserAgentString(user_agent)
-            
-            cookie_manager = CookieManager.getInstance()
-            cookie_manager.setAcceptCookie(True)
-            cookie_manager.setAcceptThirdPartyCookies(wv, True)
+        if platform == 'android':
+            try:
+                autoclass('org.zauto.ZaloWebManager').openZaloWebQR(PythonActivity.mActivity)
+            except Exception: print(traceback.format_exc())
 
-            js_inject = """
-                Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
-                setInterval(function() {
-                    let msgs = document.querySelectorAll('.message-view__bubble');
-                    if(msgs.length > 0) { console.log('ZAuto Sync: OK'); }
-                }, 2000);
-            """
-            wv.evaluateJavascript(js_inject, None)
-            wv.loadUrl("https://chat.zalo.me")
-            
-            dialog = Dialog(Activity, 16973830)
-            dialog.setContentView(wv)
-            dialog.show()
-            
-            toast("Web Sync VIP Mode: Bật. Bấm Back để thu nhỏ.")
-        except Exception as e: pass
-
-    def check_permissions_and_guide(self, dt=None):
-        if platform != 'android': return
-        try:
-            activity = PythonActivity.mActivity
-            package_name = activity.getPackageName()
-            pm = cast(autoclass('android.os.PowerManager'), activity.getSystemService("power"))
-            enabled = Settings.Secure.getString(activity.getContentResolver(), "enabled_notification_listeners")
-            
-            if package_name not in (enabled or ""):
-                toast("BẬT quyền Đọc tin nhắn!")
-                activity.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                return 
-            
-            if not pm.isIgnoringBatteryOptimizations(package_name):
-                toast("BẬT quyền Chạy ngầm!")
-                intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).setData(Uri.parse(f"package:{package_name}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                activity.startActivity(intent)
-                return
-                
-            toast("App đã kích hoạt Full Quyền VIP.")
-        except Exception as e: pass
-
-    def toggle_radar(self):
-        self.radar_active = not self.radar_active
-        if self.radar_active:
-            self.root.ids.status_icon.icon = "shield-check"
-            self.root.ids.status_icon.icon_color = (0.2, 0.8, 0.2, 1)
-            self.root.ids.lbl_status.text = "Radar VIP: QUÉT THẦN TỐC..."
-            self.root.ids.btn_radar.text = "DỪNG HỆ THỐNG"
-            self.root.ids.btn_radar.md_bg_color = (0.8, 0.2, 0.2, 1)
-            if platform == 'android':
-                try: autoclass('org.zauto.taxi.ServiceZaloservice').start(PythonActivity.mActivity, '')
-                except: pass
-        else:
-            self.root.ids.status_icon.icon = "shield-off"
-            self.root.ids.status_icon.icon_color = (0.8, 0.2, 0.2, 1)
-            self.root.ids.lbl_status.text = "Hệ thống đang TẮT"
-            self.root.ids.btn_radar.text = "BẬT RADAR VIP"
-            self.root.ids.btn_radar.md_bg_color = self.theme_cls.primary_color
+    def on_stop(self):
+        if platform == 'android':
+            try:
+                if hasattr(self, 'br'): self.br.stop()
+                if hasattr(self, 'wakelock') and self.wakelock.isHeld(): self.wakelock.release()
+            except: pass
 
 if __name__ == '__main__':
     ZAutoProApp().run()
