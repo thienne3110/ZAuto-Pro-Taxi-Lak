@@ -953,23 +953,25 @@ class ZAutoProApp(MDApp):
             toast("Tính năng này chỉ hoạt động trên điện thoại Android")        
 
     def update_profile_ui(self):
-        """Cập nhật thông tin Zalo sang Tab Tài khoản mới"""
-        # Kiểm tra xem các ID có tồn tại không để tránh văng app
+        """Cập nhật thông tin Zalo - Thêm kiểm tra an toàn"""
         try:
             ids = self.root.ids
+            # Nếu Python báo False nhưng thực tế file config có dữ liệu thì ép sang True
+            if self.config_data.get('zalo_name') and not self.is_linked:
+                self.is_linked = True
+
             if self.is_linked:
                 ids.zalo_name_view.text = self.config_data.get('zalo_name', "Đã kết nối")
                 ids.zalo_avatar_view.source = self.config_data.get('zalo_avatar', 'profile.jpg')
-                ids.zalo_status_detail.text = "Tài khoản đang hoạt động ngầm."
                 ids.btn_zalo_action.text = "HUỶ LIÊN KẾT ZALO"
-                ids.btn_zalo_action.md_bg_color = (0.8, 0.2, 0.2, 1) # Đổi sang màu Đỏ
+                ids.btn_zalo_action.md_bg_color = (0.8, 0.2, 0.2, 1)
             else:
                 ids.zalo_name_view.text = "Chưa kết nối Zalo"
                 ids.zalo_avatar_view.source = 'profile.jpg'
-                ids.zalo_status_detail.text = "Vui lòng liên kết để bắt đầu nhận cuốc."
                 ids.btn_zalo_action.text = "LIÊN KẾT ZALO NGAY"
-                ids.btn_zalo_action.md_bg_color = (0.1, 0.5, 0.8, 1) # Màu xanh dương
-        except: pass
+                ids.btn_zalo_action.md_bg_color = (0.1, 0.5, 0.8, 1)
+        except Exception as e:
+            print(f"Lỗi UI: {e}")
 
     def save_config(self):
         """Hàm sửa lỗi văng App: Gọi khi khách bấm nút LƯU CẤU HÌNH"""
