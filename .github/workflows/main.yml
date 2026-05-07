@@ -29,13 +29,10 @@ jobs:
           export PATH=$PATH:~/.local/bin
           mkdir -p res/xml res/values java/org/zauto
           
-          # Tạo file strings
           echo '<?xml version="1.0" encoding="utf-8"?><resources><string name="app_name">ZAuto VIP</string><string name="accessibility_desc">Dịch vụ hỗ trợ tự động nhận cuốc ZAuto VIP</string></resources>' > res/values/strings.xml
           
-          # Tạo file trợ năng
           echo '<?xml version="1.0" encoding="utf-8"?><accessibility-service xmlns:android="http://schemas.android.com/apk/res/android" android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged" android:accessibilityFeedbackType="feedbackGeneric" android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagRetrieveInteractiveWindows" android:canRetrieveWindowContent="true" android:description="@string/accessibility_desc" android:notificationTimeout="100" />' > res/xml/accessibility_config.xml
 
-          # Khởi tạo và cấu hình spec
           if [ ! -f buildozer.spec ]; then buildozer init; fi
           sed -i 's/^#* *android.accept_sdk_license *=.*/android.accept_sdk_license = True/' buildozer.spec
           sed -i 's/^#* *package.domain *=.*/package.domain = org.zauto/' buildozer.spec
@@ -49,7 +46,6 @@ jobs:
           sed -i 's/^#* *android.add_src *=.*/android.add_src = java/' buildozer.spec
           sed -i 's/^#* *android.add_resources *=.*/android.add_resources = res/' buildozer.spec
           
-          # Tiêm Manifest bằng cách nối chuỗi an toàn
           sed -i '/^android.extra_manifest_application/d' buildozer.spec
           echo 'android.extra_manifest_application = <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver> <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true"><intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter></service> <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="ZAuto VIP"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config" /></service> <service android:name="org.zauto.ZaloForegroundService" android:exported="false" android:foregroundServiceType="dataSync"/>' >> buildozer.spec
 
@@ -57,9 +53,13 @@ jobs:
         run: |
           export PATH=$PATH:~/.local/bin
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
-          # Xóa build cũ để nạp tài nguyên mới
+          
+          # Dọn dẹp rác Gradle cũ nhưng không xóa SDK/NDK
           rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi/build
-          yes | buildozer android debug
+          
+          # Chạy lệnh Build trực tiếp (Không dùng 'yes |' để tránh Broken pipe)
+          buildozer android debug
+        continue-on-error: false
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
