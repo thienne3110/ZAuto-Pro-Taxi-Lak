@@ -1,41 +1,39 @@
-- name: Configure Buildozer (VIP INJECTION)
+- name: Configure Buildozer (VIP PRODUCTION INJECTION)
         run: |
           export PATH=$PATH:~/.local/bin
           if [ ! -f buildozer.spec ]; then buildozer init; fi
 
+          # 1. Cấu hình cơ bản
           sed -i 's/^#* *android.accept_sdk_license *=.*/android.accept_sdk_license = True/' buildozer.spec
           sed -i 's/^#* *package.domain *=.*/package.domain = org.zauto/' buildozer.spec
           sed -i 's/^#* *package.name *=.*/package.name = taxi/' buildozer.spec
           sed -i 's/^#* *title *=.*/title = ZAuto VIP/' buildozer.spec
           
-          # THÊM ĐỊNH DẠNG FILE JAVA, XML
-          sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json,xml,java/' buildozer.spec
-          sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd,pyjnius/' buildozer.spec
+          # 2. Định dạng file và Requirements (Thêm db và sqlite3 nếu cần)
+          sed -i 's/^#* *source.include_exts *=.*/source.include_exts = py,png,jpg,kv,json,xml,java,db/' buildozer.spec
+          sed -i 's/^#* *requirements *=.*/requirements = python3,kivy==2.2.1,kivymd,pyjnius,sqlite3/' buildozer.spec
           
-          # CẤP QUYỀN HỆ THỐNG FULL
-          sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,POST_NOTIFICATIONS,RECEIVE_BOOT_COMPLETED,WAKE_LOCK,QUERY_ALL_PACKAGES,SYSTEM_ALERT_WINDOW/' buildozer.spec
+          # 3. Cấp quyền hệ thống (Đã thêm FOREGROUND_SERVICE_DATA_SYNC để khớp với Manifest)
+          sed -i 's/^#* *android.permissions *=.*/android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,ACCESS_FINE_LOCATION,SYSTEM_ALERT_WINDOW,QUERY_ALL_PACKAGES/' buildozer.spec
 
-          # INJECT JAVA NATIVE, RESOURCES
+          # 4. Inject Java Native và Resources
           sed -i 's/^#* *android.add_src *=.*/android.add_src = java/' buildozer.spec
           sed -i 's/^#* *android.add_resources *=.*/android.add_resources = res/' buildozer.spec
           
-          # VÔ HIỆU HÓA MANIFEST CŨ VÀ SERVICE PYTHON CŨ
+          # 5. Vô hiệu hóa tàn dư cũ
           sed -i 's/^#* *android.manifest.template *=.*/# android.manifest.template = /' buildozer.spec
           sed -i 's/^#* *services *=.*/# services = /' buildozer.spec
 
-          # CẤU HÌNH DỊCH VỤ CHẠY NGẦM MỚI
-          sed -i 's/^#* *android.foreground_service *=.*/android.foreground_service = True/' buildozer.spec
-          sed -i 's/^#* *android.preserve_data *=.*/android.preserve_data = True/' buildozer.spec
-
-          # UPDATE API LEVEL CHO CHUẨN NATIVE
+          # 6. Cấu hình API Level mới nhất (Android 14/15)
           sed -i 's/^#* *android.api *=.*/android.api = 34/' buildozer.spec
           sed -i 's/^#* *android.minapi *=.*/android.minapi = 24/' buildozer.spec
           sed -i 's/^#* *android.archs *=.*/android.archs = arm64-v8a, armeabi-v7a/' buildozer.spec
-          sed -i 's/^#* *android.release_artifact *=.*/android.release_artifact = apk/' buildozer.spec
+          sed -i 's/^#* *android.foreground_service *=.*/android.foreground_service = True/' buildozer.spec
           
+          # 7. Keystore cấu hình
           sed -i 's|^#* *android.release_keystore *=.*|android.release_keystore = '"$(pwd)"'/mykeystore.keystore|' buildozer.spec
           sed -i 's/^#* *android.release_keyalias *=.*/android.release_keyalias = myalias/' buildozer.spec
 
-          # --- [QUAN TRỌNG] CHÍCH ĐỦ 3 DỊCH VỤ VÀ 1 RECEIVER VÀO MANIFEST ---
+          # 8. TIÊM TỨ TRỤ SERVICE (Đã bọc dấu nháy và định dạng chuẩn để tránh lỗi Buildozer)
           sed -i '/^android.manifest.extra_manifest_application_arguments/d' buildozer.spec
           echo 'android.manifest.extra_manifest_application_arguments = <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"><intent-filter><action android:name="android.intent.action.BOOT_COMPLETED" /></intent-filter></receiver> <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true"><intent-filter><action android:name="android.service.notification.NotificationListenerService" /></intent-filter></service> <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true"><intent-filter><action android:name="android.accessibilityservice.AccessibilityService" /></intent-filter><meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config" /></service> <service android:name="org.zauto.ZaloForegroundService" android:exported="false" android:foregroundServiceType="dataSync"/>' >> buildozer.spec
