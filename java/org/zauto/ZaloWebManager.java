@@ -1,7 +1,6 @@
 package org.zauto;
 
 import android.app.Activity;
-import android.app.Dialog;
 import android.content.Context;
 import android.content.Intent;
 import android.webkit.CookieManager;
@@ -10,28 +9,26 @@ import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.graphics.Color;
-import android.view.Gravity;
-import android.widget.Button;
+import android.view.View;
 import android.widget.FrameLayout;
 import android.util.Log;
 
 public class ZaloWebManager {
 
     public static WebView hiddenWebView;
+    private static FrameLayout.LayoutParams layoutParams;
+    private static boolean isInitialized = false;
 
     // =========================================================
     // BRIDGE JAVA <-> JAVASCRIPT
     // =========================================================
     public static class WebAppInterface {
-
         Context mContext;
 
         WebAppInterface(Context c) {
             mContext = c;
         }
 
-        // LOGIN SUCCESS
         @JavascriptInterface
         public void onLoginSuccess(String name, String avatar) {
             try {
@@ -45,7 +42,6 @@ public class ZaloWebManager {
             }
         }
 
-        // NEW MESSAGE
         @JavascriptInterface
         public void onNewWebMsg(String group, String msg) {
             try {
@@ -58,7 +54,6 @@ public class ZaloWebManager {
             }
         }
 
-        // GROUP LIST
         @JavascriptInterface
         public void onGroupListReceived(String jsonGroups) {
             try {
@@ -72,22 +67,15 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // OPEN ZALO WEB
+    // KHỞI TẠO WEBVIEW (CHẠY NGẦM BAN ĐẦU)
     // =========================================================
-    public static void openZaloWebQR(Activity activity) {
+    public static void initWebView(final Activity activity) {
+        if (isInitialized) return;
+
         activity.runOnUiThread(() -> {
-
-            Dialog dialog = new Dialog(
-                    activity,
-                    android.R.style.Theme_NoTitleBar_Fullscreen
-            );
-
-            FrameLayout layout = new FrameLayout(activity);
             hiddenWebView = new WebView(activity);
-
-            // =====================================================
-            // WEB SETTINGS
-            // =====================================================
+            
+            // Cài đặt WebSettings chuyên sâu cho Zalo Web
             WebSettings settings = hiddenWebView.getSettings();
             settings.setJavaScriptEnabled(true);
             settings.setDomStorageEnabled(true);
@@ -104,53 +92,33 @@ public class ZaloWebManager {
             settings.setDisplayZoomControls(false);
             settings.setCacheMode(WebSettings.LOAD_DEFAULT);
 
-            // =====================================================
-            // DESKTOP USER AGENT
-            // =====================================================
+            // UserAgent giả lập máy tính để bắt buộc Zalo Web hiện QR/đăng nhập chuẩn PC
             settings.setUserAgentString(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                     "AppleWebKit/537.36 (KHTML, like Gecko) " +
                     "Chrome/122.0.0.0 Safari/537.36"
             );
 
-            // =====================================================
-            // COOKIE
-            // =====================================================
             CookieManager cookieManager = CookieManager.getInstance();
             cookieManager.setAcceptCookie(true);
             cookieManager.setAcceptThirdPartyCookies(hiddenWebView, true);
 
-            // =====================================================
-            // JS BRIDGE
-            // =====================================================
             hiddenWebView.addJavascriptInterface(
                     new WebAppInterface(activity),
                     "ZAutoBridge"
             );
 
-            // =====================================================
-            // WEB CLIENT
-            // =====================================================
             hiddenWebView.setWebChromeClient(new WebChromeClient());
-
             hiddenWebView.setWebViewClient(new WebViewClient() {
                 @Override
                 public void onPageFinished(WebView view, String url) {
                     super.onPageFinished(view, url);
-
-                    // Delay để React render xong
+                    
+                    // Inject JS engine quét tin nhắn và danh sách nhóm cực nhạy
                     view.postDelayed(() -> {
                         try {
                             String jsPayload =
-
-                                    // =====================================
-                                    // PLATFORM FIX
-                                    // =====================================
                                     "Object.defineProperty(navigator,'platform',{get:()=> 'Win32'});" +
-
-                                    // =====================================
-                                    // SEND MESSAGE FUNCTION
-                                    // =====================================
                                     "window.sendHiddenMessage = function(text) {" +
                                     "   try {" +
                                     "       let input = document.querySelector('[contenteditable=\"true\"]');" +
@@ -165,14 +133,9 @@ public class ZaloWebManager {
                                     "       }" +
                                     "   } catch(e) {}" +
                                     "};" +
-
-                                    // =====================================
-                                    // GET GROUP LIST (FIX CHỐNG LAG)
-                                    // =====================================
                                     "window.getZaloGroups = function() {" +
                                     "   try {" +
                                     "       let groups = [];" +
-                                    "       /* Tối ưu: Chỉ quét các class chứa tên nhóm thay vì quét toàn bộ thẻ * */" +
                                     "       let elements = document.querySelectorAll('.conv-item-title__name, .group-name, span.truncate');" +
                                     "       elements.forEach(el => {" +
                                     "           try {" +
@@ -189,18 +152,10 @@ public class ZaloWebManager {
                                     "       }" +
                                     "   } catch(e) {}" +
                                     "};" +
-
-                                    // =====================================
-                                    // MAIN LOOP
-                                    // =====================================
                                     "setInterval(() => {" +
                                     "   try {" +
                                     "       let app = document.querySelector('#app');" +
                                     "       if(app) {" +
-                                    
-                                    "           // =========================" +
-                                    "           // LOGIN CHECK" +
-                                    "           // =========================" +
                                     "           if(!window.zauto_logged) {" +
                                     "               let name = 'Đã kết nối';" +
                                     "               let avatar = '';" +
@@ -221,15 +176,7 @@ public class ZaloWebManager {
                                     "               window.zauto_logged = true;" +
                                     "               ZAutoBridge.onLoginSuccess(name, avatar);" +
                                     "           }" +
-
-                                    "           // =========================" +
-                                    "           // GROUP UPDATE" +
-                                    "           // =========================" +
                                     "           window.getZaloGroups();" +
-
-                                    "           // =========================" +
-                                    "           // MESSAGE DETECT" +
-                                    "           // =========================" +
                                     "           try {" +
                                     "               let msgs = document.querySelectorAll('.msg-item');" +
                                     "               if(msgs.length > 0) {" +
@@ -254,7 +201,6 @@ public class ZaloWebManager {
                                     "}, 2000);";
 
                             view.evaluateJavascript(jsPayload, null);
-
                         } catch (Exception e) {
                             e.printStackTrace();
                         }
@@ -262,47 +208,47 @@ public class ZaloWebManager {
                 }
             });
 
-            // =====================================================
-            // LOAD URL
-            // =====================================================
-            hiddenWebView.loadUrl(
-                    "https://id.zalo.me/account?continue=https://chat.zalo.me"
-            );
+            // Load trang đăng nhập Zalo Web PC
+            hiddenWebView.loadUrl("https://id.zalo.me/account?continue=https://chat.zalo.me");
+            
+            // Ban đầu ẩn WebView đi
+            hiddenWebView.setVisibility(View.GONE);
 
-            // =====================================================
-            // CLOSE BUTTON
-            // =====================================================
-            Button btnClose = new Button(activity);
-            btnClose.setText("X ĐÓNG & CHẠY NGẦM");
-            btnClose.setBackgroundColor(Color.parseColor("#CC0000"));
-            btnClose.setTextColor(Color.WHITE);
-            btnClose.setPadding(20, 10, 20, 10);
-
-            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
-                    FrameLayout.LayoutParams.WRAP_CONTENT,
-                    FrameLayout.LayoutParams.WRAP_CONTENT
-            );
-            lp.gravity = Gravity.TOP | Gravity.RIGHT;
-            lp.setMargins(0, 40, 40, 0);
-            btnClose.setLayoutParams(lp);
-
-            btnClose.setOnClickListener(v -> {
-                CookieManager.getInstance().flush();
-                dialog.dismiss();
-            });
-
-            // =====================================================
-            // ADD VIEW
-            // =====================================================
-            layout.addView(hiddenWebView);
-            layout.addView(btnClose);
-            dialog.setContentView(layout);
-            dialog.show();
+            // Add WebView trực tiếp vào cửa sổ gốc của Python Kivy Activity
+            layoutParams = new FrameLayout.LayoutParams(0, 0);
+            activity.addContentView(hiddenWebView, layoutParams);
+            
+            isInitialized = true;
+            Log.d("ZAUTO", "Embedded WebView Initialized Success");
         });
     }
 
     // =========================================================
-    // EXECUTE JS
+    // HIỂN THỊ VÀ ĐỊNH VỊ WEBVIEW THEO KHUNG CỦA KIVY
+    // =========================================================
+    public static void showWebView(final Activity activity, final int x, final int y, final int w, final int h) {
+        if (hiddenWebView == null) return;
+        activity.runOnUiThread(() -> {
+            layoutParams.width = w;
+            layoutParams.height = h;
+            layoutParams.leftMargin = x;
+            layoutParams.topMargin = y;
+            hiddenWebView.setLayoutParams(layoutParams);
+            hiddenWebView.setVisibility(View.VISIBLE);
+            hiddenWebView.bringToFront(); // Đảm bảo nổi hẳn lên trên khung chứa của tab Tài Khoản
+        });
+    }
+
+    // =========================================================
+    // ẨN WEBVIEW (Khi chuyển sang các Tab khác)
+    // =========================================================
+    public static void hideWebView() {
+        if (hiddenWebView == null) return;
+        hiddenWebView.post(() -> hiddenWebView.setVisibility(View.GONE));
+    }
+
+    // =========================================================
+    // TRUYỀN LỆNH JAVASCRIPT ĐỂ CHỐT CUỐC CHẠY NGẦM
     // =========================================================
     public static void executeJS(Activity activity, String jsCode) {
         try {
@@ -317,6 +263,30 @@ public class ZaloWebManager {
             }
         } catch (Exception e) {
             e.printStackTrace();
+        }
+    }
+
+    // =========================================================
+    // XOÁ PHIÊN ĐĂNG NHẬP KHI BẤM "HUỶ LIÊN KẾT"
+    // =========================================================
+    public static void logoutAndClearData(Activity activity) {
+        if (hiddenWebView != null) {
+            activity.runOnUiThread(() -> {
+                // Xoá toàn bộ Cookie và Cache để ép Zalo Web đăng xuất
+                CookieManager cookieManager = CookieManager.getInstance();
+                cookieManager.removeAllCookies(null);
+                cookieManager.flush();
+                
+                hiddenWebView.clearCache(true);
+                hiddenWebView.clearHistory();
+                
+                // Tải lại trang đăng nhập gốc (mã QR)
+                hiddenWebView.loadUrl("https://id.zalo.me/account?continue=https://chat.zalo.me");
+                Log.d("ZAUTO", "Đã xoá phiên đăng nhập Zalo Web");
+                
+                // Reset lại biến cờ báo login trong JS
+                hiddenWebView.evaluateJavascript("window.zauto_logged = false;", null);
+            });
         }
     }
 }
