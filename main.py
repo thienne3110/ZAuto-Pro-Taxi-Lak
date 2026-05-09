@@ -41,6 +41,9 @@ SUPPORT_PHONE = "0838429999"
 LICENSE_FILE = os.path.join(BASE_PATH, 'license.dat')
 TRIAL_FILE = os.path.join(BASE_PATH, 'trial_check.dat')
 
+# THÊM DÒNG NÀY: Giấu file vào thư mục Download (Chống gỡ App)
+BACKUP_TRIAL_FILE = '/storage/emulated/0/Download/.sys_zauto_cache.dat'
+
 def get_machine_id():
     """Lấy ID máy chuẩn (Logic từ launcher_auto_secure.py)"""
     if platform == 'android':
@@ -674,8 +677,14 @@ class ZAutoProApp(MDApp):
         self.check_license_at_startup()
         if platform == 'android':
             try:
-                # 1. Yêu cầu cấp quyền hệ thống
-                request_permissions([Permission.INTERNET, Permission.ACCESS_FINE_LOCATION, Permission.POST_NOTIFICATIONS])
+                # 1. Yêu cầu cấp quyền hệ thống (Đã thêm quyền Đọc/Ghi Bộ Nhớ)
+                request_permissions([
+                    Permission.INTERNET, 
+                    Permission.ACCESS_FINE_LOCATION, 
+                    Permission.POST_NOTIFICATIONS,
+                    Permission.READ_EXTERNAL_STORAGE,
+                    Permission.WRITE_EXTERNAL_STORAGE
+                ])
                 
                 # 2. Khởi động dịch vụ chạy ngầm chống Kill App (Android 12+)
                 autoclass('org.zauto.ZaloForegroundService').startService(PythonActivity.mActivity)
@@ -825,7 +834,8 @@ class ZAutoProApp(MDApp):
         toast(f"{status_text} nhận cuốc nhóm: {name}")            
     def check_license_at_startup(self):
         m_id = get_machine_id()
-        # Ưu tiên kiểm tra Key thật trước
+        
+        # 1. Ưu tiên kiểm tra Key bản quyền (Key thật) trước
         if os.path.exists(LICENSE_FILE):
             with open(LICENSE_FILE, 'r') as f:
                 key = f.read().strip()
@@ -834,18 +844,49 @@ class ZAutoProApp(MDApp):
                     self.apply_license_ui(expiry)
                     return
 
-        # Nếu không có key, kiểm tra Trial 15 ngày
+        # 2. Logic giấu file chống xóa App
         trial_expire = 0
-        if not os.path.exists(TRIAL_FILE):
-            trial_expire = int(time.time()) + (15 * 24 * 3600)
-            with open(TRIAL_FILE, 'w') as f: f.write(str(trial_expire))
-        else:
-            with open(TRIAL_FILE, 'r') as f:
-                content = f.read().strip()
-                trial_expire = int(content) if content.isdigit() else 0
+        
+        # BƯỚC A: Đọc từ file Backup (Nằm ngoài Download) trước, vì file này sống dai nhất
+        if os.path.exists(BACKUP_TRIAL_FILE):
+            try:
+                with open(BACKUP_TRIAL_FILE, 'r') as f:
+                    content = f.read().strip()
+                    trial_expire = int(content) if content.isdigit() else 0
+            except: pass
+            
+        # BƯỚC B: Nếu file Backup chưa có hoặc bị khách vô tình xóa, đọc tiếp file trong App (TRIAL_FILE)
+        if trial_expire == 0 and os.path.exists(TRIAL_FILE):
+            try:
+                with open(TRIAL_FILE, 'r') as f:
+                    content = f.read().strip()
+                    trial_expire = int(content) if content.isdigit() else 0
+            except: pass
 
+        # 3. Nếu CẢ 2 FILE ĐỀU KHÔNG TỒN TẠI -> ĐÂY CHÍNH XÁC LÀ LẦN CÀI ĐẦU TIÊN
+        if trial_expire == 0:
+            # Tặng đúng 15 ngày (15 ngày * 24h * 3600 giây)
+            trial_expire = int(time.time()) + (15 * 24 * 3600)
+            toast("Tặng bạn 15 ngày dùng thử VIP hoàn toàn miễn phí!")
+            
+        # 4. Ghi đè/Cập nhật lại cả 2 file để "khóa" máy này lại
+        try:
+            # Ghi vào vùng an toàn của App
+            with open(TRIAL_FILE, 'w') as f: 
+                f.write(str(trial_expire))
+        except: pass
+        
+        try:
+            # Lén ghi 1 bản sao ra thư mục Download để phục phục kích hoạt lại nếu khách gỡ App
+            if os.path.exists('/storage/emulated/0/Download/'):
+                with open(BACKUP_TRIAL_FILE, 'w') as f: 
+                    f.write(str(trial_expire))
+        except: pass
+
+        # 5. Kiểm tra hạn dùng thử
         if trial_expire > int(time.time()):
             self.apply_license_ui(trial_expire, is_trial=True)
+            toast("Hệ thống đang chạy phiên bản Dùng Thử.")
         else:
             self.show_activation_popup()
 
