@@ -1045,7 +1045,7 @@ class ZAutoProApp(MDApp):
     
 
     def load_config(self):
-        """Nạp cấu hình từ file và cập nhật toàn bộ giao diện (Canh me, Nhóm, Tài khoản, Cài đặt)"""
+        """Nạp cấu hình từ file và cập nhật toàn bộ giao diện"""
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f: 
@@ -1053,7 +1053,6 @@ class ZAutoProApp(MDApp):
                 
                 # 1. NẠP TRẠNG THÁI LIÊN KẾT & DANH SÁCH NHÓM ĐÃ LƯU
                 self.is_linked = self.config_data.get('is_linked', False)
-                # Quan trọng: Nạp sổ cái các nhóm đã Bật/Tắt từ trước
                 self.enabled_groups = self.config_data.get('enabled_groups', {})
                 
                 # 2. CẬP NHẬT CÁC Ô NHẬP LIỆU (TAB CÀI ĐẶT)
@@ -1069,29 +1068,27 @@ class ZAutoProApp(MDApp):
                 if ids.get('sw_filter'):
                     ids.sw_filter.active = self.config_data.get('sw_filter', False)
 
-                # 4. ĐỒNG BỘ CÔNG TẮC AUTO CHỐT (ĐỒNG BỘ GIỮA TAB 1 VÀ TAB 4)
-                # Khi gán lệnh này, hàm sync_auto_switch sẽ tự chạy để đổi màu nút Radar
+                # 4. ĐỒNG BỘ CÔNG TẮC AUTO CHỐT
                 is_auto = self.config_data.get('sw_auto', False)
                 if ids.get('sw_auto_settings'):
                     ids.sw_auto_settings.active = is_auto
                 
-                # 5. VẼ LẠI GIAO DIỆN TÀI KHOẢN (Tên Zalo, Ảnh đại diện)
-                self.update_profile_ui()
-                
-                # 6. KHỞI TẠO LẠI DANH SÁCH NHÓM (Nếu đã có dữ liệu cũ)
-                # Giúp Tab Nhóm hiện lại các nhóm cũ ngay cả khi chưa kịp quét từ Web
+                # 5. KHỞI TẠO LẠI DANH SÁCH NHÓM
                 if self.enabled_groups:
                     Clock.schedule_once(lambda dt: self.update_group_list_ui(self.enabled_groups.keys()))
                 
             except Exception as e:
                 print(f"Lỗi nạp cấu hình: {e}")
-                # Reset về mặc định nếu file json bị lỗi cấu trúc
                 self.config_data = {
                     'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận',
                     'sw_filter': False, 'sw_auto': False, 'is_linked': False,
                     'enabled_groups': {}
                 }
                 self.enabled_groups = {}
+                
+        # CHÚ Ý: Lệnh này đã được đưa ra ngoài lề if!
+        # Dù máy mới tinh (không có file config), nó vẫn sẽ chạy để vẽ lại nút "LIÊN KẾT ZALO NGAY"
+        self.update_profile_ui()
     def save_config_silent(self):
         try:
             self.config_data.update({
