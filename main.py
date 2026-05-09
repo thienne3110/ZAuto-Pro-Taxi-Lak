@@ -735,37 +735,39 @@ class ZAutoProApp(MDApp):
         if platform != 'android':
             return
             
+        # NẾU CHƯA ĐĂNG NHẬP THÌ ẨN WEBVIEW, KHÔNG HIỆN LÊN TAB
+        if not getattr(self, 'is_linked', False):
+            try:
+                from jnius import autoclass
+                ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
+                ZaloWebManager.hideWebView()
+            except: pass
+            return
+
         try:
-            # Lấy Widget định vị đã được định nghĩa trong file KV
             placeholder = self.root.ids.webview_placeholder
             
-            # 1. Lấy kích thước màn hình thực tế của thiết bị Android (đơn vị pixel)
+            from jnius import autoclass
             Window = autoclass('android.view.Window')
             window = PythonActivity.mActivity.getWindow()
             decorView = window.getDecorView()
             screen_height = decorView.getHeight()
 
-            # 2. Tính tỷ lệ chuyển đổi từ giao diện Kivy sang hệ tọa độ màn hình thực
             from kivy.core.window import Window as KivyWindow
             scale = screen_height / KivyWindow.height 
 
-            # 3. Lấy tọa độ gốc và kích thước của thẻ placeholder trong Kivy (Gốc ở góc dưới-trái)
             kx, ky = placeholder.to_window(*placeholder.pos)
             kw, kh = placeholder.size
 
-            # 4. Chuyển đổi sang hệ tọa độ Android Pixel (Gốc ở góc trên-trái)
             x = int(kx * scale)
             y = int((KivyWindow.height - ky - kh) * scale)
             w = int(kw * scale)
             h = int(kh * scale)
 
-            # 5. Gửi tọa độ xuống Java để ép WebView nằm đúng vị trí
             ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
             ZaloWebManager.showWebView(PythonActivity.mActivity, x, y, w, h)
-            
         except Exception as e:
             print(f"Lỗi định vị WebView: {e}")
-            print(traceback.format_exc())
     def update_group_list_ui(self, groups):
         """Cập nhật danh sách nhóm từ Zalo Web lên giao diện Tab Nhóm"""
         try:
@@ -872,6 +874,10 @@ class ZAutoProApp(MDApp):
             
             self.save_config_silent()
             self.update_profile_ui()
+            
+            # GỌI HÀM NÀY ĐỂ BUNG KHUNG CHAT ZALO VÀO TAB NGAY KHI POPUP ĐÓNG XONG
+            Clock.schedule_once(lambda dt: self.position_webview(), 0.5)
+
             toast("Đã liên kết Zalo Web thành công!")
             return
 
@@ -1051,16 +1057,14 @@ class ZAutoProApp(MDApp):
                 json.dump(self.config_data, f, ensure_ascii=False)
         except: pass
     def handle_zalo_auth(self):
-        """Xử lý nút bấm: Nếu đã liên kết thì Hủy (Đăng xuất), nếu chưa thì thông báo chú ý"""
+        """Xử lý nút bấm: Nếu đã liên kết thì Hủy, nếu chưa thì bật Popup quét QR"""
         if getattr(self, 'is_linked', False):
-            # 1. Logic Hủy liên kết trên giao diện Kivy
             self.is_linked = False
             self.config_data['zalo_name'] = ""
             self.config_data['zalo_avatar'] = ""
             self.save_config_silent()
             self.update_profile_ui()
             
-            # 2. Gọi Java để xóa Cookie và tải lại mã QR của Zalo Web
             if platform == 'android':
                 try:
                     from jnius import autoclass
@@ -1072,8 +1076,15 @@ class ZAutoProApp(MDApp):
             
             toast("Đã đăng xuất và hủy liên kết Zalo Web.")
         else:
-            # Nếu chưa liên kết, nhắc tài xế nhìn xuống khung web bên dưới
-            toast("Vui lòng quét mã QR ở khung bên dưới để đăng nhập!")
+            # GỌI LẠI POPUP QUÉT QR TRÀN MÀN HÌNH NHƯ CŨ
+            if platform == 'android':
+                try:
+                    from jnius import autoclass
+                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                    ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
+                    ZaloWebManager.openZaloWebQR(PythonActivity.mActivity)
+                except Exception as e:
+                    print(f"Lỗi mở popup QR: {e}")
     
 
     def update_profile_ui(self):
