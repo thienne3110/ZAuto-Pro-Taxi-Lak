@@ -2,6 +2,8 @@ import json, os, re, time, traceback
 import hashlib # Dùng để băm SHA256 kiểm tra key
 import uuid    # Dùng để lấy ID máy
 import random
+from kivy.core.window import Window
+Window.softinput_mode = "below_target" # FIX 6: Chống bàn phím đè layout
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 # Thêm các thành phần giao diện của Kivy
@@ -287,8 +289,8 @@ MDScreen:
 
                     # 1. THẺ THÔNG TIN TÀI KHOẢN GỐC (Thiết kế lại 2 tầng chuẩn Mobile)
                     MDCard:
-                        orientation: "vertical"  # Chuyển thành bố cục dọc
-                        adaptive_height: True    # Tự động co giãn theo nội dung
+                        orientation: "vertical"
+                        adaptive_height: True
                         padding: "15dp"
                         spacing: "15dp"
                         radius: [12, ]
@@ -298,7 +300,7 @@ MDScreen:
                         MDBoxLayout:
                             orientation: "horizontal"
                             adaptive_height: True
-                            spacing: "15dp"
+                            spacing: "10dp"
                             
                             FitImage:
                                 id: zalo_avatar_view
@@ -312,23 +314,30 @@ MDScreen:
                                 orientation: "vertical"
                                 adaptive_height: True
                                 pos_hint: {"center_y": .5}
+                                
                                 MDLabel:
                                     id: zalo_name_view
                                     text: "Chưa kết nối Zalo"
                                     font_style: "Subtitle1"
                                     bold: True
+                                    # FIX 2: Ép tự xuống dòng
                                     adaptive_height: True
+                                    text_size: self.width, None
+                                    
                                 MDLabel:
                                     id: zalo_status_detail
                                     text: "Quét QR bên dưới để kết nối"
                                     font_style: "Caption"
                                     theme_text_color: "Secondary"
+                                    # FIX 2: Ép tự xuống dòng và cắt chữ
                                     adaptive_height: True
+                                    text_size: self.width, None
+                                    shorten: True
                                     
                         MDRaisedButton:
                             id: btn_zalo_action
                             text: "LIÊN KẾT ZALO NGAY"
-                            size_hint_x: 1  # Trải dài nút bấm ra 100% bề ngang
+                            size_hint_x: 1
                             height: "45dp"
                             md_bg_color: 0.1, 0.5, 0.8, 1
                             on_release: app.handle_zalo_auth()
@@ -371,17 +380,24 @@ MDScreen:
                                 size_hint: None, None
                                 size: "50dp", "50dp"
                                 radius: [25, ]
+                                pos_hint: {"center_y": .5}
                             MDBoxLayout:
                                 orientation: 'vertical'
                                 padding: ["15dp", 0, 0, 0]
+                                adaptive_height: True
+                                pos_hint: {"center_y": .5}
                                 MDLabel:
                                     text: "Taxi Lắk - ZAuto VIP"
                                     font_style: "Subtitle1"
                                     bold: True
+                                    adaptive_height: True
+                                    text_size: self.width, None
                                 MDLabel:
                                     text: "Hỗ trợ mua: 0838429999"
                                     theme_text_color: "Primary"
                                     font_style: "Caption"
+                                    adaptive_height: True
+                                    text_size: self.width, None
 
                         MDRaisedButton:
                             text: "CẤP QUYỀN APP"
@@ -390,33 +406,51 @@ MDScreen:
                             md_bg_color: 0.8, 0.4, 0.1, 1
                             on_release: app.check_permissions_and_guide()
                                 
-                        # --- 2. CỤM CÔNG TẮC ĐIỀU KHIỂN ---
+                        # --- 2. CỤM CÔNG TẮC ĐIỀU KHIỂN (ĐÃ FIX CHUẨN MOBILE) ---
                         MDCard:
                             orientation: "vertical"
                             adaptive_height: True
                             padding: "10dp"
+                            spacing: "5dp"
                             radius: [12, ]
                             elevation: 1
                             md_bg_color: 1, 1, 1, 1
+                            
                             MDBoxLayout:
-                                size_hint_y: None
-                                height: "45dp"
+                                orientation: "horizontal"
+                                adaptive_height: True
+                                spacing: "10dp"
+                                padding: ["0dp", "8dp"]
                                 MDLabel:
                                     text: "Tự động chốt cuốc"
                                     font_style: "Subtitle2"
+                                    adaptive_height: True
+                                    text_size: self.width, None
+                                    valign: "middle"
                                 MDSwitch:
                                     id: sw_auto_settings
+                                    size_hint: None, None
+                                    size: "48dp", "32dp"
                                     pos_hint: {'center_y': .5}
                                     on_active: app.sync_auto_switch(self.active)
+                                    
                             MDSeparator:
+                            
                             MDBoxLayout:
-                                size_hint_y: None
-                                height: "45dp"
+                                orientation: "horizontal"
+                                adaptive_height: True
+                                spacing: "10dp"
+                                padding: ["0dp", "8dp"]
                                 MDLabel:
                                     text: "Chỉ nhận tin chứa Từ Khóa"
                                     font_style: "Subtitle2"
+                                    adaptive_height: True
+                                    text_size: self.width, None
+                                    valign: "middle"
                                 MDSwitch:
                                     id: sw_filter
+                                    size_hint: None, None
+                                    size: "48dp", "32dp"
                                     pos_hint: {'center_y': .5}
                         
                         # --- 3. CỤM TỪ KHÓA ---
@@ -459,30 +493,38 @@ MDScreen:
                             elevation: 2
                             on_release: app.save_config()
 
-                        # --- 4. TRẠNG THÁI BẢN QUYỀN (GIỮ NGUYÊN KIỂU DÁNG GỐC) ---
+                        # --- 4. TRẠNG THÁI BẢN QUYỀN (ĐÃ FIX KHÔNG ÉP CỨNG 220DP) ---
                         MDCard:
                             orientation: "vertical"
-                            size_hint_y: None
-                            height: "220dp"
+                            adaptive_height: True
                             padding: "15dp"
+                            spacing: "10dp"
                             radius: [12, ]
                             md_bg_color: 1, 1, 1, 1
                             MDLabel:
                                 text: "TRẠNG THÁI BẢN QUYỀN"
                                 bold: True
                                 font_style: "Subtitle1"
+                                adaptive_height: True
+                                text_size: self.width, None
                             MDSeparator:
                                 padding: [0, 10]
                             MDLabel:
                                 id: lbl_key_type
                                 text: "Loại Key: Đang kiểm tra..."
+                                adaptive_height: True
+                                text_size: self.width, None
                             MDLabel:
                                 id: lbl_expiry
                                 text: "Hết hạn: --/--/----"
+                                adaptive_height: True
+                                text_size: self.width, None
                             MDLabel:
                                 text: "SĐT Mua Key: 0838429999"
                                 theme_text_color: "Custom"
                                 text_color: 0.1, 0.5, 0.8, 1
+                                adaptive_height: True
+                                text_size: self.width, None
                             MDRaisedButton:
                                 text: "MUA THÊM HẠN / ĐỔI KEY"
                                 pos_hint: {"center_x": .5}
@@ -664,6 +706,13 @@ class ZAutoProApp(MDApp):
     def build(self):
         self.icon = 'profile.jpg'
         self.theme_cls.primary_palette = "Blue"
+        
+        # FIX 4 & 5: Tự động thu nhỏ font chữ nếu màn hình điện thoại nhỏ (dưới 400dp)
+        if Window.width < dp(400):
+            self.theme_cls.font_styles["Subtitle1"] = ["Roboto", 16, True, 0.15]
+            self.theme_cls.font_styles["Body1"] = ["Roboto", 13, False, 0.15]
+            self.theme_cls.font_styles["Caption"] = ["Roboto", 10, False, 0.15]
+
         self.config_data = {
             'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận', 'gia_km': '12000',
             'sw_filter': False, 'sw_auto': False, 'is_linked': False
