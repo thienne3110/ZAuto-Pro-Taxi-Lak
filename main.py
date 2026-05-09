@@ -282,44 +282,52 @@ MDScreen:
                     padding: "10dp"
                     spacing: "10dp"
 
-                    # 1. THẺ THÔNG TIN TÀI KHOẢN GỐC (Giữ nguyên khi chưa login hoặc dùng làm tiêu đề)
+                    # 1. THẺ THÔNG TIN TÀI KHOẢN GỐC (Thiết kế lại 2 tầng chuẩn Mobile)
                     MDCard:
-                        orientation: "horizontal"
-                        size_hint_y: None
-                        height: "70dp"
-                        padding: "10dp"
+                        orientation: "vertical"  # Chuyển thành bố cục dọc
+                        adaptive_height: True    # Tự động co giãn theo nội dung
+                        padding: "15dp"
                         spacing: "15dp"
-                        radius: [10, ]
+                        radius: [12, ]
                         md_bg_color: 1, 1, 1, 1
                         elevation: 1
                         
-                        FitImage:
-                            id: zalo_avatar_view
-                            source: "profile.jpg"
-                            size_hint: None, None
-                            size: "50dp", "50dp"
-                            radius: [25, ]
-                            pos_hint: {"center_y": .5}
                         MDBoxLayout:
-                            orientation: "vertical"
-                            pos_hint: {"center_y": .5}
-                            MDLabel:
-                                id: zalo_name_view
-                                text: "Chưa liên kết Zalo"
-                                font_style: "Subtitle1"
-                                bold: True
-                            MDLabel:
-                                id: zalo_status_detail
-                                text: "Quét QR bên dưới để kết nối"
-                                font_style: "Caption"
-                                theme_text_color: "Secondary"
+                            orientation: "horizontal"
+                            adaptive_height: True
+                            spacing: "15dp"
+                            
+                            FitImage:
+                                id: zalo_avatar_view
+                                source: "profile.jpg"
+                                size_hint: None, None
+                                size: "50dp", "50dp"
+                                radius: [25, ]
+                                pos_hint: {"center_y": .5}
+                                
+                            MDBoxLayout:
+                                orientation: "vertical"
+                                adaptive_height: True
+                                pos_hint: {"center_y": .5}
+                                MDLabel:
+                                    id: zalo_name_view
+                                    text: "Chưa kết nối Zalo"
+                                    font_style: "Subtitle1"
+                                    bold: True
+                                    adaptive_height: True
+                                MDLabel:
+                                    id: zalo_status_detail
+                                    text: "Quét QR bên dưới để kết nối"
+                                    font_style: "Caption"
+                                    theme_text_color: "Secondary"
+                                    adaptive_height: True
+                                    
                         MDRaisedButton:
                             id: btn_zalo_action
-                            text: "HUỶ"
-                            size_hint_x: None
-                            width: "80dp"
-                            pos_hint: {"center_y": .5}
-                            md_bg_color: 0.8, 0.2, 0.2, 1
+                            text: "LIÊN KẾT ZALO NGAY"
+                            size_hint_x: 1  # Trải dài nút bấm ra 100% bề ngang
+                            height: "45dp"
+                            md_bg_color: 0.1, 0.5, 0.8, 1
                             on_release: app.handle_zalo_auth()
 
                     # 2. KHUNG ĐỊNH VỊ WEBVIEW (Quan trọng nhất)
