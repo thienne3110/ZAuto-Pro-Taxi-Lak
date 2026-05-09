@@ -17,7 +17,7 @@ orientation = portrait
 
 icon.filename = profile.jpg
 
-android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,RECEIVE_BOOT_COMPLETED,BIND_NOTIFICATION_LISTENER_SERVICE,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,SYSTEM_ALERT_WINDOW,QUERY_ALL_PACKAGES
+android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,RECEIVE_BOOT_COMPLETED,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,SYSTEM_ALERT_WINDOW,QUERY_ALL_PACKAGES
 
 android.api = 34
 android.minapi = 24
@@ -45,21 +45,6 @@ android.extra_manifest_application = \
             <action android:name="android.intent.action.BOOT_COMPLETED" /> \
         </intent-filter> \
     </receiver> \
-    <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true"> \
-        <intent-filter> \
-            <action android:name="android.service.notification.NotificationListenerService" /> \
-        </intent-filter> \
-    </service> \
-    <service android:name="org.zauto.ZaloAccessibility" \
-             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" \
-             android:exported="true" \
-             android:label="ZAuto VIP"> \
-        <intent-filter> \
-            <action android:name="android.accessibilityservice.AccessibilityService" /> \
-        </intent-filter> \
-        <meta-data android:name="android.accessibilityservice" \
-                   android:resource="@xml/accessibility_config" /> \
-    </service> \
     <service android:name="org.zauto.ZaloForegroundService" \
              android:exported="false" \
              android:foregroundServiceType="dataSync" />
