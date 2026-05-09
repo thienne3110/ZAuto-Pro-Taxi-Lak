@@ -243,17 +243,7 @@ MDScreen:
                     specific_text_color: 0.1, 0.1, 0.1, 1
                     right_action_items: [["delete-sweep-outline", lambda x: app.clear_history()]]
                 
-                # Nút mở khung chat trôi (Giải pháp 2)
-                MDBoxLayout:
-                    size_hint_y: None
-                    height: "70dp"
-                    padding: "12dp"
-                    MDRaisedButton:
-                        text: "MỞ KHUNG CHAT ZALO WEB"
-                        icon: "chat-processing"
-                        size_hint_x: 1
-                        md_bg_color: 0.1, 0.6, 0.2, 1
-                        on_release: app.show_zalo_web()
+                # BỎ NÚT MỞ KHUNG CHAT CŨ THEO YÊU CẦU CỦA BẠN
 
                 ScrollView:
                     MDList:
@@ -276,6 +266,9 @@ MDScreen:
             name: 'tab_zalo'
             text: 'Tài khoản'
             icon: 'account-circle'
+            # Lắng nghe sự kiện chuyển tab để điều khiển WebView
+            on_tab_press: app.on_zalo_tab_active(True) 
+            
             MDBoxLayout:
                 orientation: 'vertical'
                 MDTopAppBar:
@@ -284,56 +277,56 @@ MDScreen:
                     md_bg_color: 1, 1, 1, 1
                     specific_text_color: 0.1, 0.1, 0.1, 1
                 
-                ScrollView:
-                    MDBoxLayout:
-                        orientation: 'vertical'
-                        adaptive_height: True
-                        padding: "20dp"
-                        spacing: "20dp"
+                MDBoxLayout:
+                    orientation: 'vertical'
+                    padding: "10dp"
+                    spacing: "10dp"
 
-                        MDCard:
+                    # 1. THẺ THÔNG TIN TÀI KHOẢN GỐC (Giữ nguyên khi chưa login hoặc dùng làm tiêu đề)
+                    MDCard:
+                        orientation: "horizontal"
+                        size_hint_y: None
+                        height: "70dp"
+                        padding: "10dp"
+                        spacing: "15dp"
+                        radius: [10, ]
+                        md_bg_color: 1, 1, 1, 1
+                        elevation: 1
+                        
+                        FitImage:
+                            id: zalo_avatar_view
+                            source: "profile.jpg"
+                            size_hint: None, None
+                            size: "50dp", "50dp"
+                            radius: [25, ]
+                            pos_hint: {"center_y": .5}
+                        MDBoxLayout:
                             orientation: "vertical"
-                            adaptive_height: True
-                            padding: "20dp"
-                            spacing: "15dp"
-                            radius: [15, ]
-                            md_bg_color: 1, 1, 1, 1
-                            elevation: 2
-
-                            MDBoxLayout:
-                                orientation: "vertical"
-                                spacing: "10dp"
-                                adaptive_height: True
-                                FitImage:
-                                    id: zalo_avatar_view
-                                    source: "profile.jpg"
-                                    size_hint: None, None
-                                    size: "100dp", "100dp"
-                                    radius: [50, ]
-                                    pos_hint: {"center_x": .5}
-                                MDLabel:
-                                    id: zalo_name_view
-                                    text: "Chưa liên kết Zalo"
-                                    font_style: "H6"
-                                    bold: True
-                                    halign: "center"
-                            
-                            MDSeparator:
-
+                            pos_hint: {"center_y": .5}
+                            MDLabel:
+                                id: zalo_name_view
+                                text: "Chưa liên kết Zalo"
+                                font_style: "Subtitle1"
+                                bold: True
                             MDLabel:
                                 id: zalo_status_detail
-                                text: "Vui lòng liên kết để bắt đầu nhận cuốc."
+                                text: "Quét QR bên dưới để kết nối"
                                 font_style: "Caption"
                                 theme_text_color: "Secondary"
-                                halign: "center"
-
                         MDRaisedButton:
                             id: btn_zalo_action
-                            text: "LIÊN KẾT ZALO NGAY"
-                            size_hint_x: 1
-                            height: "50dp"
-                            md_bg_color: 0.1, 0.5, 0.8, 1
+                            text: "HUỶ"
+                            size_hint_x: None
+                            width: "80dp"
+                            pos_hint: {"center_y": .5}
+                            md_bg_color: 0.8, 0.2, 0.2, 1
                             on_release: app.handle_zalo_auth()
+
+                    # 2. KHUNG ĐỊNH VỊ WEBVIEW (Quan trọng nhất)
+                    # Widget này sẽ đóng vai trò xác định vị trí và kích thước để đặt WebView Zalo Web đè lên.
+                    Widget:
+                        id: webview_placeholder
+                        size_hint: 1, 1
 
         # ================= TAB 4: CÀI ĐẶT (CẤU HÌNH & THÔNG TIN APP) =================
         MDBottomNavigationItem:
@@ -692,20 +685,87 @@ class ZAutoProApp(MDApp):
                 self.global_last_reply = 0
                 self.last_reply_time = {}
 
-                # 5. Đăng ký bộ lắng nghe Broadcast 3 Action (Động cơ Web + Động cơ Accessibility)
+                # 5. Đăng ký bộ lắng nghe Broadcast 3 Action (Động cơ Web)
                 if not hasattr(self, 'receiver_started'):
                     self.br = BroadcastReceiver(self.on_broadcast_received, 
                             actions=[
-                                'org.zauto.taxi.NEW_MSG', 
                                 'org.zauto.taxi.LOGIN_SUCCESS', 
                                 'org.zauto.taxi.WEB_NEW_MSG',
-                                'org.zauto.taxi.GROUPS_DATA' # <-- THÊM DÒNG NÀY
+                                'org.zauto.taxi.GROUPS_DATA'
                             ])
                     self.br.start()
                     self.receiver_started = True
+                
+                # 6. KHỞI TẠO WEBVIEW NHÚNG NGẦM (THÊM MỚI)
+                # Dùng Clock để trễ 1 giây, đảm bảo giao diện Kivy đã load xong trước khi gọi Java
+                Clock.schedule_once(lambda dt: self.init_embedded_webview(), 1)
                     
             except Exception:
                 print(traceback.format_exc())
+
+    def init_embedded_webview(self):
+        """Khởi tạo WebView và load sẵn trang đăng nhập Zalo"""
+        if platform != 'android':
+            return
+        try:
+            ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
+            ZaloWebManager.initWebView(PythonActivity.mActivity)
+        except Exception as e:
+            print(f"Lỗi khởi tạo Embedded WebView: {e}")
+            print(traceback.format_exc())
+
+    def on_zalo_tab_active(self, is_active):
+        """Hàm bật/tắt và cập nhật vị trí WebView khi chuyển đổi Tab"""
+        if platform != 'android':
+            return
+            
+        try:
+            ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
+            if is_active:
+                # Đợi giao diện Kivy render xong (0.1s) để lấy tọa độ chính xác nhất
+                Clock.schedule_once(lambda dt: self.position_webview(), 0.1)
+            else:
+                # Khi người dùng vuốt sang Tab khác -> Ẩn ngay lập tức
+                ZaloWebManager.hideWebView()
+        except Exception as e:
+            print(f"Lỗi điều khiển WebView Tab: {e}")
+
+    def position_webview(self):
+        """Tính toán tọa độ thực tế trên màn hình Android để đặt WebView đè lên đúng Placeholder"""
+        if platform != 'android':
+            return
+            
+        try:
+            # Lấy Widget định vị đã được định nghĩa trong file KV
+            placeholder = self.root.ids.webview_placeholder
+            
+            # 1. Lấy kích thước màn hình thực tế của thiết bị Android (đơn vị pixel)
+            Window = autoclass('android.view.Window')
+            window = PythonActivity.mActivity.getWindow()
+            decorView = window.getDecorView()
+            screen_height = decorView.getHeight()
+
+            # 2. Tính tỷ lệ chuyển đổi từ giao diện Kivy sang hệ tọa độ màn hình thực
+            from kivy.core.window import Window as KivyWindow
+            scale = screen_height / KivyWindow.height 
+
+            # 3. Lấy tọa độ gốc và kích thước của thẻ placeholder trong Kivy (Gốc ở góc dưới-trái)
+            kx, ky = placeholder.to_window(*placeholder.pos)
+            kw, kh = placeholder.size
+
+            # 4. Chuyển đổi sang hệ tọa độ Android Pixel (Gốc ở góc trên-trái)
+            x = int(kx * scale)
+            y = int((KivyWindow.height - ky - kh) * scale)
+            w = int(kw * scale)
+            h = int(kh * scale)
+
+            # 5. Gửi tọa độ xuống Java để ép WebView nằm đúng vị trí
+            ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
+            ZaloWebManager.showWebView(PythonActivity.mActivity, x, y, w, h)
+            
+        except Exception as e:
+            print(f"Lỗi định vị WebView: {e}")
+            print(traceback.format_exc())
     def update_group_list_ui(self, groups):
         """Cập nhật danh sách nhóm từ Zalo Web lên giao diện Tab Nhóm"""
         try:
@@ -918,23 +978,15 @@ class ZAutoProApp(MDApp):
             if platform == 'android':
                 toast(f"Đang chốt cuốc thần tốc: {group}")
                 
-                # --- [LEVEL UP] ƯU TIÊN 1: BẮN TIN NGẦM QUA ZALO WEB ẨN ---
-                # Không giật màn hình, tốc độ bằng mili-giây
-                if self.is_linked: # Nếu đã quét QR
+                # CHỈ CÒN DUY NHẤT 1 CÁCH CHỐT: QUA ZALO WEB ẨN (Tốc độ mili-giây)
+                if getattr(self, 'is_linked', False): # Kiểm tra đã login Zalo Web chưa
                     js_command = f"window.sendHiddenMessage('{reply_text}');"
                     autoclass('org.zauto.ZaloWebManager').executeJS(PythonActivity.mActivity, js_command)
-                    return # Đã bắn qua Web thành công thì thoát luôn
-
-                # --- [LEVEL UP] DỰ PHÒNG 2: DÙNG ACCESSIBILITY NATIVE ---
-                # Nếu chưa login Web, dùng Trợ năng vuốt màn hình
-                instance = autoclass('org.zauto.ZaloAccessibility').instance
-                if instance:
-                    instance.executeReplyContext(group, reply_text)
                 else:
-                    toast("LỖI: Chưa Link Web và Chưa Bật Trợ Năng!")
+                    # Nếu tài xế bật Auto nhưng chưa quét QR
+                    toast("LỖI: Vui lòng quét mã QR Zalo Web ở Tab Tài khoản trước!")
         except Exception: 
             print(traceback.format_exc())
-
     
 
     def load_config(self):
@@ -999,42 +1051,30 @@ class ZAutoProApp(MDApp):
                 json.dump(self.config_data, f, ensure_ascii=False)
         except: pass
     def handle_zalo_auth(self):
-        """Xử lý nút bấm thông minh: Nếu có rồi thì Hủy, chưa có thì Liên kết"""
-        if self.is_linked:
-            # Logic Hủy liên kết
+        """Xử lý nút bấm: Nếu đã liên kết thì Hủy (Đăng xuất), nếu chưa thì thông báo chú ý"""
+        if getattr(self, 'is_linked', False):
+            # 1. Logic Hủy liên kết trên giao diện Kivy
             self.is_linked = False
             self.config_data['zalo_name'] = ""
             self.config_data['zalo_avatar'] = ""
             self.save_config_silent()
             self.update_profile_ui()
-            toast("Đã hủy liên kết Zalo.")
-        else:
-            # Logic Mở web quét QR
-            self.open_zalo_web_qr()
-    def show_zalo_web(self):
-        """Hàm gọi cửa sổ Zalo Web trôi lên màn hình để nhắn tin"""
-        # 1. Kiểm tra xem khách đã quét mã QR chưa
-        if not getattr(self, 'is_linked', False):
-            toast("Bạn chưa liên kết Zalo! Hãy qua Tab Tài khoản quét QR trước.")
-            # Tự động chuyển hướng sang tab Tài khoản (tab_zalo) để khách quét mã
-            self.root.ids.bottom_nav.switch_tab('tab_zalo')
-            return
             
-        # 2. Nếu đã liên kết, gọi Java để bung cửa sổ Web
-        if platform == 'android':
-            try:
-                from jnius import autoclass
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                # Gọi lại hàm mở Webview (Lúc này đã có session nên sẽ vào thẳng khung chat)
-                autoclass('org.zauto.ZaloWebManager').openZaloWebQR(PythonActivity.mActivity)
-                toast("Bấm nút Trở Về (Back) để ĐÓNG khung chat!")
-            except Exception: 
-                import traceback
-                print(traceback.format_exc())
-                toast("Lỗi: Không thể mở khung chat!")
+            # 2. Gọi Java để xóa Cookie và tải lại mã QR của Zalo Web
+            if platform == 'android':
+                try:
+                    from jnius import autoclass
+                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                    ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
+                    ZaloWebManager.logoutAndClearData(PythonActivity.mActivity)
+                except Exception as e:
+                    print(f"Lỗi khi xóa session Zalo Web: {e}")
+            
+            toast("Đã đăng xuất và hủy liên kết Zalo Web.")
         else:
-            # Thông báo khi test trên máy tính
-            toast("Tính năng này chỉ hoạt động trên điện thoại Android")        
+            # Nếu chưa liên kết, nhắc tài xế nhìn xuống khung web bên dưới
+            toast("Vui lòng quét mã QR ở khung bên dưới để đăng nhập!")
+    
 
     def update_profile_ui(self):
         """Cập nhật thông tin Zalo - Thêm kiểm tra an toàn"""
@@ -1067,68 +1107,10 @@ class ZAutoProApp(MDApp):
         toast("Đã dọn dẹp tin nhắn.")
 
     def check_permissions_and_guide(self):
-        """Hàm tự động quét quyền và điều hướng thông minh"""
-        if platform == 'android':
-            try:
-                from jnius import autoclass
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                Settings = autoclass('android.provider.Settings')
-                Intent = autoclass('android.content.Intent')
-                
-                context = PythonActivity.mActivity
-                resolver = context.getContentResolver()
-                
-                # Lấy package name hiện tại (org.zauto.taxi)
-                pkg_name = context.getPackageName() 
-                
-                acc_granted = False
-                notif_granted = False
-                
-                # --- 1. KIỂM TRA QUYỀN TRỢ NĂNG (ACCESSIBILITY) ---
-                # Đọc chuỗi các dịch vụ trợ năng đang được bật trên điện thoại
-                acc_services = Settings.Secure.getString(resolver, "enabled_accessibility_services")
-                if acc_services and f"{pkg_name}/org.zauto.ZaloAccessibility" in acc_services:
-                    acc_granted = True
-                    
-                # --- 2. KIỂM TRA QUYỀN ĐỌC THÔNG BÁO (NOTIFICATION LISTENER) ---
-                # Đọc chuỗi các dịch vụ nghe thông báo đang được bật
-                notif_listeners = Settings.Secure.getString(resolver, "enabled_notification_listeners")
-                if notif_listeners and f"{pkg_name}/org.zauto.ZaloNotificationService" in notif_listeners:
-                    notif_granted = True
+        """Do sử dụng công nghệ Web ngầm VIP, app không còn cần xin quyền hệ thống rườm rà nữa."""
+        toast("Hệ thống VIP chạy ngầm đã tự động tối ưu, không cần cấp thêm quyền!")
 
-                # --- 3. XỬ LÝ ĐIỀU HƯỚNG ---
-                if acc_granted and notif_granted:
-                    # Nếu cả 2 quyền cốt lõi đã bật
-                    toast("Tuyệt vời! Ứng dụng đã được cấp đầy đủ quyền.")
-                
-                elif not acc_granted:
-                    # Nếu chưa bật Trợ Năng -> Dẫn thẳng vào mục Trợ Năng
-                    toast("Vui lòng tìm và BẬT 'ZAuto VIP' trong phần Trợ Năng!")
-                    intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-                
-                elif not notif_granted:
-                    # Nếu chưa bật Đọc Thông Báo -> Dẫn thẳng vào mục Quyền Thông Báo
-                    toast("Vui lòng CHO PHÉP 'ZAuto VIP' đọc thông báo!")
-                    intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
-                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    context.startActivity(intent)
-
-            except Exception:
-                import traceback
-                print(traceback.format_exc())
-                # Backup an toàn nếu điện thoại khách không hỗ trợ hàm check
-                toast("Hãy tìm và cấp quyền cho ứng dụng ZAuto VIP")
-                try:
-                    PythonActivity.mActivity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                except: pass
-
-    def open_zalo_web_qr(self):
-        if platform == 'android':
-            try:
-                autoclass('org.zauto.ZaloWebManager').openZaloWebQR(PythonActivity.mActivity)
-            except Exception: print(traceback.format_exc())
+    
 
     def on_stop(self):
         if platform == 'android':
