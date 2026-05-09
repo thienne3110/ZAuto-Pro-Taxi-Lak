@@ -11,8 +11,7 @@ source.include_exts = py,png,jpg,kv,json,xml,java,db
 
 version = 7.0
 
-requirements = python3,kivy==2.2.1,kivymd,pyjnius
-
+requirements = python3,kivy==2.2.1,kivymd==1.1.1,pyjnius
 orientation = portrait
 
 icon.filename = profile.jpg
