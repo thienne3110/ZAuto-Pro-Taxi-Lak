@@ -1,6 +1,6 @@
 name: Build ZAuto VIP
 
-# Cách viết này an toàn 100%, tuyệt đối không bao giờ bị lỗi lùi lề ở dòng 4 nữa
+# Khắc phục triệt để lỗi (Line: 4, Col: 7) sai lề thụt dòng
 on: [push, workflow_dispatch]
 
 jobs:
@@ -12,7 +12,7 @@ jobs:
         uses: actions/checkout@v4
 
       # =====================================================
-      # CACHE
+      # CACHE (Đổi sang v8 để xóa bỏ hoàn toàn rác lỗi cũ)
       # =====================================================
       - name: Cache Buildozer
         uses: actions/cache@v4
@@ -20,10 +20,10 @@ jobs:
           path: |
             ~/.buildozer
             ~/.gradle
-          key: buildozer-v2026-clean-v6
+          key: buildozer-2026-clean-v8
 
       # =====================================================
-      # CLEAN SYSTEM
+      # CLEAN SYSTEM (Giải phóng RAM và Ổ cứng cho Server)
       # =====================================================
       - name: Cleanup System
         run: |
@@ -32,7 +32,7 @@ jobs:
           sudo rm -rf "/usr/local/share/boost"
 
       # =====================================================
-      # INSTALL DEPENDENCIES
+      # INSTALL DEPENDENCIES (ÉP CYTHON BẢN CHUẨN FIX LỖI PXI)
       # =====================================================
       - name: Install dependencies
         run: |
@@ -57,13 +57,11 @@ jobs:
 
           pip3 install --user --upgrade pip
 
-          pip3 install --user \
-            Cython==0.29.36 \
-            buildozer \
-            virtualenv
+          # BẮT BUỘC dùng Cython dưới 3.0.0 để tương thích với Kivy
+          pip3 install --user "Cython<3.0.0" buildozer virtualenv
 
       # =====================================================
-      # GENERATE KEYSTORE
+      # GENERATE KEYSTORE (Chữ ký ứng dụng Android)
       # =====================================================
       - name: Generate Keystore
         run: |
@@ -80,14 +78,16 @@ jobs:
           fi
 
       # =====================================================
-      # BUILD APK (CHUẨN HÓA: LỖI SẼ BÁO ĐỎ)
+      # BUILD APK & GHI LOG SIÊU CHI TIẾT
       # =====================================================
-      - name: Build APK
+      - name: Build APK & Extract Logs
         run: |
+          set -o pipefail 
+          
           export PATH=$PATH:~/.local/bin
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
-          # Dọn dẹp bản build cũ nếu có
+          # Dọn rác thư mục build
           rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi/bin/*
           rm -rf bin/*
 
@@ -95,25 +95,27 @@ jobs:
           touch ~/.android/repositories.cfg
 
           export GRADLE_OPTS="-Xmx4096m -Dorg.gradle.daemon=false"
-
-          # Lệnh này sẽ tự động chạy và sập (báo Failed đỏ) ngay khi có lỗi
-          yes | buildozer android debug
+          
+          echo "Bắt đầu build. Dữ liệu đang được ghi âm thầm ra file build_full.log..."
+          
+          # TỰ ĐỘNG CHẤP NHẬN BẢN QUYỀN VÀ XUẤT 100% LOG RA FILE
+          yes | buildozer android debug 2>&1 | tee build_full.log
 
       # =====================================================
-      # IN LOG LỖI NẾU BUILD THẤT BẠI
+      # UPLOAD FILE LOG NẾU CÓ LỖI XẢY RA
       # =====================================================
-      - name: Show Gradle Logs on Failure
-        if: failure()   # Lệnh này chỉ chạy khi bước Build APK ở trên bị Đỏ
-        run: |
-          echo "=========== CHECKING GRADLE LOGS IF FAILED ==========="
-          cd .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi || true
-          ./gradlew assembleDebug --stacktrace --info || true
+      - name: Upload Error Logs
+        if: always() # Luôn luôn lưu log lại bất chấp thành công hay sập
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build_Full_Logs
+          path: build_full.log
 
       # =====================================================
       # UPLOAD APK NẾU THÀNH CÔNG
       # =====================================================
       - name: Upload APK
-        if: success()   # Chỉ upload khi mọi thứ thành công mỹ mãn
+        if: success() # Chỉ xuất hiện cục file APK nếu toàn bộ quy trình màu xanh
         uses: actions/upload-artifact@v4
         with:
           name: ZAuto_VIP_App
