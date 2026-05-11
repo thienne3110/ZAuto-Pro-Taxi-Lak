@@ -1,26 +1,43 @@
-name: Build ZAuto VIP
+name: Build ZAuto VIP Enterprise Production
 
-on: [push, workflow_dispatch]
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    timeout-minutes: 60 # Bảo vệ tài nguyên, tự động ngắt nếu treo quá 60 phút
 
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
       # =====================================================
-      # CONFIG PYTHON ENVIRONMENT (ĐỒNG BỘ PYTHON 3.11)
+      # THIẾT LẬP SWAP MEMORY 4GB & ĐO DẠC HỆ THỐNG
+      # =====================================================
+      - name: Setup Swap Space & Diagnostic Check
+        run: |
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          df -h
+          free -m
+
+      # =====================================================
+      # THIẾT LẬP MÔI TRƯỜNG PYTHON & JAVA CHUẨN
       # =====================================================
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      # =====================================================
-      # CONFIG JAVA ENVIRONMENT (ÉP JDK 17)
-      # =====================================================
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -28,33 +45,40 @@ jobs:
           java-version: '17'
 
       # =====================================================
-      # CACHE (Đồng bộ buildozer v8 sạch rác)
+      # CẤU HÌNH CACHE ĐA TẦNG TOÀN DIỆN (LƯU TRỮ TRÁNH BUILD LẠI TỪ ĐẦU)
       # =====================================================
-      - name: Cache Buildozer
+      - name: Cache Build Dependencies & CCache
         uses: actions/cache@v4
         with:
           path: |
             ~/.buildozer
-            ~/.gradle
-          key: buildozer-2026-clean-v8
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.android
+            ~/.cache/pip
+            ~/.ccache
+          key: buildozer-v10-enterprise-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-v10-enterprise-${{ runner.os }}-
 
       # =====================================================
-      # CLEAN SYSTEM (Giải phóng RAM và Ổ cứng cho Server)
+      # GIẢI PHÓNG TỐI ĐA DUNG LƯỢNG Ổ CỨNG SERVER
       # =====================================================
-      - name: Cleanup System
+      - name: Deep Cleanup System Disk
         run: |
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
           sudo rm -rf "/usr/local/share/boost"
+          sudo docker system prune -af || true
 
       # =====================================================
-      # INSTALL DEPENDENCIES (Thêm wheel + cấu hình biên dịch)
+      # CÀI ĐẶT THƯ VIỆN HỆ THỐNG & KHÓA CHẶT PHIÊN BẢN CÔNG CỤ (DETERMINISTIC)
       # =====================================================
-      - name: Install dependencies
+      - name: Install System Dependencies & Pin Core Tools
         run: |
           sudo apt update
           sudo apt install -y \
-            git zip unzip \
+            git zip unzip ccache \
             autoconf automake libtool \
             pkg-config zlib1g-dev \
             libncurses5-dev libncursesw5-dev \
@@ -68,16 +92,42 @@ jobs:
             libsdl2-mixer-dev \
             libsdl2-ttf-dev
 
-          python -m pip install --upgrade pip
-          # Cài đặt Wheel để hỗ trợ biên dịch nhanh C-extensions
-          pip install wheel
-          # Ép phiên bản Cython < 3.0.0 bắt buộc cho Kivy 2.2.1
-          pip install "Cython<3.0.0" buildozer virtualenv
+          # Ép cấu hình CCache để biên dịch siêu tốc Cython/C++ ở các lần build sau
+          echo "USE_CCACHE=1" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+
+          # Khóa cứng các công cụ đóng gói để tránh lỗi tương thích sau này
+          python -m pip install --upgrade "pip<25" "setuptools<69" "wheel<0.43"
+          pip install "Cython==0.29.36" buildozer==1.5.0 virtualenv==20.26.6
 
       # =====================================================
-      # GENERATE KEYSTORE (Chữ ký ứng dụng Android)
+      # TỐI ƯU HÓA GRADLE JVM (LOẠI BỎ HOÀN TOÀN MAXPERMSIZE GÂY LỖI JAVA 17)
       # =====================================================
-      - name: Generate Keystore
+      - name: Optimize Gradle Properties (Clean Java 17 args)
+        run: |
+          mkdir -p ~/.gradle
+          echo "org.gradle.parallel=true" >> ~/.gradle/gradle.properties
+          echo "org.gradle.configureondemand=true" >> ~/.gradle/gradle.properties
+          echo "org.gradle.caching=true" >> ~/.gradle/gradle.properties
+          echo "org.gradle.jvmargs=-Xmx2048m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8" >> ~/.gradle/gradle.properties
+
+      # =====================================================
+      # KIỂM TRA BẢO MẬT SECRETS CHỐNG LỘ CHỮ KÝ SỐ / RÒ RỈ CHƯA CẤU HÌNH
+      # =====================================================
+      - name: Validate Production Secrets
+        run: |
+          if [ -z "${{ secrets.KEYSTORE_PASSWORD }}" ] || [ -z "${{ secrets.KEY_ALIAS_PASSWORD }}" ]; then
+            echo "::error::Thiếu cấu hình mật khẩu Keystore hoặc Key Alias trong Repository Secrets! Tiến trình build bị dừng để bảo vệ an toàn."
+            exit 1
+          fi
+
+      # =====================================================
+      # KHỞI TẠO KEYSTORE ĐƯỢC BẢO VỆ
+      # =====================================================
+      - name: Generate Protected Keystore
+        env:
+          KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS_PASS: ${{ secrets.KEY_ALIAS_PASSWORD }}
         run: |
           if [ ! -f mykeystore.keystore ]; then
             keytool -genkey -v \
@@ -87,45 +137,104 @@ jobs:
               -keysize 2048 \
               -validity 10000 \
               -dname "CN=ZAuto, OU=Taxi, O=TaxiLak, L=DakLak, ST=VN, C=VN" \
-              -storepass 123456 \
-              -keypass 123456
+              -storepass "$KEYSTORE_PASS" \
+              -keypass "$KEY_ALIAS_PASS"
           fi
 
       # =====================================================
-      # BUILD APK WITH AUTO-LICENSES ACCEPTANCE
+      # XÁC THỰC SỰ TỒN TẠI CỦA FILE & BIÊN DỊCH BẢN THƯƠNG MẠI
       # =====================================================
-      - name: Build APK & Extract Logs
+      - name: Compile Release Bundle & APK
+        env:
+          BUILDOZER_WARN_ON_ROOT: 0
+          P4A_RELEASE_KEYSTORE: mykeystore.keystore
+          P4A_RELEASE_KEYSTORE_PASSWD: ${{ secrets.KEYSTORE_PASSWORD }}
+          P4A_RELEASE_KEY_ALIAS_PASSWD: ${{ secrets.KEY_ALIAS_PASSWORD }}
+          P4A_RELEASE_KEY_ALIAS: myalias
         run: |
-          set -o pipefail 
-          
-          # Đảm bảo PATH nhận diện được CLI buildozer vừa cài
+          set -o pipefail
           export PATH=$PATH:~/.local/bin
-          export GRADLE_OPTS="-Xmx4096m -Dorg.gradle.daemon=false"
           
-          # Chấp nhận giấy phép Android SDK ẩn để tránh treo luồng trên Actions
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
-          
-          # Biên dịch APK và đẩy dữ liệu log trực tiếp ra bảng điều khiển lẫn file log
-          echo "Bắt đầu khởi tạo tiến trình build..."
-          buildozer android debug 2>&1 | tee build_full.log
+          # 1. Fail-Fast Validation: Ngắt ngay lập tức nếu thiếu file cốt lõi
+          if [ ! -f buildozer.spec ]; then echo "::error::Thiếu file buildozer.spec!"; exit 1; fi
+          if [ ! -f main.py ]; then echo "::error::Thiếu file main.py!"; exit 1; fi
+          if [ ! -f profile.jpg ]; then echo "::error::Thiếu file profile.jpg!"; exit 1; fi
+
+          # Tạo mới và dọn dẹp thư mục bin an toàn không warning
+          mkdir -p bin
+          rm -rf bin/*
+
+          # 2. Dò tìm đường dẫn sdkmanager động và đồng ý điều khoản Android
+          echo "Đang cấu hình SDK Manager..."
+          SDK_MANAGER_PATH=$(find $HOME/.buildozer -name "sdkmanager" -type f | head -n 1)
+          if [ -n "$SDK_MANAGER_PATH" ]; then
+            echo "Tìm thấy sdkmanager tại: $SDK_MANAGER_PATH"
+            yes | $SDK_MANAGER_PATH --licenses || true
+          fi
+
+          # 3. Biên dịch bản thương mại (Thực hiện Retry tối đa 2 lần chống rớt mạng)
+          echo "Bắt đầu biên dịch ứng dụng..."
+          build_success=false
+          for i in {1..2}; do
+            echo "Thử nghiệm đóng gói lần $i..."
+            # Dùng tee -a ghi nối tiếp log, không ghi đè mất dấu vết
+            if buildozer android release aab 2>&1 | tee -a build_full.log; then
+              build_success=true
+              break
+            fi
+            echo "Biên dịch lần $i thất bại, đang giải phóng tài nguyên hệ thống và thử lại..."
+            sleep 5
+          done
+
+          if [ "$build_success" = false ]; then
+            echo "::error::Đóng gói thất bại hoàn toàn sau 2 lần thử!"
+            exit 1
+          fi
 
       # =====================================================
-      # UPLOAD FILE LOG NẾU CÓ LỖI XẢY RA
+      # QUÉT FILE LOG LỚN VÀ CHỈ LỌC RA CÁC LỖI CRITICAL NGẮN GỌN
       # =====================================================
-      - name: Upload Error Logs
+      - name: Extract Build Diagnostics & Mapping Files
+        if: always()
+        run: |
+          # 1. Định vị động file mapping và proguard dọn về bin/
+          find .buildozer -name "mapping.txt" -exec cp {} ./bin/ \; || true
+          find .buildozer -name "proguard-rules.pro" -exec cp {} ./bin/ \; || true
+
+          # 2. BỘ LỌC REGEX THÔNG MINH: Chỉ trích xuất đúng nguyên nhân gây sập build
+          echo "=== BẮT ĐẦU TRÍCH XUẤT DIAGNOSTICS LỖI ===" > bin/error_diagnostics.log
+          if [ -f build_full.log ]; then
+            grep -i -E "error:|fatal:|failed|exception|compile|command failed|cannot find|make: \*\*\*" build_full.log >> bin/error_diagnostics.log || true
+          else
+            echo "Không tìm thấy file build_full.log để tiến hành quét lỗi." >> bin/error_diagnostics.log
+          fi
+          echo "=== KẾT THÚC DIAGNOSTICS LỖI ===" >> bin/error_diagnostics.log
+          
+          # In trực tiếp lỗi rút gọn lên màn hình Console của GitHub Actions
+          echo "--------------------------------------------------"
+          echo "TÓM TẮT CÁC LỖI PHÁT HIỆN KHI BUILD (CỰC KỲ RÚT GỌN):"
+          cat bin/error_diagnostics.log
+          echo "--------------------------------------------------"
+
+      # =====================================================
+      # TẢI LÊN FILE LỖI RÚT GỌN & MAPPING FILE (PROGUARD)
+      # =====================================================
+      - name: Upload Logs and Mapping Artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Build_Full_Logs
-          path: build_full.log
+          name: Diagnostic_And_Mapping_Logs
+          path: |
+            bin/error_diagnostics.log
+            bin/mapping.txt
+            bin/proguard-rules.pro
 
       # =====================================================
-      # UPLOAD APK NẾU THÀNH CÔNG
+      # TẢI LÊN FILE BẢN DỰNG HOÀN THIỆN (RELEASE APK & AAB)
       # =====================================================
-      - name: Upload APK
+      - name: Upload Production Release Files
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: ZAuto_VIP_App
-          path: bin/*.apk
+          name: ZAuto_VIP_Enterprise_Release
+          path: bin/*
