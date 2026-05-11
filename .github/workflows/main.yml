@@ -33,20 +33,28 @@ jobs:
         uses: actions/checkout@v4
 
       # =====================================================
-      # SETUP SWAP MEMORY & SYSTEM DIAGNOSTICS (CHỐNG OOM)
+      # SETUP SWAP MEMORY & SYSTEM DIAGNOSTICS (CHỐNG LỖI TEXT FILE BUSY)
       # =====================================================
       - name: Setup Swap Space & Diagnostics
         run: |
+          echo "===== ĐANG KHỞI TẠO SWAP MEMORY AN TOÀN ====="
+          # Tắt swap cũ nếu đang hoạt động để tránh lỗi "Text file busy"
+          if [ -f /swapfile ]; then
+            sudo swapoff /swapfile || true
+            sudo rm -f /swapfile || true
+          fi
+          
+          # Khởi tạo swap mới 4GB
           sudo fallocate -l 4G /swapfile
           sudo chmod 600 /swapfile
           sudo mkswap /swapfile
           sudo swapon /swapfile
 
-          echo "===== SYSTEM INFO ====="
-          echo "CPU Cores: $(nproc)"
-          echo "===== RAM STATUS ====="
+          echo "===== CPU TOPOLOGY ====="
+          nproc
+          echo "===== INITIAL MEMORY STATE ====="
           free -m
-          echo "===== DISK SPACE ====="
+          echo "===== SYSTEM STORAGE STATUS ====="
           df -h
 
       # =====================================================
@@ -58,7 +66,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       # =====================================================
-      # SET UP JAVA (FIXED JDK 17 TEMURIN)
+      # SET UP JAVA (JDK 17 TEMURIN)
       # =====================================================
       - name: Set up Java
         uses: actions/setup-java@v4
@@ -67,7 +75,7 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       # =====================================================
-      # PRE-RESTORE GRADLE CLEAN LOCK
+      # GRADLE CACHE LOCK SYSTEM: PRE-RESTORE CLEANUP
       # =====================================================
       - name: Pre-Restore Gradle Clean Lock
         run: |
@@ -76,7 +84,7 @@ jobs:
           find ~/.gradle -name "*.gc" -type f -delete || true
 
       # =====================================================
-      # CACHE ENTERPRISE SYSTEM (ĐỒNG BỘ ĐA TẦNG CỰC KỲ SẠCH)
+      # CACHE SYSTEM (GRADLE MODULES, PIP, CCACHE, ANDROID SDK)
       # =====================================================
       - name: Cache Build Dependencies
         uses: actions/cache@v4
@@ -94,9 +102,9 @@ jobs:
             buildozer-v14-enterprise-
 
       # =====================================================
-      # GIẢI PHÓNG DUNG LƯỢNG Ổ ĐĨA KHÔNG CẦN THIẾT
+      # DEEP CLEAN DISK SYSTEM
       # =====================================================
-      - name: Deep Cleanup System Disk
+      - name: Deep Cleanup Runner Space
         run: |
           sudo rm -rf /usr/share/dotnet || true
           sudo rm -rf /opt/ghc || true
@@ -104,12 +112,11 @@ jobs:
           sudo docker system prune -af || true
 
       # =====================================================
-      # CÀI ĐẶT THƯ VIỆN HỆ THỐNG & CẤU HÌNH CCACHE
+      # INSTALL SYSTEM DEPENDENCIES & PIN TOOLS
       # =====================================================
-      - name: Install System Dependencies & Pin Tools
+      - name: Install Linux Dependencies & CCache
         run: |
           sudo apt update
-
           sudo apt install -y \
             git zip unzip ccache \
             autoconf automake libtool \
@@ -127,7 +134,7 @@ jobs:
             libjpeg-dev \
             libpng-dev
 
-          # Ép cấu hình ccache tăng tốc biên dịch Cython gấp 4 lần ở các build kế tiếp
+          # Thiết lập ccache cục bộ tăng tốc biên dịch C++ gấp 4 lần ở lượt chạy sau
           echo "USE_CCACHE=1" >> $GITHUB_ENV
           echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
 
@@ -141,16 +148,15 @@ jobs:
             "buildozer==${{ env.BUILDOZER_VERSION }}" \
             "virtualenv==${{ env.VIRTUALENV_VERSION }}"
 
-          # Sử dụng GITHUB_PATH chuẩn của GitHub thay vì can thiệp ghi đè PATH thủ công
+          # Sử dụng GITHUB_PATH chuẩn của GitHub
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       # =====================================================
-      # CẤU HÌNH GRADLE TỐI ƯU (BẬT DAEMON, PARALLEL VÀ CACHING)
+      # GRADLE OPTIMIZATION (HIGH PERFORMANCE PRODUCTION ARGS)
       # =====================================================
       - name: Optimize Gradle Properties
         run: |
           mkdir -p ~/.gradle
-
           cat > ~/.gradle/gradle.properties <<EOF
           org.gradle.parallel=true
           org.gradle.caching=true
@@ -169,7 +175,6 @@ jobs:
             "buildozer.spec"
             "main.py"
           )
-
           for file in "${REQUIRED_FILES[@]}"
           do
             if [ ! -f "$file" ]; then
@@ -184,17 +189,16 @@ jobs:
       - name: Validate Production Secrets
         run: |
           if [ -z "${{ secrets.KEYSTORE_PASSWORD }}" ]; then
-            echo "::error::Thiếu biến KEYSTORE_PASSWORD cấu hình trong GitHub Secrets!"
+            echo "::error::Thiếu biến KEYSTORE_PASSWORD trong GitHub Secrets!"
             exit 1
           fi
-
           if [ -z "${{ secrets.KEY_ALIAS_PASSWORD }}" ]; then
-            echo "::error::Thiếu biến KEY_ALIAS_PASSWORD cấu hình trong GitHub Secrets!"
+            echo "::error::Thiếu biến KEY_ALIAS_PASSWORD trong GitHub Secrets!"
             exit 1
           fi
 
       # =====================================================
-      # GENERATE PROTECTED KEYSTORE FOR SIGNING
+      # GENERATE KEYSTORE FOR APP SIGNING
       # =====================================================
       - name: Generate Protected Keystore
         env:
@@ -226,7 +230,6 @@ jobs:
         run: |
           set -o pipefail
 
-          # Cấu hình sẵn repositories tránh lỗi cảnh báo SDK
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
 
@@ -246,25 +249,23 @@ jobs:
 
           build_success=false
 
-          # Tự động accept licenses nếu cache đã có sẵn thư mục tools trước
+          # Tự động accept licenses nếu cache cũ đã có sẵn cmdline-tools
           if [ -d "$ANDROID_HOME/cmdline-tools/latest/bin" ]; then
             echo "===== ĐỒNG Ý CÁC ĐIỀU KHOẢN ANDROID SDK ====="
             yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses || true
           fi
 
           echo "===== BIÊN DỊCH: LẦN THỬ 1 ====="
-
-          # Sử dụng pipe "tee" để xuất toàn bộ log chi tiết vừa ra màn hình vừa ghi vào file
           if buildozer android release 2>&1 | tee build_full.log; then
             build_success=true
           else
-            echo "===== PHÁT HIỆN LỖI LẦN 1: TIẾN HÀNH KHÔI PHỤC NGẦM ====="
+            echo "===== PHÁT HIỆN LỖI LẦN 1: TIẾN HÀNH KHÔI PHỤC NGẦM ==="
 
             # Tắt triệt để Gradle Daemon đang chạy ngầm tránh giữ tệp khóa (lock) rác
             pkill -9 -f gradle || true
             pkill -9 -f GradleDaemon || true
 
-            # Gọi appclean để dọn cache nhẹ, TUYỆT ĐỐI không dùng clean phá hủy SDK/NDK đã tải cực kỳ nặng
+            # Gọi appclean để dọn cache nhẹ, tuyệt đối không dùng clean phá hủy SDK/NDK đã tải
             buildozer appclean || true
 
             sleep 5
@@ -275,7 +276,6 @@ jobs:
             fi
 
             echo "===== BIÊN DỊCH: LẦN THỬ 2 (RETRY CHUẨN) ====="
-
             if buildozer android release 2>&1 | tee -a build_full.log; then
               build_success=true
             fi
@@ -287,7 +287,7 @@ jobs:
           fi
 
       # =====================================================
-      # VERIFY APK SIGNATURE (APKSIGNER VỚI FALLBACK JARSIGNER)
+      # VERIFY APK SIGNATURE (DYNAMIC CHOOSE APKSIGNER)
       # =====================================================
       - name: Verify APK Signature
         run: |
@@ -302,11 +302,12 @@ jobs:
 
           export ANDROID_HOME=$HOME/.buildozer/android/platform/android-sdk
 
-          # Định vị động apksigner dựa trên thư mục build-tools thực tế (Chống quét find toàn hệ thống gây lag)
+          # Định vị apksigner tĩnh dựa trên thư mục build-tools thực tế (Chống quét find toàn hệ thống gây lag)
           BUILD_TOOLS_DIR="$ANDROID_HOME/build-tools"
           APKSIGNER_PATH=""
 
           if [ -d "$BUILD_TOOLS_DIR" ]; then
+            # Sắp xếp và lấy thư mục build-tools mới nhất (Ví dụ 33.0.0 hoặc 34.0.0)
             LATEST_BUILD_TOOLS=$(ls -1 "$BUILD_TOOLS_DIR" | sort -V | grep -v "templates" | tail -n 1)
             if [ -n "$LATEST_BUILD_TOOLS" ]; then
               APKSIGNER_PATH="$BUILD_TOOLS_DIR/$LATEST_BUILD_TOOLS/apksigner"
@@ -316,7 +317,7 @@ jobs:
           if [ -n "$APKSIGNER_PATH" ] && [ -f "$APKSIGNER_PATH" ]; then
             echo "Tìm thấy apksigner tại: $APKSIGNER_PATH"
             "$APKSIGNER_PATH" verify --print-certs "$APK_FILE"
-            echo "Xác thực chữ ký số APK bằng apksigner thành công!"
+            echo "Xác thực chữ ký số APK bằng apksigner thành công (V2/V3/V4)!"
           else
             echo "Cảnh báo: Không tìm thấy apksigner. Chuyển sang sử dụng fallback jarsigner..."
             jarsigner -verify \
