@@ -4,10 +4,12 @@
 title = ZAuto VIP
 
 # (str) Package name
-package.name = taxi
+# ĐÃ FIX LỖI 1: Thay đổi từ "taxi" sang "zauto"
+package.name = zauto
 
 # (str) Package domain (needed for android/ios packaging)
-package.domain = org.zauto
+# ĐÃ FIX LỖI 1: Thay đổi từ "org.zauto" sang "org" để ghép lại khớp 100% với namespace Java: org.zauto
+package.domain = org
 
 # (str) Source code where the main.py live
 source.dir = .
@@ -29,21 +31,15 @@ orientation = portrait
 icon.filename = profile.jpg
 
 # (list) Permissions
-# BẢO MẬT CHẠY NỀN: Cung cấp đầy đủ quyền chạy ngầm Foreground và quản lý mạng trên Android 13+ (API 33+)
-# LƯU Ý: Loại bỏ quyền đặc quyền nguy hiểm FOREGROUND_SERVICE_SPECIAL_USE để tránh bị Google Play từ chối xuất bản vô lý
-android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, POST_NOTIFICATIONS, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, RECEIVE_BOOT_COMPLETED, SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, CHANGE_WIFI_STATE
+# BẢO MẬT CHẠY NỀN: Đầy đủ quyền chạy ngầm Foreground, đồng bộ dữ liệu Wifi/Mạng và vị trí trên Android 13/14/15
+# Đã lược bỏ quyền nguy hiểm FOREGROUND_SERVICE_SPECIAL_USE để tránh bị Google Play Protect quét chính sách
+android.permissions = INTERNET, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, POST_NOTIFICATIONS, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, RECEIVE_BOOT_COMPLETED, SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, CHANGE_WIFI_STATE
 
-# (int) Target Android API (Khóa cứng bản API 33 cực kỳ mượt mà và ổn định cho Kivy/KivyMD)
-android.api = 33
+# (int) Target Android API (Hướng tới Android 15 chuẩn Google Play Store)
+android.api = 35
 
-# (int) Minimum API your APK / AAB will support. (Android 10+)
+# (int) Minimum API your APK / AAB will support (Hỗ trợ từ Android 10 trở lên)
 android.minapi = 29
-
-# (str) Android SDK version to use (Đồng bộ tuyệt đối với workflow)
-android.sdk = 33
-
-# (str) Android NDK version to use (Đồng bộ tuyệt đối với workflow)
-android.ndk = 25b
 
 # (list) The Android archs to build for
 # CHỈ BUILD arm64-v8a: Giảm dung lượng tệp tin APK xuống 50%, tăng tốc biên dịch và loại bỏ hoàn toàn lỗi crash phân vùng nhị phân (.so)
@@ -51,7 +47,9 @@ android.archs = arm64-v8a
 
 # (str) Android additional libraries/sources
 android.add_src = ./java
-android.add_resources = ./res
+
+# ĐÃ FIX LỖI 2: Đổi từ android.add_resources thành android.add_res để Buildozer nạp tệp cấu hình Trợ năng vào APK
+android.add_res = ./res
 
 # (list) Android gradle dependencies
 # Đã sửa: Thêm WebKit hỗ trợ nén layout WebView đè tọa độ không giật lag
@@ -75,7 +73,7 @@ android.preserve_data = True
 log_level = 2
 
 # (str) XML Manifest additions
-# CHUYỂN android:exported VỀ "false" cho các dịch vụ nhạy cảm để tránh bị hijacking hoặc tấn công chiếm quyền.
+# ĐÃ FIX BẢO MẬT: Chuyển exported về "false" cho các dịch vụ nhạy cảm để tránh bị Hijacking dữ liệu.
 android.extra_manifest_application = \
     <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"> \
         <intent-filter> \
