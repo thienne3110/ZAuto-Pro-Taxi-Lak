@@ -22,7 +22,7 @@ jobs:
           path: |
             ~/.buildozer
             ~/.gradle
-          key: buildozer-v2026-clean-v3
+          key: buildozer-v2026-clean-v4
 
       # =====================================================
       # CLEAN SYSTEM (Giúp server có đủ bộ nhớ để build)
@@ -98,8 +98,8 @@ jobs:
 
           export GRADLE_OPTS="-Xmx4096m -Dorg.gradle.daemon=false"
 
-          # Chạy Buildozer
-          buildozer android debug || true
+          # TỰ ĐỘNG CHẤP NHẬN BẢN QUYỀN VỚI LỆNH `yes |`
+          yes | buildozer android debug || true
 
           echo "=========== CHECKING GRADLE LOGS IF FAILED ==========="
           cd .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi || true
