@@ -20,8 +20,7 @@ version = 7.0
 
 # (list) Application requirements
 # Chú ý: Nên fix cứng bản kivymd==1.1.1 để tránh lỗi update UI của bản 2.0.0
-requirements = python3,kivy==2.2.1,kivymd==1.1.1,pyjnius
-
+requirements = python3,kivy,kivymd==1.1.1,pyjnius,android
 # (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
 orientation = portrait
 
