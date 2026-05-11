@@ -24,7 +24,6 @@ public class ZaloForegroundService extends Service {
         super.onCreate();
         Log.d(TAG, "Foreground Service đang được khởi tạo...");
         
-        // Khởi tạo WakeLock an toàn, chống trùng lặp tiến trình
         try {
             PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
             if (pm != null) {
@@ -39,8 +38,8 @@ public class ZaloForegroundService extends Service {
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.d(TAG, "onStartCommand được gọi.");
 
-        // 1. Tạo Notification Channel chuẩn Android 8.0+ (Oreo) trở lên
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        // 1. Dùng số 26 thay cho VERSION_CODES.O (Android 8.0)
+        if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID, 
                     "ZAuto Production Engine", 
@@ -53,7 +52,6 @@ public class ZaloForegroundService extends Service {
             }
         }
 
-        // 2. Tạo Intent quay lại ứng dụng khi tài xế bấm vào thông báo chạy nền
         Intent notificationIntent = new Intent();
         try {
             notificationIntent.setClassName(getPackageName(), "org.kivy.android.PythonActivity");
@@ -61,9 +59,9 @@ public class ZaloForegroundService extends Service {
             Log.e(TAG, "Không tìm thấy lớp PythonActivity: " + e.getMessage());
         }
 
-        // Cấu hình cờ PendingIntent an toàn, tương thích Android 12-15 (FLAG_IMMUTABLE)
         int pendingFlags = PendingIntent.FLAG_UPDATE_CURRENT;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        // 2. Dùng số 31 thay cho VERSION_CODES.S (Android 12+) để tránh crash
+        if (Build.VERSION.SDK_INT >= 31) {
             pendingFlags |= PendingIntent.FLAG_IMMUTABLE;
         }
 
@@ -71,9 +69,8 @@ public class ZaloForegroundService extends Service {
                 this, 0, notificationIntent, pendingFlags
         );
 
-        // 3. Xây dựng giao diện thông báo hệ thống
         Notification.Builder builder;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= 26) {
             builder = new Notification.Builder(this, CHANNEL_ID);
         } else {
             builder = new Notification.Builder(this);
@@ -87,18 +84,18 @@ public class ZaloForegroundService extends Service {
                 .setOngoing(true)
                 .build();
 
-        // 4. CHỐT CHẶN CHÍ MẠNG: Rẽ nhánh gán SERVICE TYPE cho Android 10+ và 14+ (Chống Crash)
+        // 3. CHỐT CHẶN CHÍ MẠNG: Dùng số 34 thay cho UPSIDE_DOWN_CAKE để lách Compiler API 33
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                // Tiêu chuẩn Android 14+ (API 34/35): Ép gán FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            if (Build.VERSION.SDK_INT >= 34) {
+                // Tiêu chuẩn Android 14+
                 startForeground(
                         NOTIFICATION_ID, 
                         notif, 
                         ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
                 );
                 Log.d(TAG, "Bật Foreground Service chế độ DATA_SYNC chuẩn Android 14+");
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Tiêu chuẩn Android 10 đến 13 (API 29-33): Gán loại hình dịch vụ đồng bộ dữ liệu ngầm
+            } else if (Build.VERSION.SDK_INT >= 29) { // 29 là Android 10 (Q)
+                // Tiêu chuẩn Android 10 đến 13
                 startForeground(
                         NOTIFICATION_ID, 
                         notif, 
@@ -106,27 +103,21 @@ public class ZaloForegroundService extends Service {
                 );
                 Log.d(TAG, "Bật Foreground Service chế độ DATA_SYNC chuẩn Android 10+");
             } else {
-                // Android 9 trở xuống
                 startForeground(NOTIFICATION_ID, notif);
                 Log.d(TAG, "Bật Foreground Service chế độ legacy");
             }
         } catch (Exception e) {
             Log.e(TAG, "Lỗi khi chạy startForeground: " + e.getMessage());
             try {
-                // Fallback cố gắng duy trì chạy thường để tránh sụp app lập tức
                 startForeground(NOTIFICATION_ID, notif);
-            } catch (Exception ex) {
-                Log.e(TAG, "Không thể fallback: " + ex.getMessage());
-            }
+            } catch (Exception ex) {}
         }
 
-        // 5. KÍCH HOẠT WAKELOCK AN TOÀN CHỐNG TRÙNG LẶP (Giữ CPU chạy ngầm)
         if (wakeLock != null) {
             try {
                 if (wakeLock.isHeld()) {
-                    wakeLock.release(); // Giải phóng lần giữ cũ trước khi kích hoạt lần mới
+                    wakeLock.release(); 
                 }
-                // Giữ nhịp CPU hoạt động tối đa 24 giờ liên tục
                 wakeLock.acquire(24 * 60 * 60 * 1000L);
                 Log.d(TAG, "Đã kích hoạt khóa CPU WakeLock 24h.");
             } catch (Exception e) {
@@ -134,22 +125,17 @@ public class ZaloForegroundService extends Service {
             }
         }
 
-        // START_STICKY: Tự động khởi động lại dịch vụ nếu hệ thống thiếu RAM và kill nhầm app
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
-        Log.d(TAG, "onDestroy được gọi. Đang dọn dẹp tài nguyên nền...");
-        // Nhả triệt để WakeLock để tối ưu hóa pin khi tắt app
         try {
             if (wakeLock != null && wakeLock.isHeld()) {
                 wakeLock.release();
                 Log.d(TAG, "Đã giải phóng WakeLock thành công.");
             }
-        } catch (Exception e) {
-            Log.e(TAG, "Lỗi giải phóng WakeLock: " + e.getMessage());
-        }
+        } catch (Exception e) {}
         super.onDestroy();
     }
 
@@ -162,12 +148,11 @@ public class ZaloForegroundService extends Service {
         if (context == null) return;
         try {
             Intent intent = new Intent(context, ZaloForegroundService.class);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (Build.VERSION.SDK_INT >= 26) {
                 context.startForegroundService(intent);
             } else {
                 context.startService(intent);
             }
-            Log.d(TAG, "Đã gửi lệnh kích hoạt Service thành công.");
         } catch (Exception e) {
             Log.e(TAG, "Không thể khởi động Service: " + e.getMessage());
         }
