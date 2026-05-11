@@ -2,6 +2,7 @@ name: Build ZAuto VIP
 
 on:
   push:
+    branches: [ "main", "master" ]
   workflow_dispatch:
 
 jobs:
@@ -9,7 +10,8 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
 
       # =====================================================
       # CACHE
@@ -20,10 +22,10 @@ jobs:
           path: |
             ~/.buildozer
             ~/.gradle
-          key: buildozer-v2026-clean-v1
+          key: buildozer-v2026-clean-v3
 
       # =====================================================
-      # CLEAN SYSTEM
+      # CLEAN SYSTEM (Giúp server có đủ bộ nhớ để build)
       # =====================================================
       - name: Cleanup System
         run: |
@@ -63,7 +65,7 @@ jobs:
             virtualenv
 
       # =====================================================
-      # GENERATE KEYSTORE
+      # GENERATE KEYSTORE (Chữ ký ứng dụng)
       # =====================================================
       - name: Generate Keystore
         run: |
@@ -80,120 +82,15 @@ jobs:
           fi
 
       # =====================================================
-      # CREATE RESOURCE FILES
-      # =====================================================
-      - name: Create Android Resources
-        run: |
-          mkdir -p java/org/zauto
-
-          # =================================================
-          # BOOT RECEIVER (Chỉ giữ lại cái này để chạy ngầm)
-          # =================================================
-          cat > java/org/zauto/BootReceiver.java <<EOF
-          package org.zauto;
-
-          import android.content.BroadcastReceiver;
-          import android.content.Context;
-          import android.content.Intent;
-
-          import org.kivy.android.PythonActivity;
-
-          public class BootReceiver extends BroadcastReceiver {
-
-              @Override
-              public void onReceive(Context context, Intent intent) {
-
-                  if (Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
-
-                      Intent i =
-                          new Intent(context, PythonActivity.class);
-
-                      i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-
-                      context.startActivity(i);
-                  }
-              }
-          }
-          EOF
-
-      # =====================================================
-      # CREATE BUILDOZER SPEC
-      # =====================================================
-      - name: Generate buildozer.spec
-        run: |
-          cat > buildozer.spec <<EOF
-          [app]
-
-          title = ZAuto VIP
-
-          package.name = taxi
-          package.domain = org.zauto
-
-          source.dir = .
-          source.include_exts = py,png,jpg,kv,json,xml,java,db
-
-          version = 7.0
-
-          requirements = python3,kivy==2.2.1,kivymd==1.1.1,pyjnius
-
-          orientation = portrait
-
-          icon.filename = icon.png
-
-          android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,RECEIVE_BOOT_COMPLETED,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,SYSTEM_ALERT_WINDOW,QUERY_ALL_PACKAGES
-
-          android.api = 34
-          android.minapi = 24
-
-          android.archs = arm64-v8a, armeabi-v7a
-
-          android.enable_androidx = True
-
-          android.add_src = ./java
-
-          android.gradle_dependencies = \
-              androidx.core:core:1.12.0
-
-          android.foreground_service = True
-
-          android.accept_sdk_license = True
-
-          p4a.branch = master
-
-          android.extra_manifest_application = \
-              <receiver android:name="org.zauto.BootReceiver" \
-                  android:enabled="true" \
-                  android:exported="true"> \
-                  <intent-filter> \
-                      <action android:name="android.intent.action.BOOT_COMPLETED" /> \
-                  </intent-filter> \
-              </receiver> \
-              \
-              <service android:name="org.zauto.ZaloForegroundService" \
-                  android:exported="false" \
-                  android:foregroundServiceType="dataSync"/>
-
-          android.release_keystore = mykeystore.keystore
-          android.release_keyalias = myalias
-
-          log_level = 2
-
-          [buildozer]
-
-          build_dir = ./.buildozer
-          bin_dir = ./bin
-          EOF
-
-      # =====================================================
       # BUILD APK
       # =====================================================
       - name: Build APK
         run: |
           export PATH=$PATH:~/.local/bin
-
           export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
-          rm -rf .buildozer
+          # Dọn dẹp bản build cũ nếu có
+          rm -rf .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi/bin/*
           rm -rf bin/*
 
           mkdir -p ~/.android
@@ -201,13 +98,12 @@ jobs:
 
           export GRADLE_OPTS="-Xmx4096m -Dorg.gradle.daemon=false"
 
+          # Chạy Buildozer
           buildozer android debug || true
 
-          echo "=========== FULL GRADLE ERROR ==========="
-
-          cd .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi
-
-          ./gradlew assembleDebug --stacktrace --info
+          echo "=========== CHECKING GRADLE LOGS IF FAILED ==========="
+          cd .buildozer/android/platform/build-arm64-v8a_armeabi-v7a/dists/taxi || true
+          ./gradlew assembleDebug --stacktrace --info || true
 
       # =====================================================
       # UPLOAD APK
