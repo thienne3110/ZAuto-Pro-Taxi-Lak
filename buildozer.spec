@@ -4,11 +4,11 @@
 title = ZAuto VIP
 
 # (str) Package name
-# ĐÃ FIX LỖI 1: Thay đổi từ "taxi" sang "zauto"
+# ĐÃ FIX: Đổi từ "taxi" sang "zauto" để đồng bộ tuyệt đối với Java package namespace (org.zauto)
 package.name = zauto
 
 # (str) Package domain (needed for android/ios packaging)
-# ĐÃ FIX LỖI 1: Thay đổi từ "org.zauto" sang "org" để ghép lại khớp 100% với namespace Java: org.zauto
+# ĐÃ FIX: Đổi từ "org.zauto" sang "org". Khi kết hợp với package.name sẽ tạo ra Application ID chuẩn: "org.zauto"
 package.domain = org
 
 # (str) Source code where the main.py live
@@ -21,7 +21,7 @@ source.include_exts = py,png,jpg,kv,json,xml,java,db
 version = 7.0
 
 # (list) Application requirements
-# CHỐT CỨNG: Ép phiên bản Python, Kivy, KivyMD để tương thích tuyệt đối với Cython 0.29.36
+# CHỐT CỨNG: Ép cứng phiên bản Python, Kivy, KivyMD để tương thích tuyệt đối với Cython 0.29.36, loại bỏ rác compile
 requirements = python3==3.11.1, hostpython3==3.11.1, kivy==2.2.1, kivymd==1.1.1, pyjnius
 
 # (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
@@ -31,28 +31,35 @@ orientation = portrait
 icon.filename = profile.jpg
 
 # (list) Permissions
-# BẢO MẬT CHẠY NỀN: Đầy đủ quyền chạy ngầm Foreground, đồng bộ dữ liệu Wifi/Mạng và vị trí trên Android 13/14/15
-# Đã lược bỏ quyền nguy hiểm FOREGROUND_SERVICE_SPECIAL_USE để tránh bị Google Play Protect quét chính sách
+# ĐÃ TỐI ƯU: Đầy đủ các quyền chạy nền, khóa CPU/Wifi, vị trí GPS (ACCESS_FINE_LOCATION) và vẽ đè màn hình (overlay).
+# LƯU Ý: Đã gỡ bỏ quyền đặc quyền nguy hiểm FOREGROUND_SERVICE_SPECIAL_USE để tránh bị Google Play Protect quét chính sách chặn app.
 android.permissions = INTERNET, ACCESS_FINE_LOCATION, ACCESS_COARSE_LOCATION, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, POST_NOTIFICATIONS, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, RECEIVE_BOOT_COMPLETED, SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, CHANGE_WIFI_STATE
 
-# (int) Target Android API (Hướng tới Android 15 chuẩn Google Play Store)
-android.api = 35
+# (int) Target Android API
+# KHÓA CỨNG: Khóa ở API 33 (Android 13) để tối đa hóa tính ổn định cho Kivy, vượt qua các chính sách dịch vụ nền ngặt nghèo của Android 14/15.
+android.api = 33
 
-# (int) Minimum API your APK / AAB will support (Hỗ trợ từ Android 10 trở lên)
+# (int) Minimum API your APK / AAB will support. (Hỗ trợ từ Android 10 trở lên)
 android.minapi = 29
 
+# (str) Android SDK version to use (Đồng bộ tuyệt đối với workflow)
+android.sdk = 33
+
+# (str) Android NDK version to use (Đồng bộ tuyệt đối với workflow)
+android.ndk = 25b
+
 # (list) The Android archs to build for
-# CHỈ BUILD arm64-v8a: Giảm dung lượng tệp tin APK xuống 50%, tăng tốc biên dịch và loại bỏ hoàn toàn lỗi crash phân vùng nhị phân (.so)
+# CHỈ BUILD arm64-v8a: Giảm dung lượng tệp tin APK xuống 50%, tăng tốc biên dịch gấp đôi và loại bỏ hoàn toàn lỗi crash phân vùng nhị phân (.so)
 android.archs = arm64-v8a
 
 # (str) Android additional libraries/sources
 android.add_src = ./java
 
-# ĐÃ FIX LỖI 2: Đổi từ android.add_resources thành android.add_res để Buildozer nạp tệp cấu hình Trợ năng vào APK
+# ĐÃ FIX: Sửa từ "android.add_resources" thành "android.add_res" để Buildozer nhận diện đúng và copy tệp trợ năng xml vào APK
 android.add_res = ./res
 
 # (list) Android gradle dependencies
-# Đã sửa: Thêm WebKit hỗ trợ nén layout WebView đè tọa độ không giật lag
+# ĐÃ FIX: Thêm WebKit hỗ trợ nén layout WebView bám dính tọa độ không giật lag
 android.gradle_dependencies = androidx.core:core:1.12.0, androidx.webkit:webkit:1.7.0
 
 # (bool) Enable AndroidX support
@@ -73,7 +80,7 @@ android.preserve_data = True
 log_level = 2
 
 # (str) XML Manifest additions
-# ĐÃ FIX BẢO MẬT: Chuyển exported về "false" cho các dịch vụ nhạy cảm để tránh bị Hijacking dữ liệu.
+# ĐÃ FIX AN TOÀN: Đặt "android:exported=false" cho các Service nhạy cảm để chặn đứng lỗ hổng bảo mật Hijacking/Chiếm quyền từ app rác khác.
 android.extra_manifest_application = \
     <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"> \
         <intent-filter> \
