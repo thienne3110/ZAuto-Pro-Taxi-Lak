@@ -1,6 +1,9 @@
 import json, os, re, time, traceback
 import hashlib # Dùng để băm SHA256 kiểm tra key
 import uuid    # Dùng để lấy ID máy
+import queue
+import threading
+import gc
 import random
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
@@ -16,9 +19,7 @@ from kivymd.app import MDApp
 from kivy.lang import Builder
 from kivy.utils import platform
 from kivy.clock import Clock
-from kivy.clock import Clock
 from kivy.core.window import Window # <--- THÊM DÒNG NÀY VÀO
-from kivymd.uix.card import MDCard
 from kivymd.uix.card import MDCard
 from kivymd.uix.list import TwoLineAvatarIconListItem, ImageLeftWidget
 from kivy.properties import StringProperty, BooleanProperty
@@ -684,6 +685,14 @@ class ZAutoProApp(MDApp):
                 self.global_last_reply = 0
                 self.last_reply_time = {}
 
+                # 4.1. KHỞI TẠO QUEUE & WORKER THREAD CHỐNG LAG UI
+                self.msg_queue = queue.Queue()
+                self.worker_thread = threading.Thread(target=self._message_worker, daemon=True)
+                self.worker_thread.start()
+
+                # 4.2. GỌI WATCHDOG DỌN RÁC MEMORY MỖI 3 PHÚT
+                Clock.schedule_interval(self._system_watchdog, 180)
+
                 # 5. Đăng ký bộ lắng nghe Broadcast 3 Action (Động cơ Web + Động cơ Accessibility)
                 if not hasattr(self, 'receiver_started'):
                     self.br = BroadcastReceiver(self.on_broadcast_received, 
@@ -790,6 +799,56 @@ class ZAutoProApp(MDApp):
         # Sửa self.m_id thành get_machine_id()
         popup = ActivationPopup(machine_id=get_machine_id(), on_success=self.apply_license_ui, can_cancel=True)
         popup.open()
+    def _message_worker(self):
+        """Thread độc lập chạy ngầm để xử lý tin nhắn theo thứ tự"""
+        while True:
+            try:
+                action, data = self.msg_queue.get()
+                if action == 'WEB_NEW_MSG':
+                    self._process_heavy_message(data['group'], data['msg'])
+                self.msg_queue.task_done()
+            except Exception as e:
+                print(f"Lỗi Worker Thread: {e}")
+
+    def _process_heavy_message(self, group, msg):
+        """Xử lý logic lọc nặng ở background, chỉ đẩy lên UI khi đã xong"""
+        # KIỂM TRA 1 & 2
+        if not getattr(self, 'is_radar_running', False): return
+        if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
+
+        # KIỂM TRA 3: Lọc trùng lặp
+        msg_hash = str(hash(group + msg))
+        if msg_hash in self.processed_msg_hashes: return
+        self.processed_msg_hashes.add(msg_hash)
+        if len(self.processed_msg_hashes) > 500: self.processed_msg_hashes.clear()
+
+        # KIỂM TRA 4: Lọc từ khóa
+        if getattr(self.root.ids, 'sw_filter', None) and self.root.ids.sw_filter.active:
+            msg_low = msg.lower()
+            loai_keys = [k.strip() for k in self.root.ids.inp_loai.text.lower().split(',') if k.strip()]
+            if loai_keys and any(lk in msg_low for lk in loai_keys): return
+            nhan_keys = [k.strip() for k in self.root.ids.inp_nhan.text.lower().split(',') if k.strip()]
+            if nhan_keys and not any(nk in msg_low for nk in nhan_keys): return
+
+        # HOÀN TẤT LỌC -> ÉP CẬP NHẬT GIAO DIỆN VỀ LẠI UI THREAD BẰNG CLOCK
+        Clock.schedule_once(lambda dt: self.add_ride_card(group, msg))
+        Clock.schedule_once(lambda dt: self.log_history(group, msg))
+
+        # TỰ ĐỘNG CHỐT NẾU ĐANG BẬT AUTO
+        if getattr(self.root.ids, 'sw_auto_main', None) and self.root.ids.sw_auto_main.active:
+            self.execute_reply(group, self.root.ids.inp_reply.text)
+
+    def _system_watchdog(self, dt):
+        """Chống rò rỉ bộ nhớ và khôi phục Thread nếu chết"""
+        gc.collect() 
+        if not hasattr(self, 'worker_thread') or not self.worker_thread.is_alive():
+            print("Khởi động lại Worker Thread...")
+            self.worker_thread = threading.Thread(target=self._message_worker, daemon=True)
+            self.worker_thread.start()
+
+    # (Đây là hàm on_broadcast_received cũ của bác)
+    
+
     def on_broadcast_received(self, context, intent):
         action = intent.getAction()
         
@@ -802,9 +861,9 @@ class ZAutoProApp(MDApp):
             if zalo_name: self.config_data['zalo_name'] = zalo_name
             if zalo_avatar: self.config_data['zalo_avatar'] = zalo_avatar
             
-            self.save_config_silent()
-            self.update_profile_ui()
-            toast("Đã liên kết Zalo Web thành công!")
+            Clock.schedule_once(lambda dt: self.save_config_silent())
+            Clock.schedule_once(lambda dt: self.update_profile_ui())
+            Clock.schedule_once(lambda dt: toast("Đã liên kết Zalo Web thành công!"))
             return
 
         # --- 2. XỬ LÝ KHI NHẬN DANH SÁCH NHÓM TỪ WEB ---
@@ -820,55 +879,14 @@ class ZAutoProApp(MDApp):
                 print(f"Lỗi xử lý danh sách nhóm: {e}")
             return
 
-        # --- 3. XỬ LÝ KHI CÓ TIN NHẮN MỚI (TRỢ NĂNG & WEB) ---
+        # --- 3. XỬ LÝ KHI CÓ TIN NHẮN MỚI (ĐẨY VÀO HÀNG ĐỢI NGẦM) ---
         if action == 'org.zauto.taxi.WEB_NEW_MSG':
-            
-            # KIỂM TRA 1: Radar phải đang BẬT
-            if not getattr(self, 'is_radar_running', False):
-                return
-                
             group = intent.getStringExtra("group")
             msg = intent.getStringExtra("msg")
             
             if group and msg:
-                # KIỂM TRA 2: Lọc theo danh sách Nhóm (Tab Nhóm)
-                # Nếu nhóm có trong danh sách và đang bị TẮT thì bỏ qua
-                if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]:
-                    return
-
-                # KIỂM TRA 3: Chống lặp tin nhắn (Spam Control)
-                msg_hash = str(hash(group + msg))
-                if msg_hash in self.processed_msg_hashes: 
-                    return
-                self.processed_msg_hashes.add(msg_hash)
-                if len(self.processed_msg_hashes) > 500: 
-                    self.processed_msg_hashes.clear()
-                
-                # KIỂM TRA 4: Logic lọc từ khóa (Tab Cài đặt)
-                if self.root.ids.sw_filter.active:
-                    msg_low = msg.lower()
-                    
-                    # Lọc từ khóa BỎ QUA (Loại)
-                    loai_keys = [k.strip() for k in self.root.ids.inp_loai.text.lower().split(',') if k.strip()]
-                    if loai_keys and any(lk in msg_low for lk in loai_keys): 
-                        return
-                    
-                    # Lọc từ khóa NHẬN (Ưu tiên)
-                    nhan_keys = [k.strip() for k in self.root.ids.inp_nhan.text.lower().split(',') if k.strip()]
-                    if nhan_keys and not any(nk in msg_low for nk in nhan_keys): 
-                        return
-
-                # --- NẾU VƯỢT QUA HẾT CÁC BỘ LỌC -> HIỂN THỊ & CHỐT ---
-                
-                # Hiện thẻ cuốc ở tab Canh Me
-                Clock.schedule_once(lambda dt: self.add_ride_card(group, msg))
-                
-                # Lưu vào lịch sử tin nhắn (Tab Tin nhắn)
-                Clock.schedule_once(lambda dt: self.log_history(group, msg))
-
-                # TỰ ĐỘNG CHỐT: Nếu công tắc "Tự động" đang BẬT
-                if self.root.ids.sw_auto_main.active:
-                    self.execute_reply(group, self.root.ids.inp_reply.text)
+                # Ném dữ liệu vào Queue, thả cho UI Thread rảnh tay chạy tiếp mượt mà
+                self.msg_queue.put(('WEB_NEW_MSG', {'group': group, 'msg': msg}))
 
     def add_ride_card(self, group, msg):
         try:
