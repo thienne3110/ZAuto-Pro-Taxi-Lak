@@ -813,29 +813,144 @@ class ZAutoProApp(MDApp):
         toast(f"{status_text} nhận cuốc nhóm: {name}")            
     def check_license_at_startup(self):
         m_id = get_machine_id()
-        # Ưu tiên kiểm tra Key thật trước
+        current_time = int(time.time())
+
+        # 1. KIỂM TRA BẢN QUYỀN CHÍNH THỨC (KEY VIP) TRƯỚC
         if os.path.exists(LICENSE_FILE):
-            with open(LICENSE_FILE, 'r') as f:
-                key = f.read().strip()
+            try:
+                with open(LICENSE_FILE, 'r') as f:
+                    key = f.read().strip()
                 ok, expiry = verify_license(key, m_id)
                 if ok:
+                    if expiry < current_time:
+                        self.safe_toast("Phát hiện thời gian hệ thống không chính xác!")
+                        self.show_activation_popup()
+                        return
                     self.apply_license_ui(expiry)
                     return
+            except Exception as e:
+                logger.error(f"Lỗi đọc license VIP: {e}")
 
-        # Nếu không có key, kiểm tra Trial 15 ngày
+        # 2. CƠ CHẾ OFFLINE CHỐNG GỠ APP & XÓA DATA ĐỂ RESET 15 NGÀY FREE
         trial_expire = 0
-        if not os.path.exists(TRIAL_FILE):
-            trial_expire = int(time.time()) + (15 * 24 * 3600)
-            with open(TRIAL_FILE, 'w') as f: f.write(str(trial_expire))
-        else:
-            with open(TRIAL_FILE, 'r') as f:
-                content = f.read().strip()
-                trial_expire = int(content) if content.isdigit() else 0
 
-        if trial_expire > int(time.time()):
+        # Đường dẫn file backup ẩn ở phân vùng dùng chung (Không bị xóa khi gỡ cài đặt app)
+        backup_dir = "/sdcard/Android/media/org.zauto.taxi/"
+        backup_file = os.path.join(backup_dir, ".sys_secure_node.dat")
+
+        # Đọc dữ liệu dùng thử từ 3 nguồn để đối chiếu chéo (Local App, SharedPreferences, Backup SDCard)
+        local_val = None
+        shared_val = None
+        backup_val = None
+
+        # Nguồn A: Đọc file local của App (Bị xóa khi Clear Data hoặc Gỡ cài đặt)
+        if os.path.exists(TRIAL_FILE):
+            try:
+                with open(TRIAL_FILE, 'r') as f:
+                    local_val = self._decrypt_secure_data(f.read().strip(), m_id)
+            except: pass
+
+        # Nguồn B: Đọc SharedPreferences hệ thống (Bị xóa khi Gỡ cài đặt nhưng GIỮ LẠI khi Clear Data)
+        if platform == 'android':
+            try:
+                context = PythonActivity.mActivity
+                shared_pref = context.getSharedPreferences("ZAutoSecureStore", context.MODE_PRIVATE)
+                cipher_shared = shared_pref.getString("secure_token", None)
+                if cipher_shared:
+                    shared_val = self._decrypt_secure_data(cipher_shared, m_id)
+            except: pass
+
+        # Nguồn C: Đọc file ẩn ở phân vùng bộ nhớ chung (GIỮ LẠI TRONG MỌI TRƯỜNG HỢP gỡ app hay xóa data)
+        if os.path.exists(backup_file):
+            try:
+                with open(backup_file, 'r') as f:
+                    backup_val = self._decrypt_secure_data(f.read().strip(), m_id)
+            except: pass
+
+        # --- LOGIC QUYẾT ĐỊNH ĐỒNG BỘ OFFLINE ---
+        # Ưu tiên lấy mốc hết hạn dùng thử nhỏ nhất/cũ nhất từng được lưu để chặn đứng hành vi gia hạn lậu
+        valid_trials = []
+        for val in [local_val, shared_val, backup_val]:
+            if val and val.isdigit():
+                valid_trials.append(int(val))
+
+        if valid_trials:
+            # Phát hiện đã từng cài app hoặc từng dùng thử: Lấy mốc thời gian dùng thử cũ nhất (an toàn nhất)
+            trial_expire = min(valid_trials)
+        else:
+            # Máy hoàn toàn sạch sẽ (Lần đầu tiên cài app thật sự)
+            trial_expire = current_time + (15 * 24 * 3600) # Cấp 15 ngày dùng thử
+
+        # ĐỒNG BỘ NGƯỢC LẠI CẢ 3 NƠI ĐỂ KHÓA CHẶT THIẾT BỊ
+        cipher_value = self._encrypt_secure_data(str(trial_expire), m_id)
+        
+        # Đồng bộ Nguồn A
+        try:
+            with open(TRIAL_FILE, 'w') as f:
+                f.write(cipher_value)
+        except: pass
+
+        # Đồng bộ Nguồn B
+        if platform == 'android':
+            try:
+                context = PythonActivity.mActivity
+                shared_pref = context.getSharedPreferences("ZAutoSecureStore", context.MODE_PRIVATE)
+                editor = shared_pref.edit()
+                editor.putString("secure_token", cipher_value)
+                editor.commit()
+            except: pass
+
+        # Đồng bộ Nguồn C (Tạo thư mục ẩn bộ nhớ chung và ghi file)
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+            with open(backup_file, 'w') as f:
+                f.write(cipher_value)
+        except: pass
+
+        # 3. CHỐNG QUAY NGƯỢC THỜI GIAN ĐIỆN THOẠI (TIME-TRAVEL PROTECTION)
+        last_runtime = self.config_data.get('last_runtime', 0)
+        if current_time < last_runtime:
+            self.safe_toast("Phát hiện gian lận đổi ngày giờ điện thoại! Thiết bị đã bị khóa.")
+            self.show_activation_popup()
+            return
+            
+        # Cập nhật mốc thời gian chạy app mới nhất
+        self.config_data['last_runtime'] = current_time
+        self.save_config_silent()
+
+        # 4. KIỂM TRA HẠN DÙNG THỬ
+        if trial_expire > current_time:
             self.apply_license_ui(trial_expire, is_trial=True)
         else:
             self.show_activation_popup()
+    def _encrypt_secure_data(self, data, key):
+        """Mã hóa chuỗi dữ liệu dựa trên mã ANDROID_ID duy nhất của phần cứng"""
+        try:
+            # Sử dụng SHA256 của key phần cứng làm mật mã XOR
+            key_hash = hashlib.sha256(key.encode()).hexdigest()
+            encrypted = []
+            for i in range(len(data)):
+                key_c = key_hash[i % len(key_hash)]
+                enc_c = chr(ord(data[i]) ^ ord(key_c))
+                encrypted.append(enc_c)
+            # Chuyển sang dạng Hex an toàn để ghi file
+            return "".join(encrypted).encode('utf-8').hex()
+        except:
+            return data
+
+    def _decrypt_secure_data(self, hex_data, key):
+        """Giải mã chuỗi dữ liệu phần cứng"""
+        try:
+            data = bytes.fromhex(hex_data).decode('utf-8')
+            key_hash = hashlib.sha256(key.encode()).hexdigest()
+            decrypted = []
+            for i in range(len(data)):
+                key_c = key_hash[i % len(key_hash)]
+                dec_c = chr(ord(data[i]) ^ ord(key_c))
+                decrypted.append(dec_c)
+            return "".join(decrypted)
+        except:
+            return hex_data        
 
     def apply_license_ui(self, expiry, is_trial=False):
         if expiry > 4000000000:
