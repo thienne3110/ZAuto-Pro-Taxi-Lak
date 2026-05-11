@@ -19,8 +19,9 @@ source.include_exts = py,png,jpg,kv,json,xml,java,db
 version = 7.0
 
 # (list) Application requirements
-# Chú ý: Nên fix cứng bản kivymd==1.1.1 để tránh lỗi update UI của bản 2.0.0
-requirements = python3,kivy,kivymd==1.1.1,pyjnius,android
+# ĐÃ FIX: Chốt cứng phiên bản Kivy, KivyMD, Pyjnius và gỡ bỏ sqlite3, android để trình biên dịch dùng built-in tối ưu nhất
+requirements = python3==3.11.1, hostpython3==3.11.1, kivy==2.2.1, kivymd==1.1.1, pyjnius
+
 # (str) Supported orientation (one of landscape, sensorLandscape, portrait or all)
 orientation = portrait
 
@@ -28,13 +29,16 @@ orientation = portrait
 icon.filename = profile.jpg
 
 # (list) Permissions
-android.permissions = INTERNET,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,RECEIVE_BOOT_COMPLETED,WAKE_LOCK,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,POST_NOTIFICATIONS,SYSTEM_ALERT_WINDOW,QUERY_ALL_PACKAGES,BIND_ACCESSIBILITY_SERVICE,BIND_NOTIFICATION_LISTENER_SERVICE
+# ĐÃ FIX: Gộp đầy đủ chuỗi quyền chạy ngầm, quản lý sóng Wifi và trạng thái luồng mạng cho Android 13/14/15
+android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, FOREGROUND_SERVICE_SPECIAL_USE, POST_NOTIFICATIONS, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, RECEIVE_BOOT_COMPLETED, SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, CHANGE_WIFI_STATE
 
 # (int) Target Android API, should be as high as possible.
-android.api = 34
+# ĐÃ FIX: Hướng tới Android 15 chuẩn Google Play Store
+android.api = 35
 
 # (int) Minimum API your APK / AAB will support.
-android.minapi = 24
+# ĐÃ FIX: Chỉ hỗ trợ từ Android 10 trở lên để loại bỏ rác thư viện legacy
+android.minapi = 29
 
 # (list) The Android archs to build for
 android.archs = arm64-v8a, armeabi-v7a
@@ -44,10 +48,14 @@ android.add_src = ./java
 android.add_resources = ./res
 
 # (list) Android gradle dependencies
-android.gradle_dependencies = androidx.core:core:1.12.0
+# ĐÃ FIX: Thêm thư viện webkit để WebView bám dính tọa độ mượt mà không crash layout
+android.gradle_dependencies = androidx.core:core:1.12.0, androidx.webkit:webkit:1.7.0
 
 # (bool) Enable AndroidX support
+# ĐÃ FIX: Bật AndroidX và tự động chấp nhận SDK License khi build
 android.enable_androidx = True
+android.accept_sdk_license = True
+p4a.branch = develop
 
 # (bool) Indicate whether the application should be able to run in background
 android.foreground_service = True
@@ -81,6 +89,11 @@ android.extra_manifest_application = \
         <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config" /> \
     </service> \
     <service android:name="org.zauto.ZaloForegroundService" android:exported="false" android:foregroundServiceType="dataSync" />
+
+# ĐÃ FIX: Các cấu hình bổ sung bắt buộc để tối ưu hóa màn hình chờ và ép chế độ chạy dọc
+p4a.local_recipes = 
+fullscreen = 0
+android.presplash_color = #FFFFFF
 
 [buildozer]
 
