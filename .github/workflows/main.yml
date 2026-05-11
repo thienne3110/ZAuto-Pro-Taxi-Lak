@@ -1,4 +1,85 @@
-# =====================================================
+name: Build ZAuto VIP
+
+# Cách viết này an toàn 100%, tuyệt đối không bao giờ bị lỗi lùi lề ở dòng 4 nữa
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      # =====================================================
+      # CACHE
+      # =====================================================
+      - name: Cache Buildozer
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            ~/.gradle
+          key: buildozer-v2026-clean-v6
+
+      # =====================================================
+      # CLEAN SYSTEM
+      # =====================================================
+      - name: Cleanup System
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+
+      # =====================================================
+      # INSTALL DEPENDENCIES
+      # =====================================================
+      - name: Install dependencies
+        run: |
+          sudo apt update
+
+          sudo apt install -y \
+            git zip unzip \
+            autoconf automake libtool \
+            pkg-config zlib1g-dev \
+            libncurses5-dev libncursesw5-dev \
+            libtinfo6 cmake \
+            libffi-dev libssl-dev \
+            openjdk-17-jdk \
+            python3-pip python3-setuptools \
+            libgl1-mesa-dev \
+            libgles2-mesa-dev \
+            ffmpeg \
+            libsdl2-dev \
+            libsdl2-image-dev \
+            libsdl2-mixer-dev \
+            libsdl2-ttf-dev
+
+          pip3 install --user --upgrade pip
+
+          pip3 install --user \
+            Cython==0.29.36 \
+            buildozer \
+            virtualenv
+
+      # =====================================================
+      # GENERATE KEYSTORE
+      # =====================================================
+      - name: Generate Keystore
+        run: |
+          if [ ! -f mykeystore.keystore ]; then
+            keytool -genkey -v \
+              -keystore mykeystore.keystore \
+              -alias myalias \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=ZAuto, OU=Taxi, O=TaxiLak, L=DakLak, ST=VN, C=VN" \
+              -storepass 123456 \
+              -keypass 123456
+          fi
+
+      # =====================================================
       # BUILD APK (CHUẨN HÓA: LỖI SẼ BÁO ĐỎ)
       # =====================================================
       - name: Build APK
@@ -15,7 +96,7 @@
 
           export GRADLE_OPTS="-Xmx4096m -Dorg.gradle.daemon=false"
 
-          # Đã bỏ "|| true". Nếu lỗi, bước này sẽ sập và báo Đỏ (Failed) ngay lập tức!
+          # Lệnh này sẽ tự động chạy và sập (báo Failed đỏ) ngay khi có lỗi
           yes | buildozer android debug
 
       # =====================================================
@@ -29,7 +110,7 @@
           ./gradlew assembleDebug --stacktrace --info || true
 
       # =====================================================
-      # UPLOAD APK
+      # UPLOAD APK NẾU THÀNH CÔNG
       # =====================================================
       - name: Upload APK
         if: success()   # Chỉ upload khi mọi thứ thành công mỹ mãn
