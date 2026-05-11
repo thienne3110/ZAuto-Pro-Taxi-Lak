@@ -2,8 +2,6 @@ import json, os, re, time, traceback
 import hashlib # Dùng để băm SHA256 kiểm tra key
 import uuid    # Dùng để lấy ID máy
 import random
-from kivy.core.window import Window
-Window.softinput_mode = "below_target" # FIX 6: Chống bàn phím đè layout
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 # Thêm các thành phần giao diện của Kivy
@@ -18,6 +16,9 @@ from kivymd.app import MDApp
 from kivy.lang import Builder
 from kivy.utils import platform
 from kivy.clock import Clock
+from kivy.clock import Clock
+from kivy.core.window import Window # <--- THÊM DÒNG NÀY VÀO
+from kivymd.uix.card import MDCard
 from kivymd.uix.card import MDCard
 from kivymd.uix.list import TwoLineAvatarIconListItem, ImageLeftWidget
 from kivy.properties import StringProperty, BooleanProperty
@@ -32,6 +33,7 @@ if platform == 'android':
     PythonActivity = autoclass('org.kivy.android.PythonActivity')
     Settings = autoclass('android.provider.Settings')
     Intent = autoclass('android.content.Intent')
+    FrameLayout = autoclass('android.widget.FrameLayout')
 else:
     BASE_PATH = './'
     def run_on_ui_thread(func): return func
@@ -42,9 +44,6 @@ HISTORY_FILE = BASE_PATH + 'history.json'
 SUPPORT_PHONE = "0838429999"
 LICENSE_FILE = os.path.join(BASE_PATH, 'license.dat')
 TRIAL_FILE = os.path.join(BASE_PATH, 'trial_check.dat')
-
-# THÊM DÒNG NÀY: Giấu file vào thư mục Download (Chống gỡ App)
-BACKUP_TRIAL_FILE = '/storage/emulated/0/Download/.sys_zauto_cache.dat'
 
 def get_machine_id():
     """Lấy ID máy chuẩn (Logic từ launcher_auto_secure.py)"""
@@ -248,7 +247,17 @@ MDScreen:
                     specific_text_color: 0.1, 0.1, 0.1, 1
                     right_action_items: [["delete-sweep-outline", lambda x: app.clear_history()]]
                 
-                # BỎ NÚT MỞ KHUNG CHAT CŨ THEO YÊU CẦU CỦA BẠN
+                # Nút mở khung chat trôi (Giải pháp 2)
+                MDBoxLayout:
+                    size_hint_y: None
+                    height: "70dp"
+                    padding: "12dp"
+                    MDRaisedButton:
+                        text: "MỞ KHUNG CHAT ZALO WEB"
+                        icon: "chat-processing"
+                        size_hint_x: 1
+                        md_bg_color: 0.1, 0.6, 0.2, 1
+                        on_release: app.root.ids.bottom_nav.switch_tab('tab_zalo')
 
                 ScrollView:
                     MDList:
@@ -271,82 +280,53 @@ MDScreen:
             name: 'tab_zalo'
             text: 'Tài khoản'
             icon: 'account-circle'
-            # Lắng nghe sự kiện chuyển tab để điều khiển WebView
-            on_tab_press: app.on_zalo_tab_active(True) 
-            
+            on_tab_press: app._init_webview_android()
+            on_enter: app.set_webview_visible(True)
+            on_leave: app.set_webview_visible(False)
+
             MDBoxLayout:
                 orientation: 'vertical'
-                MDTopAppBar:
-                    title: "Quản lý Zalo"
-                    elevation: 1
-                    md_bg_color: 1, 1, 1, 1
-                    specific_text_color: 0.1, 0.1, 0.1, 1
-                
+
                 MDBoxLayout:
-                    orientation: 'vertical'
-                    padding: "10dp"
+                    id: zalo_status_bar
+                    size_hint_y: None
+                    height: "48dp"
+                    padding: ["12dp", "4dp"]
                     spacing: "10dp"
+                    md_bg_color: 0.5, 0.5, 0.5, 1
+                    
+                    # ... (Các phần icon và label bên trong giữ nguyên) ...
 
-                    # 1. THẺ THÔNG TIN TÀI KHOẢN GỐC (Thiết kế lại 2 tầng chuẩn Mobile)
-                    MDCard:
-                        orientation: "vertical"
-                        adaptive_height: True
-                        padding: "15dp"
-                        spacing: "15dp"
-                        radius: [12, ]
-                        md_bg_color: 1, 1, 1, 1
-                        elevation: 1
-                        
-                        MDBoxLayout:
-                            orientation: "horizontal"
-                            adaptive_height: True
-                            spacing: "10dp"
-                            
-                            FitImage:
-                                id: zalo_avatar_view
-                                source: "profile.jpg"
-                                size_hint: None, None
-                                size: "50dp", "50dp"
-                                radius: [25, ]
-                                pos_hint: {"center_y": .5}
-                                
-                            MDBoxLayout:
-                                orientation: "vertical"
-                                adaptive_height: True
-                                pos_hint: {"center_y": .5}
-                                
-                                MDLabel:
-                                    id: zalo_name_view
-                                    text: "Chưa kết nối Zalo"
-                                    font_style: "Subtitle1"
-                                    bold: True
-                                    # FIX 2: Ép tự xuống dòng
-                                    adaptive_height: True
-                                    text_size: self.width, None
-                                    
-                                MDLabel:
-                                    id: zalo_status_detail
-                                    text: "Quét QR bên dưới để kết nối"
-                                    font_style: "Caption"
-                                    theme_text_color: "Secondary"
-                                    # FIX 2: Ép tự xuống dòng và cắt chữ
-                                    adaptive_height: True
-                                    text_size: self.width, None
-                                    shorten: True
-                                    
-                        MDRaisedButton:
-                            id: btn_zalo_action
-                            text: "LIÊN KẾT ZALO NGAY"
-                            size_hint_x: 1
-                            height: "45dp"
-                            md_bg_color: 0.1, 0.5, 0.8, 1
-                            on_release: app.handle_zalo_auth()
+                    MDIcon:
+                        id: zalo_status_icon
+                        icon: "wifi-off"
+                        theme_text_color: "Custom"
+                        text_color: 1, 1, 1, 1
+                        pos_hint: {"center_y": .5}
 
-                    # 2. KHUNG ĐỊNH VỊ WEBVIEW (Quan trọng nhất)
-                    # Widget này sẽ đóng vai trò xác định vị trí và kích thước để đặt WebView Zalo Web đè lên.
-                    Widget:
-                        id: webview_placeholder
-                        size_hint: 1, 1
+                    MDLabel:
+                        id: zalo_status_label
+                        text: "Chưa đăng nhập Zalo Web"
+                        theme_text_color: "Custom"
+                        text_color: 1, 1, 1, 1
+                        font_style: "Subtitle2"
+                        bold: True
+                        valign: "center"
+
+                    MDRaisedButton:
+                        text: "TẢI LẠI"
+                        size_hint_x: None
+                        width: "80dp"
+                        size_hint_y: None
+                        height: "36dp"
+                        md_bg_color: 1, 1, 1, 0.25
+                        pos_hint: {"center_y": .5}
+                        on_release: app.reload_zalo_web()
+
+                # Placeholder — Python nhúng WebView Java vào đây
+                BoxLayout:
+                    id: webview_container
+                    size_hint_y: 1
 
         # ================= TAB 4: CÀI ĐẶT (CẤU HÌNH & THÔNG TIN APP) =================
         MDBottomNavigationItem:
@@ -380,24 +360,17 @@ MDScreen:
                                 size_hint: None, None
                                 size: "50dp", "50dp"
                                 radius: [25, ]
-                                pos_hint: {"center_y": .5}
                             MDBoxLayout:
                                 orientation: 'vertical'
                                 padding: ["15dp", 0, 0, 0]
-                                adaptive_height: True
-                                pos_hint: {"center_y": .5}
                                 MDLabel:
                                     text: "Taxi Lắk - ZAuto VIP"
                                     font_style: "Subtitle1"
                                     bold: True
-                                    adaptive_height: True
-                                    text_size: self.width, None
                                 MDLabel:
                                     text: "Hỗ trợ mua: 0838429999"
                                     theme_text_color: "Primary"
                                     font_style: "Caption"
-                                    adaptive_height: True
-                                    text_size: self.width, None
 
                         MDRaisedButton:
                             text: "CẤP QUYỀN APP"
@@ -406,51 +379,33 @@ MDScreen:
                             md_bg_color: 0.8, 0.4, 0.1, 1
                             on_release: app.check_permissions_and_guide()
                                 
-                        # --- 2. CỤM CÔNG TẮC ĐIỀU KHIỂN (ĐÃ FIX CHUẨN MOBILE) ---
+                        # --- 2. CỤM CÔNG TẮC ĐIỀU KHIỂN ---
                         MDCard:
                             orientation: "vertical"
                             adaptive_height: True
                             padding: "10dp"
-                            spacing: "5dp"
                             radius: [12, ]
                             elevation: 1
                             md_bg_color: 1, 1, 1, 1
-                            
                             MDBoxLayout:
-                                orientation: "horizontal"
-                                adaptive_height: True
-                                spacing: "10dp"
-                                padding: ["0dp", "8dp"]
+                                size_hint_y: None
+                                height: "45dp"
                                 MDLabel:
                                     text: "Tự động chốt cuốc"
                                     font_style: "Subtitle2"
-                                    adaptive_height: True
-                                    text_size: self.width, None
-                                    valign: "middle"
                                 MDSwitch:
                                     id: sw_auto_settings
-                                    size_hint: None, None
-                                    size: "48dp", "32dp"
                                     pos_hint: {'center_y': .5}
                                     on_active: app.sync_auto_switch(self.active)
-                                    
                             MDSeparator:
-                            
                             MDBoxLayout:
-                                orientation: "horizontal"
-                                adaptive_height: True
-                                spacing: "10dp"
-                                padding: ["0dp", "8dp"]
+                                size_hint_y: None
+                                height: "45dp"
                                 MDLabel:
                                     text: "Chỉ nhận tin chứa Từ Khóa"
                                     font_style: "Subtitle2"
-                                    adaptive_height: True
-                                    text_size: self.width, None
-                                    valign: "middle"
                                 MDSwitch:
                                     id: sw_filter
-                                    size_hint: None, None
-                                    size: "48dp", "32dp"
                                     pos_hint: {'center_y': .5}
                         
                         # --- 3. CỤM TỪ KHÓA ---
@@ -493,38 +448,30 @@ MDScreen:
                             elevation: 2
                             on_release: app.save_config()
 
-                        # --- 4. TRẠNG THÁI BẢN QUYỀN (ĐÃ FIX KHÔNG ÉP CỨNG 220DP) ---
+                        # --- 4. TRẠNG THÁI BẢN QUYỀN (GIỮ NGUYÊN KIỂU DÁNG GỐC) ---
                         MDCard:
                             orientation: "vertical"
-                            adaptive_height: True
+                            size_hint_y: None
+                            height: "220dp"
                             padding: "15dp"
-                            spacing: "10dp"
                             radius: [12, ]
                             md_bg_color: 1, 1, 1, 1
                             MDLabel:
                                 text: "TRẠNG THÁI BẢN QUYỀN"
                                 bold: True
                                 font_style: "Subtitle1"
-                                adaptive_height: True
-                                text_size: self.width, None
                             MDSeparator:
                                 padding: [0, 10]
                             MDLabel:
                                 id: lbl_key_type
                                 text: "Loại Key: Đang kiểm tra..."
-                                adaptive_height: True
-                                text_size: self.width, None
                             MDLabel:
                                 id: lbl_expiry
                                 text: "Hết hạn: --/--/----"
-                                adaptive_height: True
-                                text_size: self.width, None
                             MDLabel:
                                 text: "SĐT Mua Key: 0838429999"
                                 theme_text_color: "Custom"
                                 text_color: 0.1, 0.5, 0.8, 1
-                                adaptive_height: True
-                                text_size: self.width, None
                             MDRaisedButton:
                                 text: "MUA THÊM HẠN / ĐỔI KEY"
                                 pos_hint: {"center_x": .5}
@@ -661,10 +608,8 @@ class RideCard(MDCard):
     time_text = StringProperty()
 
 class ZAutoProApp(MDApp):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.is_radar_running = False # Mặc định mở app lên là TẮT
-        self.enabled_groups = {} # Lưu trạng thái bật/tắt của từng nhóm
+    
+      
     def toggle_radar(self):
         """Hàm bật/tắt công tắc Radar (Chỉ quét, không quyết định Auto)"""
         self.is_radar_running = not self.is_radar_running
@@ -706,34 +651,22 @@ class ZAutoProApp(MDApp):
     def build(self):
         self.icon = 'profile.jpg'
         self.theme_cls.primary_palette = "Blue"
-        
-        # FIX 4 & 5: Tự động thu nhỏ font chữ nếu màn hình điện thoại nhỏ (dưới 400dp)
-        if Window.width < dp(400):
-            self.theme_cls.font_styles["Subtitle1"] = ["Roboto", 16, True, 0.15]
-            self.theme_cls.font_styles["Body1"] = ["Roboto", 13, False, 0.15]
-            self.theme_cls.font_styles["Caption"] = ["Roboto", 10, False, 0.15]
-
         self.config_data = {
             'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận', 'gia_km': '12000',
             'sw_filter': False, 'sw_auto': False, 'is_linked': False
         }
         self.is_linked = False # Khai báo mặc định là chưa liên kết
         self.root = Builder.load_string(KV)
-        self.load_config()
+        
         return self.root
 
     def on_start(self):
+        self.load_config()
         self.check_license_at_startup()
         if platform == 'android':
             try:
-                # 1. Yêu cầu cấp quyền hệ thống (Đã thêm quyền Đọc/Ghi Bộ Nhớ)
-                request_permissions([
-                    Permission.INTERNET, 
-                    Permission.ACCESS_FINE_LOCATION, 
-                    Permission.POST_NOTIFICATIONS,
-                    Permission.READ_EXTERNAL_STORAGE,
-                    Permission.WRITE_EXTERNAL_STORAGE
-                ])
+                # 1. Yêu cầu cấp quyền hệ thống
+                request_permissions([Permission.INTERNET, Permission.ACCESS_FINE_LOCATION, Permission.POST_NOTIFICATIONS])
                 
                 # 2. Khởi động dịch vụ chạy ngầm chống Kill App (Android 12+)
                 autoclass('org.zauto.ZaloForegroundService').startService(PythonActivity.mActivity)
@@ -751,89 +684,20 @@ class ZAutoProApp(MDApp):
                 self.global_last_reply = 0
                 self.last_reply_time = {}
 
-                # 5. Đăng ký bộ lắng nghe Broadcast 3 Action (Động cơ Web)
+                # 5. Đăng ký bộ lắng nghe Broadcast 3 Action (Động cơ Web + Động cơ Accessibility)
                 if not hasattr(self, 'receiver_started'):
                     self.br = BroadcastReceiver(self.on_broadcast_received, 
                             actions=[
-                                'org.zauto.taxi.LOGIN_SUCCESS', 
+                                'org.zauto.taxi.LOGIN_SUCCESS',
                                 'org.zauto.taxi.WEB_NEW_MSG',
-                                'org.zauto.taxi.GROUPS_DATA'
+                                'org.zauto.taxi.GROUPS_DATA',
+                                'org.zauto.taxi.REPLY_RESULT',   # <-- THÊM MỚI
                             ])
                     self.br.start()
                     self.receiver_started = True
-                
-                # 6. KHỞI TẠO WEBVIEW NHÚNG NGẦM (THÊM MỚI)
-                # Dùng Clock để trễ 1 giây, đảm bảo giao diện Kivy đã load xong trước khi gọi Java
-                Clock.schedule_once(lambda dt: self.init_embedded_webview(), 1)
                     
             except Exception:
                 print(traceback.format_exc())
-
-    def init_embedded_webview(self):
-        """Khởi tạo WebView và load sẵn trang đăng nhập Zalo"""
-        if platform != 'android':
-            return
-        try:
-            ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
-            ZaloWebManager.initWebView(PythonActivity.mActivity)
-        except Exception as e:
-            print(f"Lỗi khởi tạo Embedded WebView: {e}")
-            print(traceback.format_exc())
-
-    def on_zalo_tab_active(self, is_active):
-        """Hàm bật/tắt và cập nhật vị trí WebView khi chuyển đổi Tab"""
-        if platform != 'android':
-            return
-            
-        try:
-            ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
-            if is_active:
-                # Đợi giao diện Kivy render xong (0.1s) để lấy tọa độ chính xác nhất
-                Clock.schedule_once(lambda dt: self.position_webview(), 0.1)
-            else:
-                # Khi người dùng vuốt sang Tab khác -> Ẩn ngay lập tức
-                ZaloWebManager.hideWebView()
-        except Exception as e:
-            print(f"Lỗi điều khiển WebView Tab: {e}")
-
-    def position_webview(self):
-        """Tính toán tọa độ thực tế trên màn hình Android để đặt WebView đè lên đúng Placeholder"""
-        if platform != 'android':
-            return
-            
-        # NẾU CHƯA ĐĂNG NHẬP THÌ ẨN WEBVIEW, KHÔNG HIỆN LÊN TAB
-        if not getattr(self, 'is_linked', False):
-            try:
-                from jnius import autoclass
-                ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
-                ZaloWebManager.hideWebView()
-            except: pass
-            return
-
-        try:
-            placeholder = self.root.ids.webview_placeholder
-            
-            from jnius import autoclass
-            Window = autoclass('android.view.Window')
-            window = PythonActivity.mActivity.getWindow()
-            decorView = window.getDecorView()
-            screen_height = decorView.getHeight()
-
-            from kivy.core.window import Window as KivyWindow
-            scale = screen_height / KivyWindow.height 
-
-            kx, ky = placeholder.to_window(*placeholder.pos)
-            kw, kh = placeholder.size
-
-            x = int(kx * scale)
-            y = int((KivyWindow.height - ky - kh) * scale)
-            w = int(kw * scale)
-            h = int(kh * scale)
-
-            ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
-            ZaloWebManager.showWebView(PythonActivity.mActivity, x, y, w, h)
-        except Exception as e:
-            print(f"Lỗi định vị WebView: {e}")
     def update_group_list_ui(self, groups):
         """Cập nhật danh sách nhóm từ Zalo Web lên giao diện Tab Nhóm"""
         try:
@@ -883,8 +747,7 @@ class ZAutoProApp(MDApp):
         toast(f"{status_text} nhận cuốc nhóm: {name}")            
     def check_license_at_startup(self):
         m_id = get_machine_id()
-        
-        # 1. Ưu tiên kiểm tra Key bản quyền (Key thật) trước
+        # Ưu tiên kiểm tra Key thật trước
         if os.path.exists(LICENSE_FILE):
             with open(LICENSE_FILE, 'r') as f:
                 key = f.read().strip()
@@ -893,49 +756,18 @@ class ZAutoProApp(MDApp):
                     self.apply_license_ui(expiry)
                     return
 
-        # 2. Logic giấu file chống xóa App
+        # Nếu không có key, kiểm tra Trial 15 ngày
         trial_expire = 0
-        
-        # BƯỚC A: Đọc từ file Backup (Nằm ngoài Download) trước, vì file này sống dai nhất
-        if os.path.exists(BACKUP_TRIAL_FILE):
-            try:
-                with open(BACKUP_TRIAL_FILE, 'r') as f:
-                    content = f.read().strip()
-                    trial_expire = int(content) if content.isdigit() else 0
-            except: pass
-            
-        # BƯỚC B: Nếu file Backup chưa có hoặc bị khách vô tình xóa, đọc tiếp file trong App (TRIAL_FILE)
-        if trial_expire == 0 and os.path.exists(TRIAL_FILE):
-            try:
-                with open(TRIAL_FILE, 'r') as f:
-                    content = f.read().strip()
-                    trial_expire = int(content) if content.isdigit() else 0
-            except: pass
-
-        # 3. Nếu CẢ 2 FILE ĐỀU KHÔNG TỒN TẠI -> ĐÂY CHÍNH XÁC LÀ LẦN CÀI ĐẦU TIÊN
-        if trial_expire == 0:
-            # Tặng đúng 15 ngày (15 ngày * 24h * 3600 giây)
+        if not os.path.exists(TRIAL_FILE):
             trial_expire = int(time.time()) + (15 * 24 * 3600)
-            toast("Tặng bạn 15 ngày dùng thử VIP hoàn toàn miễn phí!")
-            
-        # 4. Ghi đè/Cập nhật lại cả 2 file để "khóa" máy này lại
-        try:
-            # Ghi vào vùng an toàn của App
-            with open(TRIAL_FILE, 'w') as f: 
-                f.write(str(trial_expire))
-        except: pass
-        
-        try:
-            # Lén ghi 1 bản sao ra thư mục Download để phục phục kích hoạt lại nếu khách gỡ App
-            if os.path.exists('/storage/emulated/0/Download/'):
-                with open(BACKUP_TRIAL_FILE, 'w') as f: 
-                    f.write(str(trial_expire))
-        except: pass
+            with open(TRIAL_FILE, 'w') as f: f.write(str(trial_expire))
+        else:
+            with open(TRIAL_FILE, 'r') as f:
+                content = f.read().strip()
+                trial_expire = int(content) if content.isdigit() else 0
 
-        # 5. Kiểm tra hạn dùng thử
         if trial_expire > int(time.time()):
             self.apply_license_ui(trial_expire, is_trial=True)
-            toast("Hệ thống đang chạy phiên bản Dùng Thử.")
         else:
             self.show_activation_popup()
 
@@ -972,10 +804,6 @@ class ZAutoProApp(MDApp):
             
             self.save_config_silent()
             self.update_profile_ui()
-            
-            # GỌI HÀM NÀY ĐỂ BUNG KHUNG CHAT ZALO VÀO TAB NGAY KHI POPUP ĐÓNG XONG
-            Clock.schedule_once(lambda dt: self.position_webview(), 0.5)
-
             toast("Đã liên kết Zalo Web thành công!")
             return
 
@@ -993,7 +821,7 @@ class ZAutoProApp(MDApp):
             return
 
         # --- 3. XỬ LÝ KHI CÓ TIN NHẮN MỚI (TRỢ NĂNG & WEB) ---
-        if action in ['org.zauto.taxi.NEW_MSG', 'org.zauto.taxi.WEB_NEW_MSG']:
+        if action == 'org.zauto.taxi.WEB_NEW_MSG':
             
             # KIỂM TRA 1: Radar phải đang BẬT
             if not getattr(self, 'is_radar_running', False):
@@ -1080,21 +908,20 @@ class ZAutoProApp(MDApp):
             self.last_reply_time[group] = now
 
             if platform == 'android':
-                toast(f"Đang chốt cuốc thần tốc: {group}")
-                
-                # CHỈ CÒN DUY NHẤT 1 CÁCH CHỐT: QUA ZALO WEB ẨN (Tốc độ mili-giây)
-                if getattr(self, 'is_linked', False): # Kiểm tra đã login Zalo Web chưa
-                    js_command = f"window.sendHiddenMessage('{reply_text}');"
-                    autoclass('org.zauto.ZaloWebManager').executeJS(PythonActivity.mActivity, js_command)
-                else:
-                    # Nếu tài xế bật Auto nhưng chưa quét QR
-                    toast("LỖI: Vui lòng quét mã QR Zalo Web ở Tab Tài khoản trước!")
-        except Exception: 
+                if not self.is_linked:
+                    toast("Chưa đăng nhập Zalo Web!")
+                    return
+                toast(f"Đang chốt: {group}")
+                autoclass('org.zauto.ZaloWebManager').sendReply(
+                    PythonActivity.mActivity, group, reply_text
+                )
+        except Exception:
             print(traceback.format_exc())
+
     
 
     def load_config(self):
-        """Nạp cấu hình từ file và cập nhật toàn bộ giao diện"""
+        """Nạp cấu hình từ file và cập nhật toàn bộ giao diện (Canh me, Nhóm, Tài khoản, Cài đặt)"""
         if os.path.exists(CONFIG_FILE):
             try:
                 with open(CONFIG_FILE, 'r', encoding='utf-8') as f: 
@@ -1102,6 +929,7 @@ class ZAutoProApp(MDApp):
                 
                 # 1. NẠP TRẠNG THÁI LIÊN KẾT & DANH SÁCH NHÓM ĐÃ LƯU
                 self.is_linked = self.config_data.get('is_linked', False)
+                # Quan trọng: Nạp sổ cái các nhóm đã Bật/Tắt từ trước
                 self.enabled_groups = self.config_data.get('enabled_groups', {})
                 
                 # 2. CẬP NHẬT CÁC Ô NHẬP LIỆU (TAB CÀI ĐẶT)
@@ -1117,27 +945,29 @@ class ZAutoProApp(MDApp):
                 if ids.get('sw_filter'):
                     ids.sw_filter.active = self.config_data.get('sw_filter', False)
 
-                # 4. ĐỒNG BỘ CÔNG TẮC AUTO CHỐT
+                # 4. ĐỒNG BỘ CÔNG TẮC AUTO CHỐT (ĐỒNG BỘ GIỮA TAB 1 VÀ TAB 4)
+                # Khi gán lệnh này, hàm sync_auto_switch sẽ tự chạy để đổi màu nút Radar
                 is_auto = self.config_data.get('sw_auto', False)
                 if ids.get('sw_auto_settings'):
                     ids.sw_auto_settings.active = is_auto
                 
-                # 5. KHỞI TẠO LẠI DANH SÁCH NHÓM
+                # 5. VẼ LẠI GIAO DIỆN TÀI KHOẢN (Tên Zalo, Ảnh đại diện)
+                self.update_profile_ui()
+                
+                # 6. KHỞI TẠO LẠI DANH SÁCH NHÓM (Nếu đã có dữ liệu cũ)
+                # Giúp Tab Nhóm hiện lại các nhóm cũ ngay cả khi chưa kịp quét từ Web
                 if self.enabled_groups:
                     Clock.schedule_once(lambda dt: self.update_group_list_ui(self.enabled_groups.keys()))
                 
             except Exception as e:
                 print(f"Lỗi nạp cấu hình: {e}")
+                # Reset về mặc định nếu file json bị lỗi cấu trúc
                 self.config_data = {
                     'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận',
                     'sw_filter': False, 'sw_auto': False, 'is_linked': False,
                     'enabled_groups': {}
                 }
                 self.enabled_groups = {}
-                
-        # CHÚ Ý: Lệnh này đã được đưa ra ngoài lề if!
-        # Dù máy mới tinh (không có file config), nó vẫn sẽ chạy để vẽ lại nút "LIÊN KẾT ZALO NGAY"
-        self.update_profile_ui()
     def save_config_silent(self):
         try:
             self.config_data.update({
@@ -1151,57 +981,27 @@ class ZAutoProApp(MDApp):
             with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
                 json.dump(self.config_data, f, ensure_ascii=False)
         except: pass
-    def handle_zalo_auth(self):
-        """Xử lý nút bấm: Nếu đã liên kết thì Hủy, nếu chưa thì bật Popup quét QR"""
-        if getattr(self, 'is_linked', False):
-            self.is_linked = False
-            self.config_data['zalo_name'] = ""
-            self.config_data['zalo_avatar'] = ""
-            self.save_config_silent()
-            self.update_profile_ui()
-            
-            if platform == 'android':
-                try:
-                    from jnius import autoclass
-                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                    ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
-                    ZaloWebManager.logoutAndClearData(PythonActivity.mActivity)
-                except Exception as e:
-                    print(f"Lỗi khi xóa session Zalo Web: {e}")
-            
-            toast("Đã đăng xuất và hủy liên kết Zalo Web.")
-        else:
-            # GỌI LẠI POPUP QUÉT QR TRÀN MÀN HÌNH NHƯ CŨ
-            if platform == 'android':
-                try:
-                    from jnius import autoclass
-                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                    ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
-                    ZaloWebManager.openZaloWebQR(PythonActivity.mActivity)
-                except Exception as e:
-                    print(f"Lỗi mở popup QR: {e}")
+    
     
 
     def update_profile_ui(self):
-        """Cập nhật thông tin Zalo - Thêm kiểm tra an toàn"""
         try:
             ids = self.root.ids
-            # Nếu Python báo False nhưng thực tế file config có dữ liệu thì ép sang True
             if self.config_data.get('zalo_name') and not self.is_linked:
                 self.is_linked = True
 
-            if self.is_linked:
-                ids.zalo_name_view.text = self.config_data.get('zalo_name', "Đã kết nối")
-                ids.zalo_avatar_view.source = self.config_data.get('zalo_avatar', 'profile.jpg')
-                ids.btn_zalo_action.text = "HUỶ LIÊN KẾT ZALO"
-                ids.btn_zalo_action.md_bg_color = (0.8, 0.2, 0.2, 1)
-            else:
-                ids.zalo_name_view.text = "Chưa kết nối Zalo"
-                ids.zalo_avatar_view.source = 'profile.jpg'
-                ids.btn_zalo_action.text = "LIÊN KẾT ZALO NGAY"
-                ids.btn_zalo_action.md_bg_color = (0.1, 0.5, 0.8, 1)
+            # Thêm điều kiện kiểm tra id có tồn tại trong KV không
+            if 'zalo_name_view' in ids:
+                ids.zalo_name_view.text = self.config_data.get('zalo_name', "Đã kết nối") if self.is_linked else "Chưa kết nối Zalo"
+
+            if 'zalo_avatar_view' in ids:
+                ids.zalo_avatar_view.source = self.config_data.get('zalo_avatar', 'profile.jpg') if self.is_linked else 'profile.jpg'
+
+            if 'btn_zalo_action' in ids:
+                ids.btn_zalo_action.text = "HUỶ LIÊN KẾT ZALO" if self.is_linked else "LIÊN KẾT ZALO NGAY"
+                ids.btn_zalo_action.md_bg_color = (0.8, 0.2, 0.2, 1) if self.is_linked else (0.1, 0.5, 0.8, 1)
         except Exception as e:
-            print(f"Lỗi UI: {e}")
+            print(f"Lỗi UI Profile: {e}")
 
     def save_config(self):
         """Hàm sửa lỗi văng App: Gọi khi khách bấm nút LƯU CẤU HÌNH"""
@@ -1213,11 +1013,135 @@ class ZAutoProApp(MDApp):
         toast("Đã dọn dẹp tin nhắn.")
 
     def check_permissions_and_guide(self):
-        """Do sử dụng công nghệ Web ngầm VIP, app không còn cần xin quyền hệ thống rườm rà nữa."""
-        toast("Hệ thống VIP chạy ngầm đã tự động tối ưu, không cần cấp thêm quyền!")
+        """Hàm tự động quét quyền và điều hướng thông minh"""
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                Settings = autoclass('android.provider.Settings')
+                Intent = autoclass('android.content.Intent')
+                
+                context = PythonActivity.mActivity
+                resolver = context.getContentResolver()
+                
+                # Lấy package name hiện tại (org.zauto.taxi)
+                pkg_name = context.getPackageName() 
+                
+                acc_granted = False
+                notif_granted = False
+                
+                # --- 1. KIỂM TRA QUYỀN TRỢ NĂNG (ACCESSIBILITY) ---
+                # Đọc chuỗi các dịch vụ trợ năng đang được bật trên điện thoại
+                acc_services = Settings.Secure.getString(resolver, "enabled_accessibility_services")
+                if acc_services and f"{pkg_name}/org.zauto.ZaloAccessibility" in acc_services:
+                    acc_granted = True
+                    
+                # --- 2. KIỂM TRA QUYỀN ĐỌC THÔNG BÁO (NOTIFICATION LISTENER) ---
+                # Đọc chuỗi các dịch vụ nghe thông báo đang được bật
+                notif_listeners = Settings.Secure.getString(resolver, "enabled_notification_listeners")
+                if notif_listeners and f"{pkg_name}/org.zauto.ZaloNotificationService" in notif_listeners:
+                    notif_granted = True
+
+                # --- 3. XỬ LÝ ĐIỀU HƯỚNG ---
+                if acc_granted and notif_granted:
+                    # Nếu cả 2 quyền cốt lõi đã bật
+                    toast("Tuyệt vời! Ứng dụng đã được cấp đầy đủ quyền.")
+                
+                elif not acc_granted:
+                    # Nếu chưa bật Trợ Năng -> Dẫn thẳng vào mục Trợ Năng
+                    toast("Vui lòng tìm và BẬT 'ZAuto VIP' trong phần Trợ Năng!")
+                    intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+                
+                elif not notif_granted:
+                    # Nếu chưa bật Đọc Thông Báo -> Dẫn thẳng vào mục Quyền Thông Báo
+                    toast("Vui lòng CHO PHÉP 'ZAuto VIP' đọc thông báo!")
+                    intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS")
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    context.startActivity(intent)
+
+            except Exception:
+                import traceback
+                print(traceback.format_exc())
+                # Backup an toàn nếu điện thoại khách không hỗ trợ hàm check
+                toast("Hãy tìm và cấp quyền cho ứng dụng ZAuto VIP")
+                try:
+                    PythonActivity.mActivity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                except: pass
+
+    def reload_zalo_web(self):
+        if platform == 'android':
+            autoclass('org.zauto.ZaloWebManager').reloadWeb(PythonActivity.mActivity)
+            toast("Đang tải lại Zalo Web...")
 
     
 
+   
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.is_radar_running = False  # Bổ sung dòng này
+        self.enabled_groups = {}       # Bổ sung dòng này
+        self.webview_inited = False
+        self.webview_visible = False
+        self._webview_timer = None # Biến giữ bộ đếm giờ
+
+    def _init_webview_android(self):
+        """Khởi tạo cấu trúc Webview chìm dưới Android"""
+        if self.webview_inited: return
+        if platform == 'android':
+            try:
+                activity = PythonActivity.mActivity
+                autoclass('org.zauto.ZaloWebManager').initWebView(activity)
+                self.webview_inited = True
+            except Exception:
+                print(traceback.format_exc())
+
+    def set_webview_visible(self, is_visible):
+        """Hàm bật tắt quét toạ độ liên tục khi ra/vào Tab Zalo"""
+        self.webview_visible = is_visible
+        if is_visible:
+            # 0.05s / vòng để độ bám dính của webview nhanh và nhạy nhất
+            if not self._webview_timer:
+                self._webview_timer = Clock.schedule_interval(self._sync_webview_pos, 0.05)
+        else:
+            if self._webview_timer:
+                self._webview_timer.cancel()
+                self._webview_timer = None
+            # Ẩn webview hoàn toàn khi rời đi
+            if platform == 'android' and self.webview_inited:
+                try:
+                    activity = PythonActivity.mActivity
+                    autoclass('org.zauto.ZaloWebManager').updateWebViewBounds(activity, 0, 0, 0, 0, False)
+                except Exception:
+                    pass
+
+    def _sync_webview_pos(self, dt):
+        """Quét tọa độ cục Box ảo trên Kivy và dán WebView thật của Android đè lên đó"""
+        if platform != 'android' or not self.webview_inited or not self.webview_visible: 
+            return
+        try:
+            activity = PythonActivity.mActivity
+            from kivy.core.window import Window
+            
+            container = self.root.ids.webview_container
+            
+            # Kivy to_window(0,0) lấy tọa độ góc dưới cùng bên trái của vùng thiết kế
+            x, y = container.to_window(0, 0)
+            w, h = container.size
+            
+            # Giao diện Android tính toạ độ Y từ trên xuống, còn Kivy tính từ dưới lên
+            # Ta phải đảo ngược trục Y
+            android_y = Window.height - (y + h)
+            
+            autoclass('org.zauto.ZaloWebManager').updateWebViewBounds(
+                activity, 
+                int(x), int(android_y), 
+                int(w), int(h), 
+                True
+            )
+        except Exception:
+            pass
     def on_stop(self):
         if platform == 'android':
             try:
