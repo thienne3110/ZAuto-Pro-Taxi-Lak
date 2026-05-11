@@ -15,10 +15,11 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 90 # Khóa thời gian build hợp lý, bảo vệ tài nguyên chống treo ngầm
 
-    # Cố định Locale UTF-8 để chống triệt để lỗi UnicodeDecodeError khi log/compile
+    # Cấu hình Locale và ép chạy JavaScript Actions trên Node.js 24 chuẩn bảo mật mới nhất 2026
     env:
       LC_ALL: "C.UTF-8"
       LANG: "C.UTF-8"
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
       PYTHON_VERSION: "3.11"
       JAVA_VERSION: "17"
       CYTHON_VERSION: "0.29.36"
