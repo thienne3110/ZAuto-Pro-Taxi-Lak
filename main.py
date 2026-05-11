@@ -1,13 +1,17 @@
 import json, os, re, time, traceback
-import hashlib # Dùng để băm SHA256 kiểm tra key
-import uuid    # Dùng để lấy ID máy
+import hashlib
+import uuid
 import queue
 import threading
 import gc
 import random
+import sqlite3
+import logging
+from logging.handlers import RotatingFileHandler
+from collections import OrderedDict
+
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
-# Thêm các thành phần giao diện của Kivy
 from kivy.core.clipboard import Clipboard
 from kivy.uix.popup import Popup
 from kivy.uix.boxlayout import BoxLayout
@@ -19,12 +23,17 @@ from kivymd.app import MDApp
 from kivy.lang import Builder
 from kivy.utils import platform
 from kivy.clock import Clock
-from kivy.core.window import Window # <--- THÊM DÒNG NÀY VÀO
+from kivy.core.window import Window
 from kivymd.uix.card import MDCard
 from kivymd.uix.list import TwoLineAvatarIconListItem, ImageLeftWidget
 from kivy.properties import StringProperty, BooleanProperty
 from kivymd.toast import toast
 
+# BẮT BUỘC: Cấu hình đồ họa để giảm lag GPU trên Android yếu
+from kivy.config import Config
+Config.set('graphics', 'multisamples', '0')
+
+# --- 1. HỆ THỐNG LOG PRODUCTION ---
 if platform == 'android':
     BASE_PATH = '/data/data/org.zauto.taxi/files/'
     from android.runnable import run_on_ui_thread
@@ -39,13 +48,49 @@ else:
     BASE_PATH = './'
     def run_on_ui_thread(func): return func
 
-CONFIG_FILE = BASE_PATH + 'config.json'
+LOG_DIR = os.path.join(BASE_PATH, 'logs')
+os.makedirs(LOG_DIR, exist_ok=True)
+logging.basicConfig(
+    handlers=[RotatingFileHandler(os.path.join(LOG_DIR, 'system.log'), maxBytes=1024*1024, backupCount=3)],
+    level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# --- 2. CƠ SỞ DỮ LIỆU SQLITE (THAY THẾ JSON) ---
+DB_PATH = os.path.join(BASE_PATH, 'zauto_pro.db')
+db_lock = threading.Lock()
+
+def init_db():
+    with db_lock:
+        try:
+            # THÊM isolation_level=None (Autocommit) để Worker không bị block "Database is locked"
+            conn = sqlite3.connect(DB_PATH, timeout=15.0, isolation_level=None)
+            c = conn.cursor()
+            c.execute('PRAGMA journal_mode=WAL;') # Chống crash khi đọc/ghi đồng thời
+            c.execute('CREATE TABLE IF NOT EXISTS config (key_name TEXT PRIMARY KEY, value_data TEXT)')
+            c.execute('CREATE TABLE IF NOT EXISTS history (id INTEGER PRIMARY KEY AUTOINCREMENT, time REAL, group_name TEXT, msg TEXT)')
+            conn.commit()
+        except Exception as e:
+            logger.error(f"init_db error: {e}")
+        finally:
+            if 'conn' in locals() and conn: conn.close()
+
+# --- 3. LRU CACHE ANTI-DUPLICATE (CHỐNG TRÀN RAM) ---
+class LRUCache(OrderedDict):
+    def __init__(self, maxsize=1000, *args, **kwds):
+        self.maxsize = maxsize
+        super().__init__(*args, **kwds)
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        if len(self) > self.maxsize:
+            oldest = next(iter(self))
+            del self[oldest]
+
+CONFIG_FILE = BASE_PATH + 'config.json' # Giữ biến này để không lỗi code nếu sót
 HISTORY_FILE = BASE_PATH + 'history.json'
-# --- CẤU HÌNH BẢN QUYỀN ---
 SUPPORT_PHONE = "0838429999"
 LICENSE_FILE = os.path.join(BASE_PATH, 'license.dat')
 TRIAL_FILE = os.path.join(BASE_PATH, 'trial_check.dat')
-
 def get_machine_id():
     """Lấy ID máy chuẩn (Logic từ launcher_auto_secure.py)"""
     if platform == 'android':
@@ -666,47 +711,59 @@ class ZAutoProApp(MDApp):
         self.check_license_at_startup()
         if platform == 'android':
             try:
-                # 1. Yêu cầu cấp quyền hệ thống
                 request_permissions([Permission.INTERNET, Permission.ACCESS_FINE_LOCATION, Permission.POST_NOTIFICATIONS])
-                
-                # 2. Khởi động dịch vụ chạy ngầm chống Kill App (Android 12+)
                 autoclass('org.zauto.ZaloForegroundService').startService(PythonActivity.mActivity)
 
-                # 3. Kích hoạt WakeLock để giữ CPU chạy khi tắt màn hình
+                # ÉP CPU VÀ WIFI KHÔNG ĐƯỢC NGỦ CỰC MẠNH
                 PowerManager = autoclass('android.os.PowerManager')
                 Context = autoclass('android.content.Context')
                 pm = cast(PowerManager, PythonActivity.mActivity.getSystemService(Context.POWER_SERVICE))
-                self.wakelock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ZAuto::WakeLock")
-                if not self.wakelock.isHeld():
-                    self.wakelock.acquire()
+                self.wakelock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK | PowerManager.ON_AFTER_RELEASE, "ZAuto::WakeLockCore")
+                # BẢO VỆ WAKELOCK ANDROID 14+ BẰNG TIMEOUT 10 PHÚT
+                if self.wakelock is not None:
+                    try:
+                        if self.wakelock.isHeld(): self.wakelock.release()
+                    except: pass
+                    self.wakelock.acquire(10 * 60 * 1000)
 
-                # 4. Khởi tạo Cache chống bão tin nhắn & chống lặp (Spam Control)
-                self.processed_msg_hashes = set()
+                WifiManager = autoclass('android.net.wifi.WifiManager')
+                wm = cast(WifiManager, PythonActivity.mActivity.getApplicationContext().getSystemService(Context.WIFI_SERVICE))
+                self.wifilock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "ZAuto::WifiLockCore")
+                if not self.wifilock.isHeld(): self.wifilock.acquire()
+
+                # KHỞI TẠO KIẾN TRÚC REALTIME
+                self.processed_msg_hashes = LRUCache(maxsize=1000) # Memory safe
                 self.global_last_reply = 0
-                self.last_reply_time = {}
+                self.last_reply_time = LRUCache(maxsize=200)
 
-                # 4.1. KHỞI TẠO QUEUE & WORKER THREAD CHỐNG LAG UI
-                self.msg_queue = queue.Queue()
-                self.worker_thread = threading.Thread(target=self._message_worker, daemon=True)
-                self.worker_thread.start()
+                # 1. MESSAGE QUEUE & WORKER
+                self.msg_queue = queue.Queue(maxsize=500)
+                self.msg_worker_thread = threading.Thread(target=self._message_worker, daemon=True)
+                self.msg_worker_thread.start()
 
-                # 4.2. GỌI WATCHDOG DỌN RÁC MEMORY MỖI 3 PHÚT
+                # 2. REPLY QUEUE & SINGLE REPLY WORKER (CHỐNG RACE CONDITION)
+                self.reply_queue = queue.Queue(maxsize=50)
+                self.reply_lock = threading.Lock()
+                self.reply_worker_thread = threading.Thread(target=self._reply_worker_loop, daemon=True)
+                self.reply_worker_thread.start()
+
                 Clock.schedule_interval(self._system_watchdog, 180)
 
-                # 5. Đăng ký bộ lắng nghe Broadcast 3 Action (Động cơ Web + Động cơ Accessibility)
+                # Kích hoạt UI Queue Processor chạy 0.1s/lần
+                Clock.schedule_interval(self._process_ui_queue, 0.1)
+
                 if not hasattr(self, 'receiver_started'):
                     self.br = BroadcastReceiver(self.on_broadcast_received, 
                             actions=[
                                 'org.zauto.taxi.LOGIN_SUCCESS',
                                 'org.zauto.taxi.WEB_NEW_MSG',
                                 'org.zauto.taxi.GROUPS_DATA',
-                                'org.zauto.taxi.REPLY_RESULT',   # <-- THÊM MỚI
+                                'org.zauto.taxi.REPLY_RESULT',
                             ])
                     self.br.start()
                     self.receiver_started = True
-                    
-            except Exception:
-                print(traceback.format_exc())
+            except Exception as e:
+                logger.error(f"Lỗi on_start: {traceback.format_exc()}")
     def update_group_list_ui(self, groups):
         """Cập nhật danh sách nhóm từ Zalo Web lên giao diện Tab Nhóm"""
         try:
@@ -800,103 +857,91 @@ class ZAutoProApp(MDApp):
         popup = ActivationPopup(machine_id=get_machine_id(), on_success=self.apply_license_ui, can_cancel=True)
         popup.open()
     def _message_worker(self):
-        """Thread độc lập chạy ngầm để xử lý tin nhắn theo thứ tự"""
-        while True:
+        while getattr(self, 'app_running', True):
             try:
-                action, data = self.msg_queue.get()
+                action, data = self.msg_queue.get(timeout=1.0)
                 if action == 'WEB_NEW_MSG':
-                    self._process_heavy_message(data['group'], data['msg'])
+                    self._process_heavy_message(data)
                 self.msg_queue.task_done()
+            except queue.Empty:
+                continue
             except Exception as e:
-                print(f"Lỗi Worker Thread: {e}")
+                logger.error(f"Message Worker Crash: {traceback.format_exc()}")
+                time.sleep(1) # Chống CPU Spike khi lỗi liên tục
 
-    def _process_heavy_message(self, group, msg):
-        """Xử lý logic lọc nặng ở background, chỉ đẩy lên UI khi đã xong"""
-        # KIỂM TRA 1 & 2
+    def _reply_worker_loop(self):
+        while getattr(self, 'app_running', True):
+            try:
+                reply_payload = self.reply_queue.get(timeout=1.0)
+                with self.reply_lock:
+                    self._execute_reply_safe(reply_payload)
+                self.reply_queue.task_done()
+                time.sleep(0.5)
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.error(f"Reply Worker Crash: {traceback.format_exc()}")
+                time.sleep(1)
+
+    def _process_heavy_message(self, data):
+        group = data.get('group', '')
+        msg = data.get('msg', '')
+        msg_id = data.get('msg_id', '')
+        conversation_id = data.get('conversation_id', '')
+
         if not getattr(self, 'is_radar_running', False): return
         if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
 
-        # KIỂM TRA 3: Lọc trùng lặp
-        msg_hash = str(hash(group + msg))
+        # TIẾT KIỆM CPU: Dùng hash() Native thay cho md5()
+        raw_hash_data = f"{group}{msg}{msg_id}"
+        msg_hash = hash(raw_hash_data)
+        
         if msg_hash in self.processed_msg_hashes: return
-        self.processed_msg_hashes.add(msg_hash)
-        if len(self.processed_msg_hashes) > 500: self.processed_msg_hashes.clear()
+        self.processed_msg_hashes[msg_hash] = True 
 
-        # KIỂM TRA 4: Lọc từ khóa
-        if getattr(self.root.ids, 'sw_filter', None) and self.root.ids.sw_filter.active:
+        # TUYỆT ĐỐI KHÔNG ĐỌC UI
+        sw_filter_active = self.config_data.get('sw_filter', False)
+        if sw_filter_active:
             msg_low = msg.lower()
-            loai_keys = [k.strip() for k in self.root.ids.inp_loai.text.lower().split(',') if k.strip()]
+            loai_keys = [k.strip() for k in self.config_data.get('loai', '').lower().split(',') if k.strip()]
             if loai_keys and any(lk in msg_low for lk in loai_keys): return
-            nhan_keys = [k.strip() for k in self.root.ids.inp_nhan.text.lower().split(',') if k.strip()]
+            nhan_keys = [k.strip() for k in self.config_data.get('nhan', '').lower().split(',') if k.strip()]
             if nhan_keys and not any(nk in msg_low for nk in nhan_keys): return
 
-        # HOÀN TẤT LỌC -> ÉP CẬP NHẬT GIAO DIỆN VỀ LẠI UI THREAD BẰNG CLOCK
-        Clock.schedule_once(lambda dt: self.add_ride_card(group, msg))
-        Clock.schedule_once(lambda dt: self.log_history(group, msg))
+        # Đẩy sang UI Queue chống đơ màn hình
+        try:
+            self.ui_queue.put_nowait(('add_ride', (group, msg, msg_id, conversation_id)))
+            self.ui_queue.put_nowait(('log', (group, msg)))
+        except queue.Full: pass
 
-        # TỰ ĐỘNG CHỐT NẾU ĐANG BẬT AUTO
-        if getattr(self.root.ids, 'sw_auto_main', None) and self.root.ids.sw_auto_main.active:
-            self.execute_reply(group, self.root.ids.inp_reply.text)
+        sw_auto_active = self.config_data.get('sw_auto', False)
+        if sw_auto_active:
+            reply_text = self.config_data.get('reply_msg', 'Ok nhận')
+            self.queue_reply(group, conversation_id, msg_id, reply_text)
 
     def _system_watchdog(self, dt):
-        """Chống rò rỉ bộ nhớ và khôi phục Thread nếu chết"""
-        gc.collect() 
-        if not hasattr(self, 'worker_thread') or not self.worker_thread.is_alive():
-            print("Khởi động lại Worker Thread...")
-            self.worker_thread = threading.Thread(target=self._message_worker, daemon=True)
-            self.worker_thread.start()
-
-    # (Đây là hàm on_broadcast_received cũ của bác)
-    
-
-    def on_broadcast_received(self, context, intent):
-        action = intent.getAction()
-        
-        # --- 1. XỬ LÝ KHI ĐĂNG NHẬP ZALO WEB THÀNH CÔNG ---
-        if action == 'org.zauto.taxi.LOGIN_SUCCESS':
-            self.is_linked = True
-            zalo_name = intent.getStringExtra("zalo_name")
-            zalo_avatar = intent.getStringExtra("zalo_avatar")
+        """Khôi phục Worker, Tối ưu RAM và chặn nhân bản Thread"""
+        self.gc_counter += 1
+        if self.gc_counter % 10 == 0: # Ép xả RAM mức 2 định kỳ
+            try: gc.collect(2)
+            except: pass
             
-            if zalo_name: self.config_data['zalo_name'] = zalo_name
-            if zalo_avatar: self.config_data['zalo_avatar'] = zalo_avatar
-            
-            Clock.schedule_once(lambda dt: self.save_config_silent())
-            Clock.schedule_once(lambda dt: self.update_profile_ui())
-            Clock.schedule_once(lambda dt: toast("Đã liên kết Zalo Web thành công!"))
-            return
+        if not getattr(self, 'app_running', False): return
 
-        # --- 2. XỬ LÝ KHI NHẬN DANH SÁCH NHÓM TỪ WEB ---
-        if action == 'org.zauto.taxi.GROUPS_DATA':
-            try:
-                import json
-                groups_json = intent.getStringExtra("groups_list")
-                if groups_json:
-                    groups = json.loads(groups_json)
-                    # Gọi hàm cập nhật giao diện danh sách nhóm ở Tab Nhóm
-                    Clock.schedule_once(lambda dt: self.update_group_list_ui(groups))
-            except Exception as e:
-                print(f"Lỗi xử lý danh sách nhóm: {e}")
-            return
+        with self.worker_restart_lock:
+            if not hasattr(self, 'msg_worker_thread') or not self.msg_worker_thread.is_alive():
+                if not getattr(self, '_restarting_msg_worker', False):
+                    self._restarting_msg_worker = True
+                    self.msg_worker_thread = threading.Thread(target=self._message_worker, daemon=True)
+                    self.msg_worker_thread.start()
+                    self._restarting_msg_worker = False
 
-        # --- 3. XỬ LÝ KHI CÓ TIN NHẮN MỚI (ĐẨY VÀO HÀNG ĐỢI NGẦM) ---
-        if action == 'org.zauto.taxi.WEB_NEW_MSG':
-            group = intent.getStringExtra("group")
-            msg = intent.getStringExtra("msg")
-            
-            if group and msg:
-                # Ném dữ liệu vào Queue, thả cho UI Thread rảnh tay chạy tiếp mượt mà
-                self.msg_queue.put(('WEB_NEW_MSG', {'group': group, 'msg': msg}))
-
-    def add_ride_card(self, group, msg):
-        try:
-            if len(self.root.ids.ride_list.children) >= 50:
-                self.root.ids.ride_list.remove_widget(self.root.ids.ride_list.children[-1])
-            
-            card = RideCard(group_text=group, msg_text=msg, time_text=time.strftime("%H:%M"))
-            self.root.ids.ride_list.add_widget(card, index=0)
-        except Exception: print(traceback.format_exc())
-
+            if not hasattr(self, 'reply_worker_thread') or not self.reply_worker_thread.is_alive():
+                if not getattr(self, '_restarting_reply_worker', False):
+                    self._restarting_reply_worker = True
+                    self.reply_worker_thread = threading.Thread(target=self._reply_worker_loop, daemon=True)
+                    self.reply_worker_thread.start()
+                    self._restarting_reply_worker = False
     def log_history(self, group, msg):
         # Dùng List chuẩn Material của KivyMD
         item = TwoLineAvatarIconListItem(text=f"[{time.strftime('%H:%M')}] {group}", secondary_text=msg)
@@ -904,102 +949,147 @@ class ZAutoProApp(MDApp):
         self.root.ids.msg_history_list.add_widget(item, index=0)
 
     def remove_ride(self, card_widget):
-        self.root.ids.ride_list.remove_widget(card_widget)
+        try:
+            if hasattr(card_widget, 'unbind'): card_widget.unbind()
+            card_widget.clear_widgets()
+            self.root.ids.ride_list.remove_widget(card_widget)
+            try: del card_widget
+            except: pass
+        except Exception as e:
+            logger.error(f"Lỗi remove_ride: {e}")
+    def on_broadcast_received(self, context, intent):
+        action = intent.getAction()
+        if action == 'org.zauto.taxi.LOGIN_SUCCESS':
+            self.is_linked = True
+            zalo_name = intent.getStringExtra("zalo_name")
+            zalo_avatar = intent.getStringExtra("zalo_avatar")
+            if zalo_name: self.config_data['zalo_name'] = zalo_name
+            if zalo_avatar: self.config_data['zalo_avatar'] = zalo_avatar
+            Clock.schedule_once(lambda dt: self.save_config_silent())
+            Clock.schedule_once(lambda dt: self.update_profile_ui())
+            Clock.schedule_once(lambda dt: toast("Đã liên kết Zalo Web thành công!"))
+            return
+        if action == 'org.zauto.taxi.GROUPS_DATA':
+            try:
+                groups_json = intent.getStringExtra("groups_list")
+                if groups_json:
+                    groups = json.loads(groups_json)
+                    Clock.schedule_once(lambda dt: self.update_group_list_ui(groups))
+            except Exception as e: logger.error(f"GROUPS_DATA Error: {e}")
+            return
+        if action == 'org.zauto.taxi.WEB_NEW_MSG':
+            payload = {
+                'group': intent.getStringExtra("group") or "",
+                'msg': intent.getStringExtra("msg") or "",
+                'msg_id': intent.getStringExtra("msg_id") or "", # DATA MỚI TỪ DOM
+                'conversation_id': intent.getStringExtra("conversation_id") or ""
+            }
+            if payload['group'] and payload['msg']:
+                try:
+                    self.msg_queue.put(('WEB_NEW_MSG', payload), timeout=0.3)
+                except queue.Full:
+                    logger.warning("msg_queue full bỏ qua Broadcast")
+
+    def add_ride_card(self, group, msg, msg_id="", conversation_id=""):
+        try:
+            max_rides = 30
+            ride_list = self.root.ids.ride_list
+            while len(ride_list.children) >= max_rides:
+                old_card = ride_list.children[-1]
+                ride_list.remove_widget(old_card)
+                old_card.clear_widgets()
+                del old_card
+            card = RideCard(group_text=group, msg_text=msg, time_text=time.strftime("%H:%M"))
+            # Gán ẩn data vào Widget để KHÔNG PHẢI SỬA GIAO DIỆN KV
+            card.msg_id = msg_id
+            card.conversation_id = conversation_id
+            self.root.ids.ride_list.add_widget(card, index=0)
+        except Exception: logger.error(traceback.format_exc())
 
     def manual_accept_ride(self, card_widget):
-        """Hàm xử lý khi tài xế bấm nút NHẬN CUỐC NGAY bằng tay"""
-        # 1. Bắn lệnh chốt cuốc ngay lập tức (Ưu tiên Web ẩn, dự phòng Trợ năng)
-        self.execute_reply(card_widget.group_text, self.root.ids.inp_reply.text)
-        
-        # 2. Hiện thông báo nhanh để tài xế biết hệ thống đang xử lý
-        toast(f"Đang chốt tay: {card_widget.group_text}")
-        
-        # 3. Xóa thẻ này khỏi danh sách Canh me sau khi nhận xong
+        # Lấy data ẩn ra và ném vào Hàng đợi Reply
+        self.queue_reply(card_widget.group_text, getattr(card_widget, 'conversation_id', ''), getattr(card_widget, 'msg_id', ''), self.root.ids.inp_reply.text)
+        toast(f"Đang chốt: {card_widget.group_text}")
         self.remove_ride(card_widget)
 
-    def execute_reply(self, group, reply_text):
-        try:
+    def queue_reply(self, group, conversation_id, msg_id, reply_text):
+        # KHÓA THỜI GIAN CHỐNG RACE CONDITION
+        with self.reply_time_lock:
             now = time.time()
-            if now - getattr(self, 'global_last_reply', 0) < 3: return
+            if now - getattr(self, 'global_last_reply', 0) < 1.5: return 
             self.global_last_reply = now
-            if now - self.last_reply_time.get(group, 0) < 30: return
-            self.last_reply_time[group] = now
+        
+        cache_key = f"{conversation_id}_{msg_id}"
+        if now - self.last_reply_time.get(cache_key, 0) < 30: return 
+        self.last_reply_time[cache_key] = now
 
-            if platform == 'android':
-                if not self.is_linked:
-                    toast("Chưa đăng nhập Zalo Web!")
-                    return
-                toast(f"Đang chốt: {group}")
-                autoclass('org.zauto.ZaloWebManager').sendReply(
-                    PythonActivity.mActivity, group, reply_text
+        # BACKPRESSURE: Chặn Queue Overflow
+        if self.reply_queue.qsize() > 40:
+            logger.warning("Reply queue overload")
+            return
+
+        try:
+            self.reply_queue.put({'group': group, 'conversation_id': conversation_id, 'msg_id': msg_id, 'reply_text': reply_text}, timeout=0.3)
+        except queue.Full:
+            logger.warning("reply_queue timeout")
+
+    @run_on_ui_thread
+    def _execute_reply_safe(self, payload):
+        """HÀM GỌI XUỐNG JAVA PHẢI CHẠY TRÊN UI THREAD CỦA ANDROID"""
+        try:
+            if platform == 'android' and getattr(self, 'is_linked', False):
+                autoclass('org.zauto.ZaloWebManager').sendReplyToSpecificMessage(
+                    PythonActivity.mActivity, 
+                    payload['conversation_id'], 
+                    payload['msg_id'], 
+                    payload['reply_text'],
+                    payload['group']
                 )
-        except Exception:
-            print(traceback.format_exc())
-
+                logger.info(f"Đã gửi lệnh chốt: msg_id={payload['msg_id']}")
+        except Exception as e:
+            logger.error(f"Lỗi _execute_reply_safe: {traceback.format_exc()}")
     
-
     def load_config(self):
-        """Nạp cấu hình từ file và cập nhật toàn bộ giao diện (Canh me, Nhóm, Tài khoản, Cài đặt)"""
-        if os.path.exists(CONFIG_FILE):
-            try:
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f: 
-                    self.config_data = json.load(f)
-                
-                # 1. NẠP TRẠNG THÁI LIÊN KẾT & DANH SÁCH NHÓM ĐÃ LƯU
-                self.is_linked = self.config_data.get('is_linked', False)
-                # Quan trọng: Nạp sổ cái các nhóm đã Bật/Tắt từ trước
-                self.enabled_groups = self.config_data.get('enabled_groups', {})
-                
-                # 2. CẬP NHẬT CÁC Ô NHẬP LIỆU (TAB CÀI ĐẶT)
-                ids = self.root.ids
-                if ids.get('inp_nhan'):
-                    ids.inp_nhan.text = self.config_data.get('nhan', '')
-                if ids.get('inp_loai'):
-                    ids.inp_loai.text = self.config_data.get('loai', '')
-                if ids.get('inp_reply'):
-                    ids.inp_reply.text = self.config_data.get('reply_msg', 'Ok nhận')
-                
-                # 3. NẠP TRẠNG THÁI LỌC TỪ KHÓA
-                if ids.get('sw_filter'):
-                    ids.sw_filter.active = self.config_data.get('sw_filter', False)
+        try:
+            conn = sqlite3.connect(DB_PATH, timeout=15.0, isolation_level=None)
+            c = conn.cursor()
+            c.execute("SELECT key_name, value_data FROM config")
+            rows = c.fetchall()
+            conn.close()
 
-                # 4. ĐỒNG BỘ CÔNG TẮC AUTO CHỐT (ĐỒNG BỘ GIỮA TAB 1 VÀ TAB 4)
-                # Khi gán lệnh này, hàm sync_auto_switch sẽ tự chạy để đổi màu nút Radar
-                is_auto = self.config_data.get('sw_auto', False)
-                if ids.get('sw_auto_settings'):
-                    ids.sw_auto_settings.active = is_auto
-                
-                # 5. VẼ LẠI GIAO DIỆN TÀI KHOẢN (Tên Zalo, Ảnh đại diện)
-                self.update_profile_ui()
-                
-                # 6. KHỞI TẠO LẠI DANH SÁCH NHÓM (Nếu đã có dữ liệu cũ)
-                # Giúp Tab Nhóm hiện lại các nhóm cũ ngay cả khi chưa kịp quét từ Web
-                if self.enabled_groups:
-                    Clock.schedule_once(lambda dt: self.update_group_list_ui(self.enabled_groups.keys()))
-                
-            except Exception as e:
-                print(f"Lỗi nạp cấu hình: {e}")
-                # Reset về mặc định nếu file json bị lỗi cấu trúc
-                self.config_data = {
-                    'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận',
-                    'sw_filter': False, 'sw_auto': False, 'is_linked': False,
-                    'enabled_groups': {}
-                }
-                self.enabled_groups = {}
+            self.config_data = {k: json.loads(v) for k, v in rows} if rows else {
+                'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận',
+                'sw_filter': False, 'sw_auto': False, 'is_linked': False, 'enabled_groups': {}
+            }
+
+            self.is_linked = self.config_data.get('is_linked', False)
+            self.enabled_groups = self.config_data.get('enabled_groups', {})
+
+            ids = self.root.ids
+            if ids.get('inp_nhan'): ids.inp_nhan.text = self.config_data.get('nhan', '')
+            if ids.get('inp_loai'): ids.inp_loai.text = self.config_data.get('loai', '')
+            if ids.get('inp_reply'): ids.inp_reply.text = self.config_data.get('reply_msg', 'Ok nhận')
+            if ids.get('sw_filter'): ids.sw_filter.active = self.config_data.get('sw_filter', False)
+            
+            is_auto = self.config_data.get('sw_auto', False)
+            if ids.get('sw_auto_settings'): ids.sw_auto_settings.active = is_auto
+
+            self.update_profile_ui()
+            if self.enabled_groups:
+                Clock.schedule_once(lambda dt: self.update_group_list_ui(self.enabled_groups.keys()), 0)
+        except Exception as e:
+            logger.error(f"Lỗi SQLite Load: {e}")
+
     def save_config_silent(self):
         try:
-            self.config_data.update({
-                'nhan': self.root.ids.inp_nhan.text,
-                'loai': self.root.ids.inp_loai.text,
-                'reply_msg': self.root.ids.inp_reply.text,
-                'sw_auto': self.root.ids.sw_auto_settings.active,
-                'is_linked': self.is_linked,
-                'enabled_groups': self.enabled_groups # THÊM DÒNG NÀY ĐỂ LƯU DANH SÁCH NHÓM
-            })
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-                json.dump(self.config_data, f, ensure_ascii=False)
-        except: pass
-    
+            with db_lock:
+                conn = sqlite3.connect(DB_PATH, timeout=15.0, isolation_level=None)
+                c = conn.cursor()
+                for k, v in self.config_data.items():
+                    c.execute("INSERT OR REPLACE INTO config (key_name, value_data) VALUES (?, ?)", (k, json.dumps(v)))
+                conn.close()
+        except Exception as e:
+            logger.error(f"Lỗi SQLite Save: {e}")
     
 
     def update_profile_ui(self):
@@ -1022,9 +1112,21 @@ class ZAutoProApp(MDApp):
             print(f"Lỗi UI Profile: {e}")
 
     def save_config(self):
-        """Hàm sửa lỗi văng App: Gọi khi khách bấm nút LƯU CẤU HÌNH"""
-        self.save_config_silent()
-        toast("Đã lưu cấu hình thành công!")    
+        """BẮT BUỘC ĐỌC UI VÀO BIẾN TRƯỚC KHI XUỐNG DB"""
+        try:
+            ids = self.root.ids
+            if ids.get('inp_nhan'): self.config_data['nhan'] = ids.inp_nhan.text
+            if ids.get('inp_loai'): self.config_data['loai'] = ids.inp_loai.text
+            if ids.get('inp_reply'): self.config_data['reply_msg'] = ids.inp_reply.text
+            if ids.get('sw_filter'): self.config_data['sw_filter'] = ids.sw_filter.active
+            if ids.get('sw_auto_main'): self.config_data['sw_auto'] = ids.sw_auto_main.active
+            self.config_data['enabled_groups'] = self.enabled_groups
+            self.config_data['is_linked'] = self.is_linked
+            
+            self.save_config_silent()
+            self.safe_toast("Đã lưu cấu hình thành công!")
+        except Exception as e:
+            logger.error(f"Lỗi save_config: {e}")   
 
     def clear_history(self):
         self.root.ids.msg_history_list.clear_widgets()
@@ -1098,11 +1200,61 @@ class ZAutoProApp(MDApp):
    
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.is_radar_running = False  # Bổ sung dòng này
-        self.enabled_groups = {}       # Bổ sung dòng này
+        self.app_running = True
+        self.is_radar_running = False  
+        self.enabled_groups = {}       
         self.webview_inited = False
         self.webview_visible = False
-        self._webview_timer = None # Biến giữ bộ đếm giờ
+        self._webview_timer = None 
+        self.config_data = {}
+        self.is_linked = False
+        
+        # Tối ưu RAM: Giảm Cache xuống 300 chống Leak
+        self.processed_msg_hashes = LRUCache(maxsize=300)
+        self.global_last_reply = 0
+        self.last_reply_time = LRUCache(maxsize=200)
+        
+        # QUEUE ĐA LUỒNG
+        self.msg_queue = queue.Queue(maxsize=500)
+        self.reply_queue = queue.Queue(maxsize=50)
+        self.ui_queue = queue.Queue(maxsize=100) # Queue chuyên đẩy UI update chống Freeze Kivy
+        
+        # LOCK SYSTEM CHUẨN
+        self.reply_time_lock = threading.Lock()
+        self.reply_lock = threading.Lock()
+        self.worker_restart_lock = threading.Lock()
+        self.toast_lock = threading.Lock()
+        
+        self._last_toast = 0
+        self.gc_counter = 0
+        self._restarting_msg_worker = False
+        self._restarting_reply_worker = False
+        self.last_webview_bounds = None
+        Window.softinput_mode = "below_target"
+
+    def safe_toast(self, msg):
+        """Bảo vệ UI EventLoop khỏi spam toast"""
+        with self.toast_lock:
+            now = time.time()
+            if now - self._last_toast < 1.5:
+                return
+            self._last_toast = now
+        Clock.schedule_once(lambda dt: toast(msg), 0)
+
+    def _process_ui_queue(self, dt):
+        """Xử lý UI Update tập trung, chống Crash & Lag UI"""
+        try:
+            for _ in range(5): # Giới hạn 5 task / frame
+                task, args = self.ui_queue.get_nowait()
+                if task == 'add_ride':
+                    self.add_ride_card(*args)
+                elif task == 'log':
+                    self.log_history(*args)
+                elif task == 'toast':
+                    self.safe_toast(*args)
+                self.ui_queue.task_done()
+        except queue.Empty:
+            pass
 
     def _init_webview_android(self):
         """Khởi tạo cấu trúc Webview chìm dưới Android"""
@@ -1116,56 +1268,88 @@ class ZAutoProApp(MDApp):
                 print(traceback.format_exc())
 
     def set_webview_visible(self, is_visible):
-        """Hàm bật tắt quét toạ độ liên tục khi ra/vào Tab Zalo"""
         self.webview_visible = is_visible
         if is_visible:
-            # 0.05s / vòng để độ bám dính của webview nhanh và nhạy nhất
-            if not self._webview_timer:
-                self._webview_timer = Clock.schedule_interval(self._sync_webview_pos, 0.05)
+            if not getattr(self, '_webview_timer', None):
+                # GIẢM LAG CPU: Quét toạ độ 0.35s / lần
+                self._webview_timer = Clock.schedule_interval(self._sync_webview_pos, 0.35)
         else:
-            if self._webview_timer:
+            if getattr(self, '_webview_timer', None):
                 self._webview_timer.cancel()
                 self._webview_timer = None
-            # Ẩn webview hoàn toàn khi rời đi
-            if platform == 'android' and self.webview_inited:
-                try:
-                    activity = PythonActivity.mActivity
-                    autoclass('org.zauto.ZaloWebManager').updateWebViewBounds(activity, 0, 0, 0, 0, False)
-                except Exception:
-                    pass
+            if platform == 'android' and getattr(self, 'webview_inited', False):
+                self._hide_webview_overlay()
+
+    @run_on_ui_thread
+    def _hide_webview_overlay(self):
+        try:
+            autoclass('org.zauto.ZaloWebManager').updateWebViewBounds(PythonActivity.mActivity, 0, 0, 0, 0, False)
+        except Exception: pass
 
     def _sync_webview_pos(self, dt):
-        """Quét tọa độ cục Box ảo trên Kivy và dán WebView thật của Android đè lên đó"""
-        if platform != 'android' or not self.webview_inited or not self.webview_visible: 
+        if platform != 'android' or not getattr(self, 'webview_inited', False) or not getattr(self, 'webview_visible', False): 
             return
         try:
-            activity = PythonActivity.mActivity
-            from kivy.core.window import Window
-            
             container = self.root.ids.webview_container
             
-            # Kivy to_window(0,0) lấy tọa độ góc dưới cùng bên trái của vùng thiết kế
+            # CHỐNG ANR: Không render Java Bounds nếu Widget đang nằm ngoài ViewTree
+            if not container.get_root_window():
+                return
+                
             x, y = container.to_window(0, 0)
             w, h = container.size
             
-            # Giao diện Android tính toạ độ Y từ trên xuống, còn Kivy tính từ dưới lên
-            # Ta phải đảo ngược trục Y
+            from kivy.core.window import Window
             android_y = Window.height - (y + h)
             
+            new_bounds = (int(x), int(android_y), int(w), int(h))
+            if new_bounds == getattr(self, 'last_webview_bounds', None):
+                return # Cache bounds -> Không đổi thì không gọi Bridge Java
+            
+            self.last_webview_bounds = new_bounds
+            
+            activity = PythonActivity.mActivity
             autoclass('org.zauto.ZaloWebManager').updateWebViewBounds(
-                activity, 
-                int(x), int(android_y), 
-                int(w), int(h), 
-                True
+                activity, new_bounds[0], new_bounds[1], new_bounds[2], new_bounds[3], True
             )
         except Exception:
             pass
     def on_stop(self):
+        self.app_running = False 
+        
+        # CHỐNG ZOMBIE THREAD: Ép Join luồng trước khi thoát
+        try:
+            if hasattr(self, 'msg_worker_thread') and self.msg_worker_thread:
+                self.msg_worker_thread.join(timeout=2)
+            if hasattr(self, 'reply_worker_thread') and self.reply_worker_thread:
+                self.reply_worker_thread.join(timeout=2)
+        except: pass
+        
         if platform == 'android':
             try:
-                if hasattr(self, 'br'): self.br.stop()
-                if hasattr(self, 'wakelock') and self.wakelock.isHeld(): self.wakelock.release()
-            except: pass
+                # CHỐNG LEAK CONTEXT RECEIVER
+                if hasattr(self, 'br'):
+                    try:
+                        self.br.stop()
+                        self.br = None
+                    except: pass
+                    
+                # 3. Dùng vòng while nhả triệt để reference counter của Wakelock
+                if hasattr(self, 'wakelock') and self.wakelock is not None:
+                    try:
+                        while self.wakelock.isHeld():
+                            self.wakelock.release()
+                    except Exception as we: logger.error(f"Wakelock Error: {we}")
+
+                # 4. Nhả triệt để Wifilock
+                if hasattr(self, 'wifilock') and self.wifilock is not None:
+                    try:
+                        while self.wifilock.isHeld():
+                            self.wifilock.release()
+                    except Exception as wfe: logger.error(f"Wifilock Error: {wfe}")
+
+            except Exception as e:
+                logger.error(f"Lỗi dọn dẹp on_stop: {e}")
 
 if __name__ == '__main__':
     ZAutoProApp().run()
