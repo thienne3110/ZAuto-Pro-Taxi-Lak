@@ -29,10 +29,11 @@ orientation = portrait
 icon.filename = profile.jpg
 
 # (list) Permissions
-# BẢO MẬT CHẠY NỀN: Đầy đủ quyền chạy ngầm Foreground và quản lý mạng trên Android 13+
-android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, FOREGROUND_SERVICE_SPECIAL_USE, POST_NOTIFICATIONS, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, RECEIVE_BOOT_COMPLETED, SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, CHANGE_WIFI_STATE
+# BẢO MẬT CHẠY NỀN: Cung cấp đầy đủ quyền chạy ngầm Foreground và quản lý mạng trên Android 13+ (API 33+)
+# LƯU Ý: Loại bỏ quyền đặc quyền nguy hiểm FOREGROUND_SERVICE_SPECIAL_USE để tránh bị Google Play từ chối xuất bản vô lý
+android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, POST_NOTIFICATIONS, ACCESS_NETWORK_STATE, ACCESS_WIFI_STATE, RECEIVE_BOOT_COMPLETED, SYSTEM_ALERT_WINDOW, QUERY_ALL_PACKAGES, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, CHANGE_WIFI_STATE
 
-# (int) Target Android API (Khóa cứng bản API ổn định nhất cho p4a & Kivy hiện tại)
+# (int) Target Android API (Khóa cứng bản API 33 cực kỳ mượt mà và ổn định cho Kivy/KivyMD)
 android.api = 33
 
 # (int) Minimum API your APK / AAB will support. (Android 10+)
@@ -45,7 +46,7 @@ android.sdk = 33
 android.ndk = 25b
 
 # (list) The Android archs to build for
-# CHỈ BUILD arm64-v8a: Giảm dung lượng tệp tin APK, tăng tốc độ biên dịch lên 50% và loại bỏ xung đột ABI
+# CHỈ BUILD arm64-v8a: Giảm dung lượng tệp tin APK xuống 50%, tăng tốc biên dịch và loại bỏ hoàn toàn lỗi crash phân vùng nhị phân (.so)
 android.archs = arm64-v8a
 
 # (str) Android additional libraries/sources
@@ -74,19 +75,19 @@ android.preserve_data = True
 log_level = 2
 
 # (str) XML Manifest additions
-# LƯU Ý QUAN TRỌNG: Phải có dấu gạch chéo ngược "\" ở cuối mỗi dòng để nối chuỗi
+# CHUYỂN android:exported VỀ "false" cho các dịch vụ nhạy cảm để tránh bị hijacking hoặc tấn công chiếm quyền.
 android.extra_manifest_application = \
     <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"> \
         <intent-filter> \
             <action android:name="android.intent.action.BOOT_COMPLETED" /> \
         </intent-filter> \
     </receiver> \
-    <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true"> \
+    <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="false"> \
         <intent-filter> \
             <action android:name="android.service.notification.NotificationListenerService" /> \
         </intent-filter> \
     </service> \
-    <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="ZAuto VIP"> \
+    <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="false" android:label="ZAuto VIP"> \
         <intent-filter> \
             <action android:name="android.accessibilityservice.AccessibilityService" /> \
         </intent-filter> \
