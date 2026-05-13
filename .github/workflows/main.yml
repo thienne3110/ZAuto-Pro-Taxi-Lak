@@ -29,17 +29,21 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      # Chỉ cache Gradle và Pip để tốc độ build tăng gấp 5 lần ở các lượt sau
-      - name: ⚡ Cache Gradle & Pip
+      # -------------------------------------------------------------
+      # ⚡ BẬT MAX CACHE (LẤY COOKIE): LƯU GRADLE, PIP VÀ CẢ BUILDOZER
+      # -------------------------------------------------------------
+      - name: ⚡ Cache Buildozer, Gradle & Pip
         uses: actions/cache@v3
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.cache/pip
-          key: ${{ runner.os }}-gradle-pip-v4-${{ hashFiles('buildozer.spec') }}
+            ~/.buildozer
+            .buildozer
+          key: ${{ runner.os }}-zauto-cache-v6-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-pip-v4-
+            ${{ runner.os }}-zauto-cache-v6-
 
       - name: ⚙️ Install System Dependencies
         run: |
@@ -65,11 +69,7 @@ jobs:
             if [ ! -f "$FILE" ]; then echo "::error::THIẾU FILE: $FILE"; exit 1; fi
           done
 
-      # DỌN RÁC NHANH ĐÚNG CÁCH: Chỉ xóa thư mục local để kích hoạt tải mới không bị kẹt patch Pillow cũ
-      - name: 🧹 Clean Local Buildozer
-        run: |
-          rm -rf .buildozer
-          rm -rf bin
+      # --- LƯU Ý: ĐÃ XÓA BƯỚC DỌN RÁC "rm -rf .buildozer" ĐỂ KHÔNG BỊ XÓA COOKIE ---
 
       # LỆNH BUILD THUẦN TÚY: Không nuốt exit code, không che giấu lỗi
       - name: 🔨 Build Debug APK
