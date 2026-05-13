@@ -20,8 +20,7 @@ presplash.color = #FFFFFF
 # REQUIREMENTS
 # =====================================================
 # Cấu hình ổn định nhất cho Kivy Android, bỏ ép cứng Python để tránh lỗi Recipe
-requirements = python3,kivy==2.2.1,kivymd==1.1.1,Pillow==10.0.1,pyjnius
-
+requirements = python3,kivy==2.2.1,kivymd==1.1.1,Pillow==9.5.0,pyjnius
 # =====================================================
 # ANDROID API / NDK
 # =====================================================
