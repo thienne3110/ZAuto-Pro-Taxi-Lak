@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-22.04
 
     env:
-      # Sử dụng Java 17 và Python 3.11 để tương thích tuyệt đối với API 33
       PYTHON_VERSION: "3.11"
       JAVA_VERSION: "17"
 
@@ -30,9 +29,6 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      # -------------------------------------------------------------
-      # 🚀 TỐI ƯU HÓA: CACHE SDK/NDK (Giảm thời gian build còn 3-5 phút)
-      # -------------------------------------------------------------
       - name: ⚡ Cache Buildozer & Android SDK/NDK
         uses: actions/cache@v3
         with:
@@ -43,9 +39,6 @@ jobs:
           restore-keys: |
             buildozer-${{ runner.os }}-
 
-      # -------------------------------------------------------------
-      # ⚙️ CÀI ĐẶT CÁC THÀNH PHẦN HỆ THỐNG
-      # -------------------------------------------------------------
       - name: ⚙️ Install System Dependencies
         run: |
           sudo apt update
@@ -59,7 +52,6 @@ jobs:
       - name: 📦 Install Python Packages
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          # Sử dụng Cython 0.29.36 để tránh lỗi biên dịch nhân đồ họa
           pip install Cython==0.29.36 buildozer==1.5.0
 
       - name: 📜 Accept Android Licenses
@@ -67,46 +59,72 @@ jobs:
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
 
-      # -------------------------------------------------------------
-      # 🛡️ TRẠM KIỂM DỊCH SỚM: QUÉT LỖI SÂU TRONG 5 GIÂY
-      # -------------------------------------------------------------
-      - name: 🛡️ Fail-Fast (Quét lỗi sâu & Kiểm tra cấu trúc)
+      - name: 🛡️ Fail-Fast (Kiểm dịch cấu trúc cơ bản)
         run: |
-          echo "--- Đang quét lỗi cú pháp toàn bộ file Python (.py) ---"
+          echo "Đang quét lỗi cấu trúc và file..."
           find . -type f -name "*.py" -not -path "*/\.buildozer/*" -not -path "*/bin/*" -print -exec python -m py_compile {} \;
-          
-          echo "--- Đang xác minh vị trí các file hệ thống quan trọng ---"
-          FILES_TO_CHECK=(
-            "java/org/zauto/ZaloForegroundService.java"
-            "java/org/zauto/ZaloWebManager.java"
-            "java/org/zauto/ZaloAccessibility.java"
-            "java/org/zauto/ZaloNotificationService.java"
-            "res/xml/accessibility_config.xml"
-            "res/values/strings.xml"
-            "buildozer.spec"
-          )
-
+          FILES_TO_CHECK=("java/org/zauto/ZaloForegroundService.java" "java/org/zauto/ZaloWebManager.java" "res/xml/accessibility_config.xml" "buildozer.spec")
           for FILE in "${FILES_TO_CHECK[@]}"; do
-            if [ ! -f "$FILE" ]; then
-              echo "::error title=🚨 THIẾU FILE HỆ THỐNG::Không tìm thấy file: $FILE. Vui lòng kiểm tra lại cấu trúc thư mục!"
-              exit 1
-            else
-              echo "✔️ Đã xác nhận: $FILE"
-            fi
+            if [ ! -f "$FILE" ]; then echo "::error::THIẾU FILE BẮT BUỘC: $FILE"; exit 1; fi
           done
-          echo "✅ Cấu trúc mã nguồn hoàn hảo!"
 
-      # -------------------------------------------------------------
-      # 🔨 LỆNH BUILD CHÍNH THỨC (KHÔNG DÙNG PIPE TEE)
-      # -------------------------------------------------------------
       - name: 🔨 Build Debug APK
         run: |
-          # Loại bỏ hoàn toàn '| tee build.log' để GitHub Actions bắt lỗi trực tiếp từ Buildozer
-          buildozer -v android debug
+          # Bắt buộc lưu log ra file build.log để mang đi dịch tiếng Việt
+          buildozer -v android debug 2>&1 | tee build.log
 
       # -------------------------------------------------------------
-      # 🚀 UPLOAD APK (CHỈ CHẠY NẾU BUILD THÀNH CÔNG)
+      # 🚨 MÁY QUÉT VÀ PHIÊN DỊCH LỖI SANG TIẾNG VIỆT
       # -------------------------------------------------------------
+      - name: 🚨 Quét và Phiên dịch lỗi tiếng Việt
+        if: failure()
+        run: |
+          echo "Bắt đầu quét file log để tìm nguyên nhân sập..."
+          grep -i -E "error|exception|traceback|failed|conflict|not resolved|syntax|no matching distribution" build.log > error_summary.txt || true
+          
+          # Tạo bảng tóm tắt lỗi
+          echo "### 🚨 BÁO CÁO LỖI (ĐÃ DỊCH SANG TIẾNG VIỆT)" >> $GITHUB_STEP_SUMMARY
+          echo "Hệ thống biên dịch đã bị sập. Dưới đây là phân tích nguyên nhân:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Đọc từng dòng lỗi và tiến hành phiên dịch
+          while IFS= read -r line; do
+            if [[ "$line" == *"No matching distribution"* ]]; then
+               echo "- ❌ **LỖI TẢI THƯ VIỆN:** Hệ thống không tìm thấy thư viện trên mạng. *(Gợi ý: Kiểm tra lại tên kivy, kivymd hoặc pillow trong buildozer.spec)*" >> $GITHUB_STEP_SUMMARY
+               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
+            elif [[ "$line" == *"SyntaxError"* || "$line" == *"IndentationError"* ]]; then
+               echo "- ❌ **LỖI CÚ PHÁP PYTHON:** Bạn gõ sai code Python, thiếu dấu hai chấm (:) hoặc thụt lề sai khoảng trắng." >> $GITHUB_STEP_SUMMARY
+               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
+            elif [[ "$line" == *"cannot find symbol"* ]]; then
+               echo "- ❌ **LỖI CODE JAVA:** Hệ thống không nhận diện được biến hoặc hàm trong file Java *(Thường do viết sai chính tả hoặc khai báo thiếu)*." >> $GITHUB_STEP_SUMMARY
+               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
+            elif [[ "$line" == *"gradlew failed"* ]]; then
+               echo "- ❌ **LỖI ĐÓNG GÓI GRADLE:** Xung đột cấu hình nền tảng Android. *(Gợi ý: Xem lại API 33 và phiên bản Java 17)*." >> $GITHUB_STEP_SUMMARY
+               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
+            elif [[ "$line" == *"config.pxi"* ]]; then
+               echo "- ❌ **LỖI BIÊN DỊCH ĐỒ HỌA KIVY:** Kivy bị lỗi C/C++ khi đóng gói. *(Gợi ý: Xóa phiên bản ==2.3.0, chỉ dùng 'kivy' trong buildozer.spec)*." >> $GITHUB_STEP_SUMMARY
+               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
+            elif [[ "$line" == *"No such file or directory"* ]]; then
+               echo "- ❌ **LỖI THIẾU FILE:** Hệ thống không tìm thấy file bạn yêu cầu. *(Kiểm tra lại xem file đã lưu đúng đường dẫn chưa)*." >> $GITHUB_STEP_SUMMARY
+               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
+            fi
+          done < error_summary.txt
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          
+          # Tạo một nút bấm thả xuống để chứa log tiếng Anh copy cho dễ
+          echo "<details><summary><b>🗂️ BẤM VÀO ĐÂY ĐỂ XEM & COPY TOÀN BỘ LOG LỖI TIẾNG ANH GỐC</b></summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
+          cat error_summary.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+
+          # Bắn thông báo đỏ để GitHub dừng lại
+          echo "::error::Build thất bại! Hãy vào mục Summary để xem nguyên nhân bằng Tiếng Việt."
+          exit 1
+
       - name: 🚀 Upload APK
         uses: actions/upload-artifact@v4
         if: success()
