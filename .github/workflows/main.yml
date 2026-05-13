@@ -29,9 +29,7 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      # -------------------------------------------------------------
-      # ⚡ CACHE CHUẨN: CHỈ LƯU GRADLE VÀ PIP (KHÔNG LƯU .BUILDOZER)
-      # -------------------------------------------------------------
+      # ĐỔI KHÓA CACHE SANG V7 ĐỂ ÉP HỆ THỐNG QUÊN ĐI LỖI 403 CŨ
       - name: ⚡ Cache Gradle & Pip
         uses: actions/cache@v3
         with:
@@ -67,18 +65,14 @@ jobs:
             if [ ! -f "$FILE" ]; then echo "::error::THIẾU FILE: $FILE"; exit 1; fi
           done
 
-      # -------------------------------------------------------------
-      # 🧹 ĐẢM BẢO MÔI TRƯỜNG SẠCH 100% TRƯỚC KHI BUILD
-      # -------------------------------------------------------------
+      # DỌN RÁC TRIỆT ĐỂ 100%: Xóa cả local lẫn Global Buildozer
       - name: 🧹 Clean Local Buildozer
         run: |
           rm -rf .buildozer
           rm -rf ~/.buildozer
           rm -rf bin
 
-      # -------------------------------------------------------------
-      # 🔨 LỆNH BUILD AN TOÀN
-      # -------------------------------------------------------------
+      # LỆNH BUILD THUẦN TÚY: Không nuốt exit code, không che giấu lỗi
       - name: 🔨 Build Debug APK
         run: |
           export PATH=$PATH:~/.local/bin
