@@ -3,49 +3,118 @@ package org.zauto;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.SslErrorHandler;
+import android.net.http.SslError;
 import android.widget.FrameLayout;
 import android.view.ViewGroup;
+import android.view.View;
 import android.util.Log;
+import java.lang.ref.WeakReference;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 public class ZaloWebManager {
 
     public static WebView hiddenWebView;
     public static FrameLayout webLayout;
     private static final String TAG = "ZAutoWebManager";
+    
+    private static Handler watchdogHandler;
+    private static Runnable watchdogRunnable;
+    public static long lastHeartbeat = System.currentTimeMillis();
+    
+    private static long lastReloadTime = 0; 
+    private static int reloadCountWindow = 0;
+    private static long firstReloadInWindow = 0;
+    
+    private static WeakReference<Activity> activityRef;
 
+    // =========================================================
+    // HÀNG ĐỢI XỬ LÝ CHỐT ĐƠN (REPLY QUEUE ENGINE) - FIX 5
+    // =========================================================
+    private static final ConcurrentLinkedQueue<Runnable> replyQueue = new ConcurrentLinkedQueue<>();
+    private static boolean isSending = false;
+
+    private static void processReplyQueue() {
+        if (isSending || replyQueue.isEmpty()) return;
+        isSending = true;
+        
+        Runnable task = replyQueue.poll();
+        if (task != null) {
+            task.run(); // Thực thi lệnh JS
+            
+            // Delay 2.5 giây cho mỗi lần gửi để tránh Race Condition và Spam Detection
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                isSending = false;
+                processReplyQueue(); // Gọi đệ quy xử lý tin tiếp theo
+            }, 2500);
+        } else {
+            isSending = false;
+        }
+    }
+
+    private static String escapeJs(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "");
+    }
+
+    private static void safeEvaluateJs(String js) {
+        if (hiddenWebView != null && hiddenWebView.getParent() != null) {
+            hiddenWebView.evaluateJavascript(js, null);
+        }
+    }
+
+    public static void safeReload() {
+        long now = System.currentTimeMillis();
+        if (now - firstReloadInWindow > 60000) {
+            reloadCountWindow = 0;
+            firstReloadInWindow = now;
+        }
+        if (reloadCountWindow >= 3) {
+            Log.e(TAG, "ANTI-LOOP: Blocked too many reloads!");
+            return;
+        }
+        
+        if (now - lastReloadTime > 15000) { 
+            Log.w(TAG, "PERFORMING SAFE RELOAD...");
+            reloadCountWindow++;
+            if (hiddenWebView != null) {
+                hiddenWebView.post(() -> hiddenWebView.reload());
+            }
+            lastReloadTime = now;
+        }
+    }
+
+    // =========================================================
+    // ĐẨY VÀO QUEUE THAY VÌ GỬI TRỰC TIẾP
+    // =========================================================
     public static void sendReplyToSpecificMessage(final Activity activity, final String conversationId, final String msgId, final String text, final String groupName) {
-        if (activity == null || hiddenWebView == null) return;
-        activity.runOnUiThread(() -> {
-            try {
-                String js = "(function() { " +
-                    "try {" +
-                        "let chatNode = document.getElementById('" + conversationId + "') || document.querySelector('.conv-item[title=\"" + groupName + "\"]');" +
-                        "if(chatNode && !chatNode.classList.contains('active')) chatNode.click();" +
-                        "setTimeout(() => {" +
-                            "let msgNode = document.querySelector('div[data-id=\"" + msgId + "\"]');" +
-                            "if(!msgNode) return;" +
-                            "let replyBtn = msgNode.querySelector('div[icon=\"reply\"], div[data-translate-inner=\"STR_REPLY_MESSAGE\"], .flx-al-c[title=\"Trả lời\"]');" + 
-                            "if(replyBtn) replyBtn.click();" + 
-                            "setTimeout(() => {" +
-                                "let input = document.getElementById('richInput');" +
-                                "if(input) { input.innerHTML = '"+ text +"'; input.dispatchEvent(new Event('input', {bubbles:true})); }" +
-                                "setTimeout(() => {" +
-                                    "let sendBtn = document.querySelector('.btn-send, [icon=\"icn-send\"]');" +
-                                    "if(sendBtn) sendBtn.click();" +
-                                "}, 200);" +
-                            "}, 400);" +
-                        "}, 500);" +
-                    "} catch(e) { console.log(e); }" +
-                "})();";
-                hiddenWebView.evaluateJavascript(js, null);
-            } catch (Exception e) { Log.e(TAG, "Reply Error", e); }
+        Activity safeActivity = activityRef != null ? activityRef.get() : activity;
+        if (safeActivity == null || hiddenWebView == null) return;
+
+        replyQueue.add(() -> {
+            safeActivity.runOnUiThread(() -> {
+                try {
+                    String js = "if(typeof window.zautoSendReply === 'function') { " +
+                                "window.zautoSendReply('" + escapeJs(conversationId) + "', '" + 
+                                escapeJs(msgId) + "', '" + escapeJs(text) + "', '" + escapeJs(groupName) + "'); }";
+                    safeEvaluateJs(js);
+                } catch (Exception e) { Log.e(TAG, "Reply Engine Error", e); }
+            });
         });
+        
+        // Kích hoạt tiến trình Queue nếu đang rảnh
+        safeActivity.runOnUiThread(ZaloWebManager::processReplyQueue);
     }
 
     public static class WebAppInterface {
@@ -53,63 +122,74 @@ public class ZaloWebManager {
         WebAppInterface(Context c) { mContext = c; }
 
         @JavascriptInterface
+        public void onHeartbeat(String ts) {
+            lastHeartbeat = System.currentTimeMillis();
+        }
+
+        @JavascriptInterface
         public void onLoginSuccess(String name, String avatar) {
             try {
                 Intent intent = new Intent("org.zauto.LOGIN_SUCCESS");
-                // Đã gỡ bỏ setPackage để vượt rào Android 14 Broadcast
+                intent.setPackage(mContext.getPackageName());
                 intent.putExtra("zalo_name", name);
                 intent.putExtra("zalo_avatar", avatar);
                 mContext.sendBroadcast(intent);
-            } catch (Exception e) { Log.e(TAG, "LoginSuccess Error", e); }
+            } catch (Exception e) {}
         }
 
         @JavascriptInterface
         public void onNewWebMsg(String group, String msg, String msgId, String conversationId) {
             try {
                 Intent intent = new Intent("org.zauto.WEB_NEW_MSG");
+                intent.setPackage(mContext.getPackageName());
                 intent.putExtra("group", group);
                 intent.putExtra("msg", msg);
                 intent.putExtra("msg_id", msgId);
                 intent.putExtra("conversation_id", conversationId);
                 mContext.sendBroadcast(intent);
-            } catch (Exception e) { Log.e(TAG, "NewWebMsg Error", e); }
+            } catch (Exception e) {}
         }
 
         @JavascriptInterface
         public void onGroupListReceived(String jsonGroups) {
             try {
                 Intent intent = new Intent("org.zauto.GROUPS_DATA");
+                intent.setPackage(mContext.getPackageName());
                 intent.putExtra("groups_list", jsonGroups);
                 mContext.sendBroadcast(intent);
-            } catch (Exception e) { Log.e(TAG, "GroupList Error", e); }
+            } catch (Exception e) {}
         }
     }
 
     public static void initWebView(final Activity activity) {
         if (activity == null) return;
+        activityRef = new WeakReference<>(activity); 
+        
         activity.runOnUiThread(() -> {
             try {
                 if (hiddenWebView != null) return;
 
                 webLayout = new FrameLayout(activity);
                 hiddenWebView = new WebView(activity);
+                hiddenWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+
+                // FIX 1: ÉP ANDROID ƯU TIÊN RENDERER NÀY CAO NHẤT (Chống Kill GPU)
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                    hiddenWebView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true);
+                }
 
                 WebSettings settings = hiddenWebView.getSettings();
                 settings.setJavaScriptEnabled(true);
                 settings.setDomStorageEnabled(true);
                 settings.setDatabaseEnabled(true);
                 settings.setAllowFileAccess(true);
-                settings.setAllowContentAccess(true);
                 settings.setLoadsImagesAutomatically(true);
                 settings.setMediaPlaybackRequiresUserGesture(false);
+                settings.setOffscreenPreRaster(true); 
+
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 settings.setUseWideViewPort(true);
                 settings.setLoadWithOverviewMode(true);
-                settings.setSupportZoom(false);
-                settings.setBuiltInZoomControls(false);
-                settings.setDisplayZoomControls(false);
-                settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-
                 settings.setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
 
                 CookieManager cookieManager = CookieManager.getInstance();
@@ -118,6 +198,7 @@ public class ZaloWebManager {
 
                 hiddenWebView.addJavascriptInterface(new WebAppInterface(activity), "ZAutoBridge");
                 hiddenWebView.setWebChromeClient(new WebChromeClient());
+                
                 hiddenWebView.setWebViewClient(new WebViewClient() {
                     @Override
                     public void onPageFinished(WebView view, String url) {
@@ -126,75 +207,244 @@ public class ZaloWebManager {
                         
                         view.postDelayed(() -> {
                             try {
-                                if (hiddenWebView == null) return;
-                                
-                                // Payload JS chống Crash tuyệt đối
-                                String jsPayload = 
-                                    "Object.defineProperty(navigator,'platform',{get:()=> 'Win32'});" +
-                                    "window.getZaloGroups = function() {" +
-                                    "   try {" +
-                                    "       let groups = [];" +
-                                    "       let elements = document.querySelectorAll('.conv-item-title__name, .group-name, span.truncate');" +
-                                    "       elements.forEach(el => {" +
-                                    "           let txt = el.innerText;" +
-                                    "           if(txt && txt.length > 1 && !groups.includes(txt)) groups.push(txt);" +
-                                    "       });" +
-                                    "       if(groups.length > 0) ZAutoBridge.onGroupListReceived(JSON.stringify(groups.slice(0,100)));" +
-                                    "   } catch(e) {}" +
-                                    "};" +
-                                    "setInterval(() => {" +
-                                    "   try {" +
-                                    "       let chatInput = document.getElementById('richInput') || document.querySelector('.chat-input');" +
-                                    "       if(chatInput) {" +
-                                    "           if(!window.zauto_logged) {" +
-                                    "               window.zauto_logged = true;" +
-                                    "               ZAutoBridge.onLoginSuccess('Đã kết nối', '');" +
-                                    "           }" +
-                                    "           window.getZaloGroups();" +
-                                    "           let msgs = document.querySelectorAll('.msg-item');" +
-                                    "           if(msgs.length > 0) {" +
-                                    "               let lastMsgEl = msgs[msgs.length - 1];" +
-                                    "               let msgText = lastMsgEl.innerText;" +
-                                    "               let msgId = lastMsgEl.getAttribute('data-id') || '';" +
-                                    "               let groupName = 'Nhóm Zalo';" +
-                                    "               let header = document.querySelector('.header-title');" +
-                                    "               if(header) groupName = header.innerText;" +
-                                    "               let activeConv = document.querySelector('.conv-item.active');" + 
-                                    "               let conversationId = activeConv ? activeConv.getAttribute('id') : '';" +
-                                    "               if(window.last_zauto_id !== msgId) {" +
-                                    "                   window.last_zauto_id = msgId;" +
-                                    "                   if(!msgText.includes('Ok nhận')) {" +
-                                    "                       ZAutoBridge.onNewWebMsg(groupName, msgText, msgId, conversationId);" +
-                                    "                   }" +
-                                    "               }" +
-                                    "           }" +
-                                    "       }" +
-                                    "   } catch(e) {}" +
-                                    "}, 1500);"; 
-                                view.evaluateJavascript(jsPayload, null);
+                                if (hiddenWebView != null) injectRealtimeObserver(hiddenWebView);
                             } catch (Exception e) {}
-                        }, 4000);
+                        }, 5000);
+                    }
+
+                    @Override
+                    public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                        if (request.isForMainFrame()) safeReload();
+                    }
+
+                    @Override
+                    public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                        handler.cancel(); 
+                    }
+
+                    @Override
+                    public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                        Log.e(TAG, "WEBVIEW RENDER DEAD. RECOVERING...");
+                        if (webLayout != null) webLayout.removeAllViews(); 
+                        if (hiddenWebView != null) {
+                            hiddenWebView.destroy();
+                            hiddenWebView = null;
+                        }
+                        Activity act = activityRef.get();
+                        if (act != null) initWebView(act);
+                        return true;
                     }
                 });
 
                 hiddenWebView.loadUrl("https://id.zalo.me/account?continue=https://chat.zalo.me");
-                webLayout.addView(hiddenWebView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                webLayout.setVisibility(android.view.View.GONE);
-                activity.addContentView(webLayout, new FrameLayout.LayoutParams(0, 0));
                 
+                webLayout.addView(hiddenWebView, new FrameLayout.LayoutParams(1, 1));
+                webLayout.setAlpha(0.01f);
+                activity.addContentView(webLayout, new FrameLayout.LayoutParams(1, 1));
+                
+                startWatchdog(); 
+
             } catch (Exception e) { Log.e(TAG, "Init Error", e); }
         });
     }
 
+    public static void injectRealtimeObserver(WebView view) {
+        String jsPayload = 
+            "(function() {" +
+            "   if(window.zauto_started) return;" +
+            "   window.zauto_started = true;" +
+            "   window.zauto_cache = {};" +
+            "   window.zauto_cache_keys = [];" + 
+            "   window.zauto_observer = null;" +
+            "   window.zauto_observer_target = null;" +
+            
+            "   window.zautoSendReply = function(convId, msgId, text, groupName) {" +
+            "       try {" +
+            "           let chatNode = document.getElementById(convId) || document.querySelector('.conv-item[title=\"' + groupName + '\"]') || document.querySelector('.conv-item.active') || document.querySelector('.conv-item.selected');" +
+            "           if(chatNode && !chatNode.classList.contains('active') && !chatNode.classList.contains('selected')) chatNode.click();" +
+            "           setTimeout(() => {" +
+            "               let input = document.getElementById('richInput') || document.querySelector('.chat-input');" +
+            "               if(!input) return;" +
+            "               input.focus();" +
+            "               if(document.execCommand) { document.execCommand('insertText', false, text); }" +
+            "               input.innerHTML = text; input.textContent = text;" + 
+            "               input.dispatchEvent(new InputEvent('input', {bubbles:true}));" +
+            "               setTimeout(() => {" +
+                                // FIX 4: DOUBLE ACTION REPLY (Enter Event + Click Button)
+            "                   ['keydown', 'keypress', 'keyup'].forEach(type => {" +
+            "                       let evt = new KeyboardEvent(type, {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true});" +
+            "                       input.dispatchEvent(evt);" +
+            "                   });" +
+            "                   setTimeout(() => {" +
+            "                       let btn = document.querySelector('.btn-send, [icon=\"icn-send\"]');" +
+            "                       if(btn) btn.click();" +
+            "                   }, 100);" +
+            "               }, 300);" +
+            "           }, 600);" +
+            "       } catch(e) {}" +
+            "   };" +
+
+            "   function sendMessage(node) {" +
+            "       try {" +
+            "           if(node.dataset.zauto_done === '1') return;" +
+            "           node.dataset.zauto_done = '1';" +
+            
+            "           let text = node.innerText || node.textContent || '';" +
+            "           if(!text || text.length < 1) return;" +
+            "           let groupName = 'Nhóm Zalo';" +
+            "           let header = document.querySelector('.chat-box-head__title') || document.querySelector('.header-title');" +
+            "           if(header) groupName = header.innerText || header.textContent;" +
+            
+            "           let msgId = node.getAttribute('data-id') || node.id;" +
+            "           let fingerprint = msgId ? msgId : (groupName + '|' + text.substring(0, Math.min(text.length, 20)));" + 
+            
+            "           if(window.zauto_cache[fingerprint]) return;" +
+            "           window.zauto_cache[fingerprint] = true;" +
+            "           window.zauto_cache_keys.push(fingerprint);" + 
+            
+            "           let activeConv = document.querySelector('.conv-item.active') || document.querySelector('.conv-item.selected');" +
+            "           let conversationId = activeConv ? activeConv.getAttribute('id') : '';" +
+            
+            "           if(!text.includes('Ok nhận')) {" +
+            "               ZAutoBridge.onNewWebMsg(groupName, text, msgId || '', conversationId);" +
+            "           }" +
+            "       } catch(e) {}" +
+            "   }" +
+
+            "   window.startObserver = function() {" +
+            "       let chatContainer = document.querySelector('.chat-box-content');" +
+            "       if(!chatContainer) return;" +
+            
+            "       window.zauto_observer_target = chatContainer;" +
+            "       if(window.zauto_observer) window.zauto_observer.disconnect();" +
+            
+            "       window.zauto_observer = new MutationObserver((mutations) => {" +
+            "           mutations.forEach((mutation) => {" +
+            "               mutation.addedNodes.forEach((node) => {" +
+            "                   try {" +
+            "                       if(node.nodeType !== 1) return;" +
+            "                       if((node.matches && (node.matches('.msg-item') || node.matches('[data-id]'))) || (node.classList && node.classList.contains('message-item'))) {" +
+            "                           sendMessage(node);" +
+            "                       }" +
+            "                       if(node.querySelectorAll) {" +
+            "                           let nested = node.querySelectorAll('[data-id]');" +
+            "                           nested.forEach(sendMessage);" +
+            "                       }" +
+            "                   } catch(err) {}" +
+            "               });" +
+            "           });" +
+            "       });" +
+            "       window.zauto_observer.observe(chatContainer, {childList: true, subtree: true});" +
+            "       ZAutoBridge.onLoginSuccess('Đã kết nối', '');" +
+            "   };" +
+
+            "   function systemWatchdog() {" +
+            "       ZAutoBridge.onHeartbeat(Date.now().toString());" + 
+            "       if(!navigator.onLine) return;" +
+            
+            "       if(location.href.includes('login') || document.querySelector('.qrcode')) {" +
+            "           window.last_login_reload = window.last_login_reload || 0;" +
+            "           if(Date.now() - window.last_login_reload > 60000) {" +
+            "               window.last_login_reload = Date.now();" +
+            "               location.reload();" +
+            "           }" +
+            "       }" +
+
+            "       if(window.zauto_cache_keys.length > 1000) {" +
+            "           let toRemove = window.zauto_cache_keys.splice(0, 100);" + 
+            "           toRemove.forEach(k => delete window.zauto_cache[k]);" +
+            "       }" +
+
+            "       if(window.zauto_observer_target && !document.body.contains(window.zauto_observer_target)) {" +
+            "           window.startObserver();" +
+            "       }" +
+            
+            "       let nextInterval = document.hidden ? 15000 : 3000;" + // Tiết kiệm pin khi nền
+            "       setTimeout(systemWatchdog, nextInterval);" +
+            "   };" +
+            "   setTimeout(systemWatchdog, 3000);" + 
+            
+            "   setTimeout(() => {" +
+            "       let first = document.querySelector('.conv-item');" + 
+            "       if(first) first.click();" +
+            "       setTimeout(window.startObserver, 2000);" +
+            "   }, 3000);" +
+            "})();";
+
+        safeEvaluateJs(jsPayload);
+    }
+
+    private static void startWatchdog() {
+        if (watchdogHandler == null) watchdogHandler = new Handler(Looper.getMainLooper());
+        if (watchdogRunnable != null) watchdogHandler.removeCallbacks(watchdogRunnable);
+        
+        watchdogRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (hiddenWebView != null) {
+                    long now = System.currentTimeMillis();
+                    if (now - lastHeartbeat > 60000) {
+                        Log.e(TAG, "HEARTBEAT LOST. REQUESTING RELOAD...");
+                        safeReload();
+                    } else if (now - lastHeartbeat > 20000) {
+                        // FIX 7: Tránh gọi evaluateJs liên tục, chỉ gọi nếu 20s ko có tim
+                        safeEvaluateJs("(function(){return !!window.zauto_started})()", value -> {
+                            if (value == null || value.equals("false") || value.equals("null") || value.equals("")) {
+                                injectRealtimeObserver(hiddenWebView);
+                            }
+                        });
+                    }
+                }
+                watchdogHandler.postDelayed(this, 15000); 
+            }
+        };
+        watchdogHandler.postDelayed(watchdogRunnable, 15000);
+    }
+
+    // Tích hợp wrapper cho evaluation có callback (Chống ANR)
+    private static void safeEvaluateJs(String js, android.webkit.ValueCallback<String> callback) {
+        if (hiddenWebView != null && hiddenWebView.getParent() != null) {
+            hiddenWebView.evaluateJavascript(js, callback);
+        } else {
+            if (callback != null) callback.onReceiveValue("null");
+        }
+    }
+
+    public static void destroy() {
+        if (watchdogHandler != null && watchdogRunnable != null) {
+            watchdogHandler.removeCallbacks(watchdogRunnable);
+        }
+        replyQueue.clear();
+        if (webLayout != null) {
+            webLayout.removeAllViews();
+            webLayout = null;
+        }
+        if (hiddenWebView != null) {
+            hiddenWebView.clearHistory();
+            hiddenWebView.clearCache(true);
+            hiddenWebView.destroy();
+            hiddenWebView = null;
+        }
+        if (activityRef != null) {
+            activityRef.clear();
+            activityRef = null;
+        }
+    }
+
     public static void updateWebViewBounds(final Activity activity, final int x, final int y, final int width, final int height, final boolean visible) {
-        if (activity == null) return;
-        activity.runOnUiThread(() -> {
+        Activity safeActivity = activityRef != null ? activityRef.get() : activity;
+        if (safeActivity == null) return;
+        
+        safeActivity.runOnUiThread(() -> {
             try {
                 if (webLayout != null) {
                     if (!visible) {
-                        webLayout.setVisibility(android.view.View.GONE);
+                        webLayout.setAlpha(0.01f); 
+                        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) webLayout.getLayoutParams();
+                        params.leftMargin = 0; params.topMargin = 0; params.width = 1; params.height = 1;
+                        webLayout.setLayoutParams(params);
                     } else {
-                        webLayout.setVisibility(android.view.View.VISIBLE);
+                        webLayout.setAlpha(1.0f);
                         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) webLayout.getLayoutParams();
                         params.leftMargin = x; params.topMargin = y; params.width = width; params.height = height;
                         webLayout.setLayoutParams(params);
@@ -205,22 +455,28 @@ public class ZaloWebManager {
     }
 
     public static void reloadWeb(final Activity activity) {
-        if (activity == null) return;
-        activity.runOnUiThread(() -> {
-            try { if (hiddenWebView != null) hiddenWebView.reload(); } catch (Exception e) {}
-        });
+        safeReload();
     }
 
     public static void onResume(final Activity activity) {
-        if (activity == null) return;
-        activity.runOnUiThread(() -> {
+        Activity safeActivity = activityRef != null ? activityRef.get() : activity;
+        if (safeActivity == null) return;
+        safeActivity.runOnUiThread(() -> {
             try {
                 if (hiddenWebView != null) {
                     hiddenWebView.onResume();
                     hiddenWebView.resumeTimers();
-                    hiddenWebView.setKeepScreenOn(true);
                 }
             } catch (Exception e) {}
         });
+    }
+
+    public static void onPause() {
+        if (hiddenWebView != null) {
+            try {
+                hiddenWebView.onPause();
+                hiddenWebView.pauseTimers();
+            } catch (Exception e) {}
+        }
     }
 }
