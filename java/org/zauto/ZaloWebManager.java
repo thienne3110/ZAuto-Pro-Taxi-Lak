@@ -39,9 +39,6 @@ public class ZaloWebManager {
     
     private static WeakReference<Activity> activityRef;
 
-    // =========================================================
-    // HÀNG ĐỢI XỬ LÝ CHỐT ĐƠN (REPLY QUEUE ENGINE) - FIX 5
-    // =========================================================
     private static final ConcurrentLinkedQueue<Runnable> replyQueue = new ConcurrentLinkedQueue<>();
     private static boolean isSending = false;
 
@@ -51,12 +48,10 @@ public class ZaloWebManager {
         
         Runnable task = replyQueue.poll();
         if (task != null) {
-            task.run(); // Thực thi lệnh JS
-            
-            // Delay 2.5 giây cho mỗi lần gửi để tránh Race Condition và Spam Detection
+            task.run(); 
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 isSending = false;
-                processReplyQueue(); // Gọi đệ quy xử lý tin tiếp theo
+                processReplyQueue(); 
             }, 2500);
         } else {
             isSending = false;
@@ -95,9 +90,6 @@ public class ZaloWebManager {
         }
     }
 
-    // =========================================================
-    // ĐẨY VÀO QUEUE THAY VÌ GỬI TRỰC TIẾP
-    // =========================================================
     public static void sendReplyToSpecificMessage(final Activity activity, final String conversationId, final String msgId, final String text, final String groupName) {
         Activity safeActivity = activityRef != null ? activityRef.get() : activity;
         if (safeActivity == null || hiddenWebView == null) return;
@@ -113,7 +105,6 @@ public class ZaloWebManager {
             });
         });
         
-        // Kích hoạt tiến trình Queue nếu đang rảnh
         safeActivity.runOnUiThread(ZaloWebManager::processReplyQueue);
     }
 
@@ -171,9 +162,10 @@ public class ZaloWebManager {
 
                 webLayout = new FrameLayout(activity);
                 hiddenWebView = new WebView(activity);
-                hiddenWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                
+                // FIX 3: Tránh lỗi trắng màn hình do Hardware Acceleration trên Android 13/14
+                hiddenWebView.setLayerType(View.LAYER_TYPE_NONE, null);
 
-                // FIX 1: ÉP ANDROID ƯU TIÊN RENDERER NÀY CAO NHẤT (Chống Kill GPU)
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     hiddenWebView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true);
                 }
@@ -187,10 +179,19 @@ public class ZaloWebManager {
                 settings.setMediaPlaybackRequiresUserGesture(false);
                 settings.setOffscreenPreRaster(true); 
 
+                // FIX 4: Tương thích Android 14+
+                settings.setCacheMode(WebSettings.LOAD_DEFAULT);
+                settings.setNeedInitialFocus(false);
+                if (android.os.Build.VERSION.SDK_INT >= 29) {
+                    settings.setForceDark(WebSettings.FORCE_DARK_OFF);
+                }
+
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 settings.setUseWideViewPort(true);
                 settings.setLoadWithOverviewMode(true);
-                settings.setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+                
+                // FIX 8: Cập nhật UA mới nhất nhưng dùng bản Desktop để tránh Zalo block mã QR
+                settings.setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36");
 
                 CookieManager cookieManager = CookieManager.getInstance();
                 cookieManager.setAcceptCookie(true);
@@ -217,9 +218,16 @@ public class ZaloWebManager {
                         if (request.isForMainFrame()) safeReload();
                     }
 
+                    // FIX 2: Không hủy toàn bộ SSL, xử lý riêng SSL_UNTRUSTED
                     @Override
                     public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                        handler.cancel(); 
+                        int type = error.getPrimaryError();
+                        if (type == SslError.SSL_UNTRUSTED) {
+                            Log.e(TAG, "SSL UNTRUSTED: " + error.toString());
+                            handler.cancel();
+                        } else {
+                            handler.proceed();
+                        }
                     }
 
                     @Override
@@ -238,9 +246,27 @@ public class ZaloWebManager {
 
                 hiddenWebView.loadUrl("https://id.zalo.me/account?continue=https://chat.zalo.me");
                 
-                webLayout.addView(hiddenWebView, new FrameLayout.LayoutParams(1, 1));
-                webLayout.setAlpha(0.01f);
-                activity.addContentView(webLayout, new FrameLayout.LayoutParams(1, 1));
+                // FIX ĐOẠN QUAN TRỌNG NHẤT: BỐ CỤC WEBVIEW ĐỂ LOAD QR CHUẨN
+                FrameLayout.LayoutParams webParams = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                );
+                webLayout.addView(hiddenWebView, webParams);
+
+                FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(2, 2);
+                webLayout.setAlpha(0.05f);
+
+                // FIX 5: Kiểm tra View Parent để tránh crash "View already has a parent"
+                if (webLayout.getParent() != null) {
+                    ((ViewGroup) webLayout.getParent()).removeView(webLayout);
+                }
+
+                activity.addContentView(webLayout, rootParams);
+
+                // FIX 7: Bắt buộc WebView hiện lên mặt trước để Android cấp tài nguyên vẽ QR
+                hiddenWebView.setVisibility(View.VISIBLE);
+                hiddenWebView.bringToFront();
+                hiddenWebView.requestFocus();
                 
                 startWatchdog(); 
 
@@ -270,7 +296,6 @@ public class ZaloWebManager {
             "               input.innerHTML = text; input.textContent = text;" + 
             "               input.dispatchEvent(new InputEvent('input', {bubbles:true}));" +
             "               setTimeout(() => {" +
-                                // FIX 4: DOUBLE ACTION REPLY (Enter Event + Click Button)
             "                   ['keydown', 'keypress', 'keyup'].forEach(type => {" +
             "                       let evt = new KeyboardEvent(type, {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true});" +
             "                       input.dispatchEvent(evt);" +
@@ -359,7 +384,7 @@ public class ZaloWebManager {
             "           window.startObserver();" +
             "       }" +
             
-            "       let nextInterval = document.hidden ? 15000 : 3000;" + // Tiết kiệm pin khi nền
+            "       let nextInterval = document.hidden ? 15000 : 3000;" + 
             "       setTimeout(systemWatchdog, nextInterval);" +
             "   };" +
             "   setTimeout(systemWatchdog, 3000);" + 
@@ -387,27 +412,13 @@ public class ZaloWebManager {
                         Log.e(TAG, "HEARTBEAT LOST. REQUESTING RELOAD...");
                         safeReload();
                     } else if (now - lastHeartbeat > 20000) {
-                        // FIX 7: Tránh gọi evaluateJs liên tục, chỉ gọi nếu 20s ko có tim
-                        safeEvaluateJs("(function(){return !!window.zauto_started})()", value -> {
-                            if (value == null || value.equals("false") || value.equals("null") || value.equals("")) {
-                                injectRealtimeObserver(hiddenWebView);
-                            }
-                        });
+                        safeEvaluateJs("(function(){return !!window.zauto_started})()");
                     }
                 }
                 watchdogHandler.postDelayed(this, 15000); 
             }
         };
         watchdogHandler.postDelayed(watchdogRunnable, 15000);
-    }
-
-    // Tích hợp wrapper cho evaluation có callback (Chống ANR)
-    private static void safeEvaluateJs(String js, android.webkit.ValueCallback<String> callback) {
-        if (hiddenWebView != null && hiddenWebView.getParent() != null) {
-            hiddenWebView.evaluateJavascript(js, callback);
-        } else {
-            if (callback != null) callback.onReceiveValue("null");
-        }
     }
 
     public static void destroy() {
@@ -439,15 +450,21 @@ public class ZaloWebManager {
             try {
                 if (webLayout != null) {
                     if (!visible) {
-                        webLayout.setAlpha(0.01f); 
+                        webLayout.setAlpha(0.05f); 
                         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) webLayout.getLayoutParams();
-                        params.leftMargin = 0; params.topMargin = 0; params.width = 1; params.height = 1;
+                        params.leftMargin = 0; params.topMargin = 0; params.width = 2; params.height = 2;
                         webLayout.setLayoutParams(params);
                     } else {
                         webLayout.setAlpha(1.0f);
                         FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) webLayout.getLayoutParams();
                         params.leftMargin = x; params.topMargin = y; params.width = width; params.height = height;
                         webLayout.setLayoutParams(params);
+                        
+                        // FIX 6: Force Redraw
+                        if (hiddenWebView != null) {
+                            hiddenWebView.invalidate();
+                            hiddenWebView.requestLayout();
+                        }
                     }
                 }
             } catch (Exception e) {}
@@ -458,6 +475,7 @@ public class ZaloWebManager {
         safeReload();
     }
 
+    // FIX 1: Chống treo Chromium khi Pause
     public static void onResume(final Activity activity) {
         Activity safeActivity = activityRef != null ? activityRef.get() : activity;
         if (safeActivity == null) return;
@@ -465,9 +483,8 @@ public class ZaloWebManager {
             try {
                 if (hiddenWebView != null) {
                     hiddenWebView.onResume();
-                    hiddenWebView.resumeTimers();
                 }
-            } catch (Exception e) {}
+            } catch (Exception ignored) {}
         });
     }
 
@@ -475,8 +492,7 @@ public class ZaloWebManager {
         if (hiddenWebView != null) {
             try {
                 hiddenWebView.onPause();
-                hiddenWebView.pauseTimers();
-            } catch (Exception e) {}
+            } catch (Exception ignored) {}
         }
     }
 }
