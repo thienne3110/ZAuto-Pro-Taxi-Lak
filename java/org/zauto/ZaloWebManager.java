@@ -337,7 +337,7 @@ public class ZaloWebManager {
             "   }" +
 
             "   window.startObserver = function() {" +
-            "       let chatContainer = document.querySelector('.chat-box-content');" +
+            "       let chatContainer = document.querySelector('.chat-box-content') || document.querySelector('.message-view__blur__chat-box') || document.body;" +
             "       if(!chatContainer) return;" +
             
             "       window.zauto_observer_target = chatContainer;" +
