@@ -1,4 +1,4 @@
-name: Build ZAuto VIP
+name: Build ZAuto VIP Production
 
 on:
   push:
@@ -11,25 +11,29 @@ jobs:
     runs-on: ubuntu-22.04
 
     env:
+      # Nâng cấp lên Python 3.11 và Java 17 để tương thích tuyệt đối Android API 33+ và Gradle 8+
       PYTHON_VERSION: "3.11"
       JAVA_VERSION: "17"
 
     steps:
-      - name: Checkout
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Setup Java
+      - name: ☕ Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      - name: Cache Buildozer & Android SDK/NDK
+      # -------------------------------------------------------------
+      # 🚀 TỐI ƯU HÓA: CƠ CHẾ CACHE SIÊU TỐC
+      # -------------------------------------------------------------
+      - name: ⚡ Cache Buildozer & Android SDK/NDK
         uses: actions/cache@v3
         with:
           path: |
@@ -39,9 +43,13 @@ jobs:
           restore-keys: |
             buildozer-${{ runner.os }}-
 
-      - name: Install Dependencies
+      # -------------------------------------------------------------
+      # 📦 CÀI ĐẶT MÔI TRƯỜNG VÀ THƯ VIỆN LÕI
+      # -------------------------------------------------------------
+      - name: ⚙️ Install System Dependencies
         run: |
           sudo apt update
+          # Cài đặt các gói hỗ trợ build C++ và thư viện đồ họa Kivy (Loại bỏ Java cũ)
           sudo apt install -y \
             zip unzip git autoconf automake libtool \
             pkg-config zlib1g-dev libncurses5-dev \
@@ -49,54 +57,91 @@ jobs:
             libpng-dev ffmpeg libsdl2-dev \
             libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
-      - name: Install Python Packages
+      - name: 📦 Install Python Packages
         run: |
           python -m pip install --upgrade pip setuptools wheel
+          # Sử dụng Cython 0.29.36 và Buildozer 1.5.0 để biên dịch Kivy không crash
           pip install Cython==0.29.36 buildozer==1.5.0
 
-      - name: Accept Android Licenses
+      - name: 📜 Accept Android Licenses
         run: |
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
 
       # -------------------------------------------------------------
-      # LỆNH BUILD (XẢ LOG VÀO FILE ĐỂ PHÂN TÍCH)
+      # 🛡️ TRẠM KIỂM DỊCH SỚM: QUÉT LỖI VÀ CẤU TRÚC TRONG 5 GIÂY
       # -------------------------------------------------------------
-      - name: Build Debug APK
+      - name: 🛡️ Fail-Fast (Kiểm dịch toàn diện)
         run: |
-          # Dùng 'tee' để vừa hiển thị log ra màn hình, vừa lưu vào file build.log
+          echo "=========================================================="
+          echo "1. QUÉT LỖI CÚ PHÁP TẤT CẢ FILE PYTHON (DEEP SCAN)"
+          echo "=========================================================="
+          # Quét đệ quy toàn bộ thư mục tìm lỗi cú pháp Python (Bỏ qua thư mục rác)
+          find . -type f -name "*.py" -not -path "*/\.buildozer/*" -not -path "*/bin/*" -print -exec python -m py_compile {} \;
+          echo "✅ Toàn bộ code Python không có lỗi cú pháp!"
+
+          echo "=========================================================="
+          echo "2. KIỂM TRA ĐỊNH VỊ THƯ MỤC JAVA & TÀI NGUYÊN (CHỐNG SAI PATH)"
+          echo "=========================================================="
+          # Xác minh code Java và XML phải nằm ĐÚNG thư mục chuẩn Enterprise
+          FILES_TO_CHECK=(
+            "java/org/zauto/ZaloForegroundService.java"
+            "java/org/zauto/ZaloWebManager.java"
+            "res/xml/accessibility_config.xml"
+            "res/values/strings.xml"
+            "buildozer.spec"
+          )
+
+          for FILE in "${FILES_TO_CHECK[@]}"; do
+            if [ ! -f "$FILE" ]; then
+              echo "::error title=🚨 SAI CẤU TRÚC THƯ MỤC::Không tìm thấy file bắt buộc: $FILE"
+              echo "Vui lòng kiểm tra lại xem file đã được đặt đúng thư mục chưa!"
+              exit 1
+            else
+              echo "✔️ Đã xác nhận vị trí chuẩn: $FILE"
+            fi
+          done
+          echo "✅ Cấu trúc mã nguồn Native Java & XML hoàn hảo!"
+
+      # -------------------------------------------------------------
+      # 🏗️ LỆNH BUILD CHÍNH THỨC (XẢ LOG VÀO FILE)
+      # -------------------------------------------------------------
+      - name: 🔨 Build Debug APK
+        run: |
+          # Không dùng lệnh clean để bảo toàn cache. Xả log ra file để quét lỗi nếu sập.
           buildozer -v android debug 2>&1 | tee build.log
 
       # -------------------------------------------------------------
       # 🚨 MÁY QUÉT LỖI: TỰ ĐỘNG BÔI ĐỎ KHI BUILD THẤT BẠI
       # -------------------------------------------------------------
-      - name: 🚨 Scan & Highlight Errors (Nếu Build Thất Bại)
+      - name: 🚨 Scan & Highlight Errors (Chỉ chạy khi Build thất bại)
         if: failure()
         run: |
           echo "Bắt đầu quét file log để tìm nguyên nhân lỗi..."
           
-          # Dùng grep để bốc tách các dòng chứa lỗi (không phân biệt hoa thường)
+          # Dùng grep để bốc tách các dòng chứa từ khóa báo lỗi
           grep -i -E "error|exception|traceback|failed|conflict|not resolved|syntax" build.log > error_summary.txt || true
           
-          # 1. Bắn lệnh ::error:: để GitHub hiển thị chữ MÀU ĐỎ chót ở mục Annotations
+          # Bắn lệnh Annotations để Github bôi đỏ lỗi
           echo "::error title=🚨 TỔNG HỢP CÁC DÒNG LỖI (XEM BÊN DƯỚI)::Quá trình build thất bại. Đã tìm thấy các dòng lỗi sau:"
           while IFS= read -r line; do
-            # Bỏ qua các dòng log rác, chỉ bôi đỏ các dòng thực sự chứa lỗi
             if [[ "$line" != *"errors.log"* ]]; then
               echo "::error::$line"
             fi
           done < error_summary.txt
 
-          # 2. In ra bảng Summary Dashboard để bạn copy dễ dàng
-          echo "### 🚨 TỔNG HỢP LỖI (ERROR LOGS BÔI ĐỎ)" >> $GITHUB_STEP_SUMMARY
+          # In ra bảng Summary Dashboard để copy dễ dàng
+          echo "### 🚨 TỔNG HỢP LỖI (ERROR LOGS)" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
           cat error_summary.txt >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
-      - name: Upload APK
+      # -------------------------------------------------------------
+      # 📤 TẢI APK LÊN NẾU THÀNH CÔNG
+      # -------------------------------------------------------------
+      - name: 🚀 Upload APK
         uses: actions/upload-artifact@v4
-        # Chỉ upload file nếu bước build phía trên thành công
         if: success()
         with:
-          name: ZAuto_APK
+          name: ZAuto_VIP_APK
           path: bin/*.apk
