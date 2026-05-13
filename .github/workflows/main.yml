@@ -35,9 +35,9 @@ jobs:
           path: |
             ~/.buildozer
             .buildozer
-          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          key: buildozer-v2-clean-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            buildozer-${{ runner.os }}-
+            buildozer-v2-clean-${{ runner.os }}-
 
       - name: ⚙️ Install System Dependencies
         run: |
@@ -68,61 +68,52 @@ jobs:
             if [ ! -f "$FILE" ]; then echo "::error::THIẾU FILE BẮT BUỘC: $FILE"; exit 1; fi
           done
 
-      - name: 🔨 Build Debug APK
+      # -------------------------------------------------------------
+      # 🧹 BƯỚC DỌN DẸP CACHE TẬN GỐC THEO CHỈ ĐỊNH CỦA BẠN
+      # -------------------------------------------------------------
+      - name: 🧹 Clean Build Cache (Xóa rác Pillow cũ)
         run: |
-          # Bắt buộc lưu log ra file build.log để mang đi dịch tiếng Việt
-          buildozer -v android debug 2>&1 | tee build.log
+          echo "Đang xóa bộ nhớ đệm Buildozer cũ chứa Pillow lỗi..."
+          rm -rf .buildozer
+          rm -rf ~/.buildozer
+          rm -rf bin
+          echo "✅ Đã dọn dẹp sạch sẽ!"
 
       # -------------------------------------------------------------
-      # 🚨 MÁY QUÉT VÀ PHIÊN DỊCH LỖI SANG TIẾNG VIỆT
+      # 🔨 LỆNH BUILD CHÍNH THỨC
       # -------------------------------------------------------------
+      - name: 🔨 Build Debug APK
+        run: |
+          buildozer android clean
+          buildozer -v android debug 2>&1 | tee build.log
+
       - name: 🚨 Quét và Phiên dịch lỗi tiếng Việt
         if: failure()
         run: |
-          echo "Bắt đầu quét file log để tìm nguyên nhân sập..."
           grep -i -E "error|exception|traceback|failed|conflict|not resolved|syntax|no matching distribution" build.log > error_summary.txt || true
           
-          # Tạo bảng tóm tắt lỗi
-          echo "### 🚨 BÁO CÁO LỖI (ĐÃ DỊCH SANG TIẾNG VIỆT)" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚨 BÁO CÁO LỖI" >> $GITHUB_STEP_SUMMARY
           echo "Hệ thống biên dịch đã bị sập. Dưới đây là phân tích nguyên nhân:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Đọc từng dòng lỗi và tiến hành phiên dịch
           while IFS= read -r line; do
             if [[ "$line" == *"No matching distribution"* ]]; then
-               echo "- ❌ **LỖI TẢI THƯ VIỆN:** Hệ thống không tìm thấy thư viện trên mạng. *(Gợi ý: Kiểm tra lại tên kivy, kivymd hoặc pillow trong buildozer.spec)*" >> $GITHUB_STEP_SUMMARY
+               echo "- ❌ **LỖI TẢI THƯ VIỆN:** Không tìm thấy thư viện. (Hãy kiểm tra lại Pillow 10.0.1 hoặc lùi về 9.5.0)" >> $GITHUB_STEP_SUMMARY
                echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
-            elif [[ "$line" == *"SyntaxError"* || "$line" == *"IndentationError"* ]]; then
-               echo "- ❌ **LỖI CÚ PHÁP PYTHON:** Bạn gõ sai code Python, thiếu dấu hai chấm (:) hoặc thụt lề sai khoảng trắng." >> $GITHUB_STEP_SUMMARY
-               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
-            elif [[ "$line" == *"cannot find symbol"* ]]; then
-               echo "- ❌ **LỖI CODE JAVA:** Hệ thống không nhận diện được biến hoặc hàm trong file Java *(Thường do viết sai chính tả hoặc khai báo thiếu)*." >> $GITHUB_STEP_SUMMARY
-               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
-            elif [[ "$line" == *"gradlew failed"* ]]; then
-               echo "- ❌ **LỖI ĐÓNG GÓI GRADLE:** Xung đột cấu hình nền tảng Android. *(Gợi ý: Xem lại API 33 và phiên bản Java 17)*." >> $GITHUB_STEP_SUMMARY
-               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
-            elif [[ "$line" == *"config.pxi"* ]]; then
-               echo "- ❌ **LỖI BIÊN DỊCH ĐỒ HỌA KIVY:** Kivy bị lỗi C/C++ khi đóng gói. *(Gợi ý: Xóa phiên bản ==2.3.0, chỉ dùng 'kivy' trong buildozer.spec)*." >> $GITHUB_STEP_SUMMARY
-               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
-            elif [[ "$line" == *"No such file or directory"* ]]; then
-               echo "- ❌ **LỖI THIẾU FILE:** Hệ thống không tìm thấy file bạn yêu cầu. *(Kiểm tra lại xem file đã lưu đúng đường dẫn chưa)*." >> $GITHUB_STEP_SUMMARY
-               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
+            else
+               echo "- ❌ **LỖI KHÁC:** \`$line\`" >> $GITHUB_STEP_SUMMARY
             fi
           done < error_summary.txt
           
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
-          
-          # Tạo một nút bấm thả xuống để chứa log tiếng Anh copy cho dễ
-          echo "<details><summary><b>🗂️ BẤM VÀO ĐÂY ĐỂ XEM & COPY TOÀN BỘ LOG LỖI TIẾNG ANH GỐC</b></summary>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "<details><summary><b>🗂️ BẤM VÀO ĐÂY ĐỂ XEM TOÀN BỘ LOG LỖI</b></summary>" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
           cat error_summary.txt >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "</details>" >> $GITHUB_STEP_SUMMARY
 
-          # Bắn thông báo đỏ để GitHub dừng lại
-          echo "::error::Build thất bại! Hãy vào mục Summary để xem nguyên nhân bằng Tiếng Việt."
+          echo "::error::Build thất bại! Hãy vào mục Summary để xem nguyên nhân."
           exit 1
 
       - name: 🚀 Upload APK
