@@ -706,13 +706,11 @@ class ZAutoProApp(MDApp):
             if self.root.ids.sw_auto_settings.active != active_state:
                 self.root.ids.sw_auto_settings.active = active_state
 
+            # FIX 1: BẮT BUỘC PHẢI CẬP NHẬT VÀO BỘ NHỚ RAM TRƯỚC KHI LƯU
+            self.config_data['sw_auto'] = active_state
             self.save_config_silent()
 
-            toast(
-                "Đã bật AUTO CHỐT"
-                if active_state else
-                "Đã tắt AUTO CHỐT"
-            )
+            toast("Đã bật AUTO CHỐT" if active_state else "Đã tắt AUTO CHỐT")
 
         except Exception:
             print(traceback.format_exc())
@@ -1027,12 +1025,12 @@ class ZAutoProApp(MDApp):
         if not getattr(self, 'is_radar_running', False): return
         if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
 
-        # TIẾT KIỆM CPU: Dùng hash() Native thay cho md5()
-        raw_hash_data = f"{group}{msg}{msg_id}"
-        msg_hash = hash(raw_hash_data)
+        # TỐI ƯU CPU TUYỆT ĐỐI: Dùng thẳng ID tin nhắn làm Key (Không cần hash)
+        # Thêm dấu "_" để tách biệt rõ ràng, chống lỗi dính chùm chuỗi
+        cache_key = f"{group}_{msg_id}"
         
-        if msg_hash in self.processed_msg_hashes: return
-        self.processed_msg_hashes[msg_hash] = True 
+        if cache_key in self.processed_msg_hashes: return
+        self.processed_msg_hashes[cache_key] = True
 
         # TUYỆT ĐỐI KHÔNG ĐỌC UI
         sw_filter_active = self.config_data.get('sw_filter', False)
@@ -1154,12 +1152,9 @@ class ZAutoProApp(MDApp):
         self.remove_ride(card_widget)
 
     def queue_reply(self, group, conversation_id, msg_id, reply_text):
-        # KHÓA THỜI GIAN CHỐNG RACE CONDITION
-        with self.reply_time_lock:
-            now = time.time()
-            if now - getattr(self, 'global_last_reply', 0) < 1.5: return 
-            self.global_last_reply = now
+        now = time.time()
         
+        # Chỉ lọc trùng chính xác theo ID tin nhắn, KHÔNG DÙNG block 1.5s nữa
         cache_key = f"{conversation_id}_{msg_id}"
         if now - self.last_reply_time.get(cache_key, 0) < 30: return 
         self.last_reply_time[cache_key] = now
@@ -1170,7 +1165,12 @@ class ZAutoProApp(MDApp):
             return
 
         try:
-            self.reply_queue.put({'group': group, 'conversation_id': conversation_id, 'msg_id': msg_id, 'reply_text': reply_text}, timeout=0.3)
+            self.reply_queue.put({
+                'group': group, 
+                'conversation_id': conversation_id, 
+                'msg_id': msg_id, 
+                'reply_text': reply_text
+            }, timeout=0.3)
         except queue.Full:
             logger.warning("reply_queue timeout")
 
