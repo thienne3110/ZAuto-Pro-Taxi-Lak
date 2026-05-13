@@ -37,6 +37,8 @@ android.add_src = ./java
 android.add_res = ./res
 android.release_artifact = apk
 android.foreground_service = True
+# CHO PHÉP APP NHÌN THẤY ZALO TRÊN ANDROID 11+
+android.manifest_queries = com.zing.zalo
 
 # =====================================================
 # PERMISSIONS 
@@ -52,12 +54,12 @@ android.extra_manifest_application = \
             <action android:name="android.intent.action.BOOT_COMPLETED" /> \
         </intent-filter> \
     </receiver> \
-    <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="false"> \
+    <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true"> \
         <intent-filter> \
             <action android:name="android.service.notification.NotificationListenerService" /> \
         </intent-filter> \
     </service> \
-    <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="false" android:label="ZAuto VIP"> \
+    <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="ZAuto VIP"> \
         <intent-filter> \
             <action android:name="android.accessibilityservice.AccessibilityService" /> \
         </intent-filter> \
