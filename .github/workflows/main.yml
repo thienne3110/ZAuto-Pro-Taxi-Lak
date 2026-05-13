@@ -55,7 +55,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip==23.2.1
           pip install setuptools wheel
-          pip install Cython==0.29.36 buildozer==1.4.0
+          pip install Cython==0.29.36 buildozer==1.5.0
 
       - name: 🛡️ Fail-Fast (Kiểm dịch cấu trúc)
         run: |
