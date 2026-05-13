@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-22.04
 
     env:
-      # Nâng cấp lên Python 3.11 và Java 17 để tương thích Gradle bản mới
       PYTHON_VERSION: "3.11"
       JAVA_VERSION: "17"
 
@@ -43,26 +42,16 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt update
-          # Đã gỡ openjdk-11-jdk vì setup-java ở trên đã tự động quản lý Java 17
           sudo apt install -y \
-            zip unzip git \
-            autoconf automake libtool \
-            pkg-config zlib1g-dev \
-            libncurses5-dev \
-            libffi-dev libssl-dev \
-            ccache \
-            libjpeg-dev \
-            libpng-dev \
-            ffmpeg \
-            libsdl2-dev \
-            libsdl2-image-dev \
-            libsdl2-mixer-dev \
-            libsdl2-ttf-dev
+            zip unzip git autoconf automake libtool \
+            pkg-config zlib1g-dev libncurses5-dev \
+            libffi-dev libssl-dev ccache libjpeg-dev \
+            libpng-dev ffmpeg libsdl2-dev \
+            libsdl2-image-dev libsdl2-mixer-dev libsdl2-ttf-dev
 
       - name: Install Python Packages
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          # Nâng cấp version để tránh lỗi buildozer cũ
           pip install Cython==0.29.36 buildozer==1.5.0
 
       - name: Accept Android Licenses
@@ -70,13 +59,44 @@ jobs:
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
 
+      # -------------------------------------------------------------
+      # LỆNH BUILD (XẢ LOG VÀO FILE ĐỂ PHÂN TÍCH)
+      # -------------------------------------------------------------
       - name: Build Debug APK
         run: |
-          # Chỉ chạy lệnh build, tuyệt đối không dùng clean ở đây để tránh lỗi mất file
-          buildozer -v android debug
+          # Dùng 'tee' để vừa hiển thị log ra màn hình, vừa lưu vào file build.log
+          buildozer -v android debug 2>&1 | tee build.log
+
+      # -------------------------------------------------------------
+      # 🚨 MÁY QUÉT LỖI: TỰ ĐỘNG BÔI ĐỎ KHI BUILD THẤT BẠI
+      # -------------------------------------------------------------
+      - name: 🚨 Scan & Highlight Errors (Nếu Build Thất Bại)
+        if: failure()
+        run: |
+          echo "Bắt đầu quét file log để tìm nguyên nhân lỗi..."
+          
+          # Dùng grep để bốc tách các dòng chứa lỗi (không phân biệt hoa thường)
+          grep -i -E "error|exception|traceback|failed|conflict|not resolved|syntax" build.log > error_summary.txt || true
+          
+          # 1. Bắn lệnh ::error:: để GitHub hiển thị chữ MÀU ĐỎ chót ở mục Annotations
+          echo "::error title=🚨 TỔNG HỢP CÁC DÒNG LỖI (XEM BÊN DƯỚI)::Quá trình build thất bại. Đã tìm thấy các dòng lỗi sau:"
+          while IFS= read -r line; do
+            # Bỏ qua các dòng log rác, chỉ bôi đỏ các dòng thực sự chứa lỗi
+            if [[ "$line" != *"errors.log"* ]]; then
+              echo "::error::$line"
+            fi
+          done < error_summary.txt
+
+          # 2. In ra bảng Summary Dashboard để bạn copy dễ dàng
+          echo "### 🚨 TỔNG HỢP LỖI (ERROR LOGS BÔI ĐỎ)" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
+          cat error_summary.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
+        # Chỉ upload file nếu bước build phía trên thành công
+        if: success()
         with:
           name: ZAuto_APK
           path: bin/*.apk
