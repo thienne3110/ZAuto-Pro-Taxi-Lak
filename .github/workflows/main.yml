@@ -11,11 +11,11 @@ jobs:
     runs-on: ubuntu-22.04
 
     env:
-      PYTHON_VERSION: "3.10"
-      JAVA_VERSION: "11"
+      # Nâng cấp lên Python 3.11 và Java 17 để tương thích Gradle bản mới
+      PYTHON_VERSION: "3.11"
+      JAVA_VERSION: "17"
 
     steps:
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -30,13 +30,22 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
+      - name: Cache Buildozer & Android SDK/NDK
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.buildozer
+            .buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('buildozer.spec') }}
+          restore-keys: |
+            buildozer-${{ runner.os }}-
+
       - name: Install Dependencies
         run: |
           sudo apt update
-
+          # Đã gỡ openjdk-11-jdk vì setup-java ở trên đã tự động quản lý Java 17
           sudo apt install -y \
             zip unzip git \
-            openjdk-11-jdk \
             autoconf automake libtool \
             pkg-config zlib1g-dev \
             libncurses5-dev \
@@ -53,24 +62,17 @@ jobs:
       - name: Install Python Packages
         run: |
           python -m pip install --upgrade pip setuptools wheel
-
-          pip install \
-            Cython==0.29.33 \
-            buildozer==1.4.0
+          # Nâng cấp version để tránh lỗi buildozer cũ
+          pip install Cython==0.29.36 buildozer==1.5.0
 
       - name: Accept Android Licenses
         run: |
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
 
-      - name: Clean Old Build
-        run: |
-          rm -rf .buildozer
-          rm -rf bin
-
       - name: Build Debug APK
         run: |
-          buildozer android clean
+          # Chỉ chạy lệnh build, tuyệt đối không dùng clean ở đây để tránh lỗi mất file
           buildozer -v android debug
 
       - name: Upload APK
