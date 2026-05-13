@@ -11,7 +11,6 @@ jobs:
     runs-on: ubuntu-22.04
 
     env:
-      # KHÓA CHẶT: Python 3.10 và Java 17 là sự kết hợp ổn định nhất hiện tại
       PYTHON_VERSION: "3.10"
       JAVA_VERSION: "17"
 
@@ -30,9 +29,7 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      # -------------------------------------------------------------
-      # 🚀 CACHE CHUẨN: CHỈ CACHE GRADLE VÀ PIP (KHÔNG CACHE BUILDOZER)
-      # -------------------------------------------------------------
+      # Chỉ cache Gradle và Pip để tốc độ build tăng gấp 5 lần ở các lượt sau
       - name: ⚡ Cache Gradle & Pip
         uses: actions/cache@v3
         with:
@@ -40,13 +37,10 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.cache/pip
-          key: ${{ runner.os }}-gradle-pip-${{ hashFiles('buildozer.spec') }}
+          key: ${{ runner.os }}-gradle-pip-v4-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-pip-
+            ${{ runner.os }}-gradle-pip-v4-
 
-      # -------------------------------------------------------------
-      # ⚙️ CÀI ĐẶT HỆ THỐNG & KHÓA VERSION PIP / BUILDOZER
-      # -------------------------------------------------------------
       - name: ⚙️ Install System Dependencies
         run: |
           sudo apt update
@@ -59,89 +53,35 @@ jobs:
 
       - name: 📦 Install Python Packages
         run: |
-          # Ép pip về 23.2.1 và Buildozer 1.4.0 để tránh tự kéo thư viện đời mới bị lỗi
           python -m pip install --upgrade pip==23.2.1
           pip install setuptools wheel
           pip install Cython==0.29.36 buildozer==1.4.0
 
-      - name: 📜 Accept Android Licenses
-        run: |
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
-
-      # -------------------------------------------------------------
-      # 🛡️ KIỂM DỊCH SỚM & DỌN DẸP CACHE LỖI CŨ
-      # -------------------------------------------------------------
       - name: 🛡️ Fail-Fast (Kiểm dịch cấu trúc)
         run: |
-          echo "Đang quét lỗi cấu trúc và file..."
           find . -type f -name "*.py" -not -path "*/\.buildozer/*" -not -path "*/bin/*" -print -exec python -m py_compile {} \;
           FILES_TO_CHECK=("java/org/zauto/ZaloForegroundService.java" "java/org/zauto/ZaloWebManager.java" "res/xml/accessibility_config.xml" "buildozer.spec")
           for FILE in "${FILES_TO_CHECK[@]}"; do
-            if [ ! -f "$FILE" ]; then echo "::error::THIẾU FILE BẮT BUỘC: $FILE"; exit 1; fi
+            if [ ! -f "$FILE" ]; then echo "::error::THIẾU FILE: $FILE"; exit 1; fi
           done
 
-      - name: 🧹 Clean Build Cache (Xóa rác lỗi cũ)
+      # DỌN RÁC NHANH ĐÚNG CÁCH: Chỉ xóa thư mục local để kích hoạt tải mới không bị kẹt patch Pillow cũ
+      - name: 🧹 Clean Local Buildozer
         run: |
-          echo "Dọn dẹp môi trường sạch sẽ 100% trước khi build..."
           rm -rf .buildozer
-          rm -rf ~/.buildozer
           rm -rf bin
 
-      # -------------------------------------------------------------
-      # 🔨 LỆNH BUILD CHÍNH THỨC (ĐÃ XÓA 'clean' ĐỂ TRÁNH LỖI)
-      # -------------------------------------------------------------
+      # LỆNH BUILD THUẦN TÚY: Không nuốt exit code, không che giấu lỗi
       - name: 🔨 Build Debug APK
         run: |
-          # Bắt buộc lưu log ra file build.log để mang đi dịch tiếng Việt
-          buildozer -v android debug 2>&1 | tee build.log
-
-      # -------------------------------------------------------------
-      # 🚨 MÁY QUÉT VÀ PHIÊN DỊCH LỖI SANG TIẾNG VIỆT
-      # -------------------------------------------------------------
-      - name: 🚨 Quét và Phiên dịch lỗi tiếng Việt
-        if: failure()
-        run: |
-          echo "Bắt đầu quét file log để tìm nguyên nhân sập..."
-          grep -i -E "error|exception|traceback|failed|conflict|not resolved|syntax|no matching distribution" build.log > error_summary.txt || true
+          export PATH=$PATH:~/.local/bin
+          export GRADLE_OPTS="-Xmx2048m -Dorg.gradle.daemon=false"
           
-          echo "### 🚨 BÁO CÁO LỖI (ĐÃ DỊCH SANG TIẾNG VIỆT)" >> $GITHUB_STEP_SUMMARY
-          echo "Hệ thống biên dịch đã bị sập. Dưới đây là phân tích nguyên nhân:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          mkdir -p ~/.android
+          touch ~/.android/repositories.cfg
           
-          while IFS= read -r line; do
-            if [[ "$line" == *"No matching distribution"* ]]; then
-               echo "- ❌ **LỖI TẢI THƯ VIỆN:** Không tìm thấy thư viện. *(Gợi ý: Kiểm tra lại tên gói trong buildozer.spec)*" >> $GITHUB_STEP_SUMMARY
-               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
-            elif [[ "$line" == *"SyntaxError"* || "$line" == *"IndentationError"* ]]; then
-               echo "- ❌ **LỖI CÚ PHÁP PYTHON:** Sai code Python, thiếu dấu (:) hoặc thụt lề sai." >> $GITHUB_STEP_SUMMARY
-               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
-            elif [[ "$line" == *"cannot find symbol"* ]]; then
-               echo "- ❌ **LỖI CODE JAVA:** Không nhận diện được biến/hàm trong file Java." >> $GITHUB_STEP_SUMMARY
-               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
-            elif [[ "$line" == *"config.pxi"* ]]; then
-               echo "- ❌ **LỖI BIÊN DỊCH ĐỒ HỌA:** Lỗi C/C++ khi đóng gói Kivy." >> $GITHUB_STEP_SUMMARY
-               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
-            elif [[ "$line" == *"No such file or directory"* ]]; then
-               echo "- ❌ **LỖI THIẾU FILE:** Hệ thống không tìm thấy thư mục/file bạn yêu cầu." >> $GITHUB_STEP_SUMMARY
-               echo "   - *Log gốc:* \`$line\`" >> $GITHUB_STEP_SUMMARY
-            fi
-          done < error_summary.txt
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "<details><summary><b>🗂️ BẤM VÀO ĐÂY ĐỂ XEM & COPY TOÀN BỘ LOG LỖI TIẾNG ANH GỐC</b></summary>" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
-          cat error_summary.txt >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          buildozer -v android debug
 
-          echo "::error::Build thất bại! Hãy vào mục Summary để xem nguyên nhân bằng Tiếng Việt."
-          exit 1
-
-      # -------------------------------------------------------------
-      # 🚀 TẢI APK VỀ MÁY
-      # -------------------------------------------------------------
       - name: 🚀 Upload APK
         uses: actions/upload-artifact@v4
         if: success()
