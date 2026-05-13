@@ -30,20 +30,18 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       # -------------------------------------------------------------
-      # ⚡ BẬT MAX CACHE (LẤY COOKIE): LƯU GRADLE, PIP VÀ CẢ BUILDOZER
+      # ⚡ CACHE CHUẨN: CHỈ LƯU GRADLE VÀ PIP (KHÔNG LƯU .BUILDOZER)
       # -------------------------------------------------------------
-      - name: ⚡ Cache Buildozer, Gradle & Pip
+      - name: ⚡ Cache Gradle & Pip
         uses: actions/cache@v3
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.cache/pip
-            ~/.buildozer
-            .buildozer
-          key: ${{ runner.os }}-zauto-cache-v6-${{ hashFiles('buildozer.spec') }}
+          key: ${{ runner.os }}-gradle-pip-v7-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-zauto-cache-v6-
+            ${{ runner.os }}-gradle-pip-v7-
 
       - name: ⚙️ Install System Dependencies
         run: |
@@ -69,9 +67,18 @@ jobs:
             if [ ! -f "$FILE" ]; then echo "::error::THIẾU FILE: $FILE"; exit 1; fi
           done
 
-      # --- LƯU Ý: ĐÃ XÓA BƯỚC DỌN RÁC "rm -rf .buildozer" ĐỂ KHÔNG BỊ XÓA COOKIE ---
+      # -------------------------------------------------------------
+      # 🧹 ĐẢM BẢO MÔI TRƯỜNG SẠCH 100% TRƯỚC KHI BUILD
+      # -------------------------------------------------------------
+      - name: 🧹 Clean Local Buildozer
+        run: |
+          rm -rf .buildozer
+          rm -rf ~/.buildozer
+          rm -rf bin
 
-      # LỆNH BUILD THUẦN TÚY: Không nuốt exit code, không che giấu lỗi
+      # -------------------------------------------------------------
+      # 🔨 LỆNH BUILD AN TOÀN
+      # -------------------------------------------------------------
       - name: 🔨 Build Debug APK
         run: |
           export PATH=$PATH:~/.local/bin
