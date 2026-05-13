@@ -21,7 +21,7 @@ requirements = python3,kivy,kivymd==1.1.1,pyjnius
 # =====================================================
 # ANDROID CONFIG (Chuẩn 2026 Ít Lỗi Nhất)
 # =====================================================
-android.api = 33
+android.api = 34
 android.minapi = 24
 android.ndk = 25b
 android.accept_sdk_license = True
