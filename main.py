@@ -714,6 +714,7 @@ class ZAutoProApp(MDApp):
         return self.root
 
     def on_start(self):
+        init_db()
         self.load_config()
         self.check_license_at_startup()
         if platform == 'android':
