@@ -1222,12 +1222,21 @@ class ZAutoProApp(MDApp):
     def update_profile_ui(self):
         try:
             ids = self.root.ids
-            if self.config_data.get('zalo_name') and not self.is_linked:
-                self.is_linked = True
+            
+            # --- ĐÃ XÓA 2 DÒNG LOGIC GÂY NHẬN DIỆN NHẦM TẠI ĐÂY ---
 
             # Thêm điều kiện kiểm tra id có tồn tại trong KV không
             if 'zalo_name_view' in ids:
                 ids.zalo_name_view.text = self.config_data.get('zalo_name', "Đã kết nối") if self.is_linked else "Chưa kết nối Zalo"
+
+            if 'zalo_avatar_view' in ids:
+                ids.zalo_avatar_view.source = self.config_data.get('zalo_avatar', 'profile.jpg') if self.is_linked else 'profile.jpg'
+
+            if 'btn_zalo_action' in ids:
+                ids.btn_zalo_action.text = "HUỶ LIÊN KẾT ZALO" if self.is_linked else "LIÊN KẾT ZALO NGAY"
+                ids.btn_zalo_action.md_bg_color = (0.8, 0.2, 0.2, 1) if self.is_linked else (0.1, 0.5, 0.8, 1)
+        except Exception as e:
+            print(f"Lỗi UI Profile: {e}")
 
             if 'zalo_avatar_view' in ids:
                 ids.zalo_avatar_view.source = self.config_data.get('zalo_avatar', 'profile.jpg') if self.is_linked else 'profile.jpg'
