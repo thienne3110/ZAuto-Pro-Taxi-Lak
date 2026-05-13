@@ -23,7 +23,6 @@ public class ZaloWebManager {
     // HÀM CHỐT CUỐC: BẮT ĐÚNG BONG BÓNG TIN NHẮN (PRODUCTION GRADE)
     // =========================================================
     public static void sendReplyToSpecificMessage(final Activity activity, final String conversationId, final String msgId, final String text, final String groupName) {
-        // Đã sửa: Null check chống crash ngầm hệ thống
         if (activity == null || hiddenWebView == null) return;
         
         activity.runOnUiThread(() -> {
@@ -67,6 +66,9 @@ public class ZaloWebManager {
         });
     }
 
+    // =========================================================
+    // CẦU NỐI JAVASCRIPT -> PYTHON (ĐÃ XÓA CHỮ .taxi)
+    // =========================================================
     public static class WebAppInterface {
         Context mContext;
         WebAppInterface(Context c) { mContext = c; }
@@ -74,8 +76,7 @@ public class ZaloWebManager {
         @JavascriptInterface
         public void onLoginSuccess(String name, String avatar) {
             try {
-                Intent intent = new Intent("org.zauto.taxi.LOGIN_SUCCESS");
-                // CRITICAL FIX: Gắn package name của app để vượt rào bảo mật Android 14+
+                Intent intent = new Intent("org.zauto.LOGIN_SUCCESS");
                 intent.setPackage(mContext.getPackageName());
                 intent.putExtra("zalo_name", name);
                 intent.putExtra("zalo_avatar", avatar);
@@ -88,8 +89,8 @@ public class ZaloWebManager {
         @JavascriptInterface
         public void onNewWebMsg(String group, String msg, String msgId, String conversationId) {
             try {
-                Intent intent = new Intent("org.zauto.taxi.WEB_NEW_MSG");
-                intent.setPackage(mContext.getPackageName()); // Sửa: Tương thích Android 14+
+                Intent intent = new Intent("org.zauto.WEB_NEW_MSG");
+                intent.setPackage(mContext.getPackageName());
                 intent.putExtra("group", group);
                 intent.putExtra("msg", msg);
                 intent.putExtra("msg_id", msgId);
@@ -103,8 +104,8 @@ public class ZaloWebManager {
         @JavascriptInterface
         public void onGroupListReceived(String jsonGroups) {
             try {
-                Intent intent = new Intent("org.zauto.taxi.GROUPS_DATA");
-                intent.setPackage(mContext.getPackageName()); // Sửa: Tương thích Android 14+
+                Intent intent = new Intent("org.zauto.GROUPS_DATA");
+                intent.setPackage(mContext.getPackageName());
                 intent.putExtra("groups_list", jsonGroups);
                 mContext.sendBroadcast(intent);
             } catch (Exception e) {
@@ -132,6 +133,7 @@ public class ZaloWebManager {
                 settings.setAllowFileAccess(true);
                 settings.setAllowContentAccess(true);
                 settings.setLoadsImagesAutomatically(true);
+                // BẮT BUỘC ĐỂ CHỐNG NGỦ ĐÔNG MEDIA VÀ JS
                 settings.setMediaPlaybackRequiresUserGesture(false);
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 settings.setUseWideViewPort(true);
@@ -305,6 +307,29 @@ public class ZaloWebManager {
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Lỗi khi execute trực tiếp JS", e);
+            }
+        });
+    }
+
+    // =========================================================
+    // HÀM ÉP WEBVIEW LUÔN THỨC VÀ CHẠY JAVASCRIPT NGẦM LIÊN TỤC
+    // =========================================================
+    public static void onResume(final Activity activity) {
+        if (activity == null) return;
+        activity.runOnUiThread(() -> {
+            try {
+                if (hiddenWebView != null) {
+                    // 1. Kích hoạt lại toàn bộ luồng xử lý của WebView
+                    hiddenWebView.onResume();
+                    // 2. Ép các hàm setTimeout và setInterval trong JS chạy lại
+                    hiddenWebView.resumeTimers();
+                    // 3. Đảm bảo WebView không bị hệ thống cho đi ngủ
+                    hiddenWebView.setKeepScreenOn(true);
+                    // 4. Gửi một lệnh ping nhỏ để xốc lại luồng JS
+                    hiddenWebView.evaluateJavascript("console.log('System Ping: Wake Up Zalo');", null);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Lỗi khi đánh thức WebView", e);
             }
         });
     }
