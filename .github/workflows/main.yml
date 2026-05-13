@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     env:
-      # Nâng cấp lên Python 3.11 và Java 17 để tương thích tuyệt đối Android API 33+ và Gradle 8+
+      # Sử dụng Java 17 và Python 3.11 để tương thích tuyệt đối với API 33
       PYTHON_VERSION: "3.11"
       JAVA_VERSION: "17"
 
@@ -31,7 +31,7 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
 
       # -------------------------------------------------------------
-      # 🚀 TỐI ƯU HÓA: CƠ CHẾ CACHE SIÊU TỐC
+      # 🚀 TỐI ƯU HÓA: CACHE SDK/NDK (Giảm thời gian build còn 3-5 phút)
       # -------------------------------------------------------------
       - name: ⚡ Cache Buildozer & Android SDK/NDK
         uses: actions/cache@v3
@@ -44,12 +44,11 @@ jobs:
             buildozer-${{ runner.os }}-
 
       # -------------------------------------------------------------
-      # 📦 CÀI ĐẶT MÔI TRƯỜNG VÀ THƯ VIỆN LÕI
+      # ⚙️ CÀI ĐẶT CÁC THÀNH PHẦN HỆ THỐNG
       # -------------------------------------------------------------
       - name: ⚙️ Install System Dependencies
         run: |
           sudo apt update
-          # Cài đặt các gói hỗ trợ build C++ và thư viện đồ họa Kivy (Loại bỏ Java cũ)
           sudo apt install -y \
             zip unzip git autoconf automake libtool \
             pkg-config zlib1g-dev libncurses5-dev \
@@ -60,7 +59,7 @@ jobs:
       - name: 📦 Install Python Packages
         run: |
           python -m pip install --upgrade pip setuptools wheel
-          # Sử dụng Cython 0.29.36 và Buildozer 1.5.0 để biên dịch Kivy không crash
+          # Sử dụng Cython 0.29.36 để tránh lỗi biên dịch nhân đồ họa
           pip install Cython==0.29.36 buildozer==1.5.0
 
       - name: 📜 Accept Android Licenses
@@ -69,24 +68,19 @@ jobs:
           touch ~/.android/repositories.cfg
 
       # -------------------------------------------------------------
-      # 🛡️ TRẠM KIỂM DỊCH SỚM: QUÉT LỖI VÀ CẤU TRÚC TRONG 5 GIÂY
+      # 🛡️ TRẠM KIỂM DỊCH SỚM: QUÉT LỖI SÂU TRONG 5 GIÂY
       # -------------------------------------------------------------
-      - name: 🛡️ Fail-Fast (Kiểm dịch toàn diện)
+      - name: 🛡️ Fail-Fast (Quét lỗi sâu & Kiểm tra cấu trúc)
         run: |
-          echo "=========================================================="
-          echo "1. QUÉT LỖI CÚ PHÁP TẤT CẢ FILE PYTHON (DEEP SCAN)"
-          echo "=========================================================="
-          # Quét đệ quy toàn bộ thư mục tìm lỗi cú pháp Python (Bỏ qua thư mục rác)
+          echo "--- Đang quét lỗi cú pháp toàn bộ file Python (.py) ---"
           find . -type f -name "*.py" -not -path "*/\.buildozer/*" -not -path "*/bin/*" -print -exec python -m py_compile {} \;
-          echo "✅ Toàn bộ code Python không có lỗi cú pháp!"
-
-          echo "=========================================================="
-          echo "2. KIỂM TRA ĐỊNH VỊ THƯ MỤC JAVA & TÀI NGUYÊN (CHỐNG SAI PATH)"
-          echo "=========================================================="
-          # Xác minh code Java và XML phải nằm ĐÚNG thư mục chuẩn Enterprise
+          
+          echo "--- Đang xác minh vị trí các file hệ thống quan trọng ---"
           FILES_TO_CHECK=(
             "java/org/zauto/ZaloForegroundService.java"
             "java/org/zauto/ZaloWebManager.java"
+            "java/org/zauto/ZaloAccessibility.java"
+            "java/org/zauto/ZaloNotificationService.java"
             "res/xml/accessibility_config.xml"
             "res/values/strings.xml"
             "buildozer.spec"
@@ -94,54 +88,28 @@ jobs:
 
           for FILE in "${FILES_TO_CHECK[@]}"; do
             if [ ! -f "$FILE" ]; then
-              echo "::error title=🚨 SAI CẤU TRÚC THƯ MỤC::Không tìm thấy file bắt buộc: $FILE"
-              echo "Vui lòng kiểm tra lại xem file đã được đặt đúng thư mục chưa!"
+              echo "::error title=🚨 THIẾU FILE HỆ THỐNG::Không tìm thấy file: $FILE. Vui lòng kiểm tra lại cấu trúc thư mục!"
               exit 1
             else
-              echo "✔️ Đã xác nhận vị trí chuẩn: $FILE"
+              echo "✔️ Đã xác nhận: $FILE"
             fi
           done
-          echo "✅ Cấu trúc mã nguồn Native Java & XML hoàn hảo!"
+          echo "✅ Cấu trúc mã nguồn hoàn hảo!"
 
       # -------------------------------------------------------------
-      # 🏗️ LỆNH BUILD CHÍNH THỨC (XẢ LOG VÀO FILE)
+      # 🔨 LỆNH BUILD CHÍNH THỨC (KHÔNG DÙNG PIPE TEE)
       # -------------------------------------------------------------
       - name: 🔨 Build Debug APK
         run: |
-          # Không dùng lệnh clean để bảo toàn cache. Xả log ra file để quét lỗi nếu sập.
-          buildozer -v android debug 2>&1 | tee build.log
+          # Loại bỏ hoàn toàn '| tee build.log' để GitHub Actions bắt lỗi trực tiếp từ Buildozer
+          buildozer -v android debug
 
       # -------------------------------------------------------------
-      # 🚨 MÁY QUÉT LỖI: TỰ ĐỘNG BÔI ĐỎ KHI BUILD THẤT BẠI
-      # -------------------------------------------------------------
-      - name: 🚨 Scan & Highlight Errors (Chỉ chạy khi Build thất bại)
-        if: failure()
-        run: |
-          echo "Bắt đầu quét file log để tìm nguyên nhân lỗi..."
-          
-          # Dùng grep để bốc tách các dòng chứa từ khóa báo lỗi
-          grep -i -E "error|exception|traceback|failed|conflict|not resolved|syntax" build.log > error_summary.txt || true
-          
-          # Bắn lệnh Annotations để Github bôi đỏ lỗi
-          echo "::error title=🚨 TỔNG HỢP CÁC DÒNG LỖI (XEM BÊN DƯỚI)::Quá trình build thất bại. Đã tìm thấy các dòng lỗi sau:"
-          while IFS= read -r line; do
-            if [[ "$line" != *"errors.log"* ]]; then
-              echo "::error::$line"
-            fi
-          done < error_summary.txt
-
-          # In ra bảng Summary Dashboard để copy dễ dàng
-          echo "### 🚨 TỔNG HỢP LỖI (ERROR LOGS)" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`text" >> $GITHUB_STEP_SUMMARY
-          cat error_summary.txt >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-
-      # -------------------------------------------------------------
-      # 📤 TẢI APK LÊN NẾU THÀNH CÔNG
+      # 🚀 UPLOAD APK (CHỈ CHẠY NẾU BUILD THÀNH CÔNG)
       # -------------------------------------------------------------
       - name: 🚀 Upload APK
         uses: actions/upload-artifact@v4
         if: success()
         with:
-          name: ZAuto_VIP_APK
+          name: ZAuto_VIP_Final_APK
           path: bin/*.apk
