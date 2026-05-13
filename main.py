@@ -1094,7 +1094,9 @@ class ZAutoProApp(MDApp):
             logger.error(f"Lỗi remove_ride: {e}")
     def on_broadcast_received(self, context, intent):
         action = intent.getAction()
-        if action == 'org.zauto.taxi.LOGIN_SUCCESS':
+        
+        # ĐÃ XÓA CHỮ .taxi Ở ĐÂY ĐỂ KHỚP VỚI JAVA
+        if action == 'org.zauto.LOGIN_SUCCESS':
             self.is_linked = True
             zalo_name = intent.getStringExtra("zalo_name")
             zalo_avatar = intent.getStringExtra("zalo_avatar")
@@ -1104,7 +1106,9 @@ class ZAutoProApp(MDApp):
             Clock.schedule_once(lambda dt: self.update_profile_ui())
             Clock.schedule_once(lambda dt: toast("Đã liên kết Zalo Web thành công!"))
             return
-        if action == 'org.zauto.taxi.GROUPS_DATA':
+            
+        # ĐÃ XÓA CHỮ .taxi Ở ĐÂY
+        if action == 'org.zauto.GROUPS_DATA':
             try:
                 groups_json = intent.getStringExtra("groups_list")
                 if groups_json:
@@ -1112,11 +1116,13 @@ class ZAutoProApp(MDApp):
                     Clock.schedule_once(lambda dt: self.update_group_list_ui(groups))
             except Exception as e: logger.error(f"GROUPS_DATA Error: {e}")
             return
-        if action == 'org.zauto.taxi.WEB_NEW_MSG':
+            
+        # ĐÃ XÓA CHỮ .taxi Ở ĐÂY
+        if action == 'org.zauto.WEB_NEW_MSG':
             payload = {
                 'group': intent.getStringExtra("group") or "",
                 'msg': intent.getStringExtra("msg") or "",
-                'msg_id': intent.getStringExtra("msg_id") or "", # DATA MỚI TỪ DOM
+                'msg_id': intent.getStringExtra("msg_id") or "", 
                 'conversation_id': intent.getStringExtra("conversation_id") or ""
             }
             if payload['group'] and payload['msg']:
