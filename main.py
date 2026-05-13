@@ -9,7 +9,7 @@ import sqlite3
 import logging
 from logging.handlers import RotatingFileHandler
 from collections import OrderedDict
-
+from kivy.uix.image import Image
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 from kivy.core.clipboard import Clipboard
@@ -343,26 +343,33 @@ MDScreen:
                     
                     # ... (Các phần icon và label bên trong giữ nguyên) ...
 
-                    MDIcon:
-                        id: zalo_status_icon
-                        icon: "wifi-off"
-                        theme_text_color: "Custom"
-                        text_color: 1, 1, 1, 1
+                    FitImage:
+                        id: zalo_avatar_view
+                        source: "profile.jpg"
+                        size_hint: None, None
+                        size: "45dp", "45dp"
+                        radius: [22.5, ]
                         pos_hint: {"center_y": .5}
 
-                    MDLabel:
-                        id: zalo_status_label
-                        text: "Chưa đăng nhập Zalo Web"
-                        theme_text_color: "Custom"
-                        text_color: 1, 1, 1, 1
-                        font_style: "Subtitle2"
-                        bold: True
-                        valign: "center"
+                    MDBoxLayout:
+                        orientation: "vertical"
+                        pos_hint: {"center_y": .5}
+                        MDLabel:
+                            id: zalo_name_view
+                            text: "Chưa kết nối Zalo Web"
+                            theme_text_color: "Custom"
+                            text_color: 1, 1, 1, 1
+                            font_style: "Subtitle1"
+                            bold: True
+                        MDLabel:
+                            text: "Trình duyệt nhân Chromium chìm"
+                            theme_text_color: "Custom"
+                            text_color: 0.9, 0.9, 0.9, 1
+                            font_style: "Caption"
 
                     MDRaisedButton:
+                        id: btn_zalo_action
                         text: "TẢI LẠI"
-                        size_hint_x: None
-                        width: "80dp"
                         size_hint_y: None
                         height: "36dp"
                         md_bg_color: 1, 1, 1, 0.25
@@ -736,14 +743,11 @@ class ZAutoProApp(MDApp):
                 self.global_last_reply = 0
                 self.last_reply_time = LRUCache(maxsize=200)
 
-                # 1. MESSAGE QUEUE & WORKER
-                self.msg_queue = queue.Queue(maxsize=500)
+                # 1. KÍCH HOẠT LUỒNG LẮNG NGHE TIN NHẮN
                 self.msg_worker_thread = threading.Thread(target=self._message_worker, daemon=True)
                 self.msg_worker_thread.start()
 
-                # 2. REPLY QUEUE & SINGLE REPLY WORKER (CHỐNG RACE CONDITION)
-                self.reply_queue = queue.Queue(maxsize=50)
-                self.reply_lock = threading.Lock()
+                # 2. KÍCH HOẠT LUỒNG TRẢ LỜI TIN NHẮN
                 self.reply_worker_thread = threading.Thread(target=self._reply_worker_loop, daemon=True)
                 self.reply_worker_thread.start()
 
@@ -1172,10 +1176,16 @@ class ZAutoProApp(MDApp):
             rows = c.fetchall()
             conn.close()
 
-            self.config_data = {k: json.loads(v) for k, v in rows} if rows else {
+            # Đặt khung mặc định an toàn trước
+            self.config_data = {
                 'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận',
-                'sw_filter': False, 'sw_auto': False, 'is_linked': False, 'enabled_groups': {}
+                'sw_filter': False, 'sw_auto': False, 'is_linked': False, 
+                'enabled_groups': {}, 'zalo_name': 'Chưa kết nối Zalo', 'zalo_avatar': 'profile.jpg'
             }
+            # Nếu có data từ DB thì đè lên
+            if rows:
+                for k, v in rows: 
+                    self.config_data[k] = json.loads(v)
 
             self.is_linked = self.config_data.get('is_linked', False)
             self.enabled_groups = self.config_data.get('enabled_groups', {})
