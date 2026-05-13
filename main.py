@@ -35,7 +35,8 @@ Config.set('graphics', 'multisamples', '0')
 
 # --- 1. HỆ THỐNG LOG PRODUCTION ---
 if platform == 'android':
-    BASE_PATH = '/data/data/org.zauto.taxi/files/'
+    # Sửa chữ taxi thành zauto cho khớp với buildozer.spec
+    BASE_PATH = '/data/data/org.zauto.zauto/files/'
     from android.runnable import run_on_ui_thread
     from jnius import autoclass, cast
     from android.permissions import request_permissions, Permission
@@ -760,10 +761,10 @@ class ZAutoProApp(MDApp):
                 if not hasattr(self, 'receiver_started'):
                     self.br = BroadcastReceiver(self.on_broadcast_received, 
                             actions=[
-                                'org.zauto.taxi.LOGIN_SUCCESS',
-                                'org.zauto.taxi.WEB_NEW_MSG',
-                                'org.zauto.taxi.GROUPS_DATA',
-                                'org.zauto.taxi.REPLY_RESULT',
+                                'org.zauto.LOGIN_SUCCESS',
+                                'org.zauto.WEB_NEW_MSG',
+                                'org.zauto.GROUPS_DATA',
+                                'org.zauto.REPLY_RESULT',
                             ])
                     self.br.start()
                     self.receiver_started = True
