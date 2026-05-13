@@ -399,7 +399,7 @@ MDScreen:
                         padding: "10dp"
                         spacing: "10dp"
                         
-                        MDCard:
+                        MDBoxLayout: # Thay MDCard bằng MDBoxLayout chống mảng đen
                             orientation: "horizontal"
                             size_hint_y: None
                             height: "70dp"
@@ -423,30 +423,39 @@ MDScreen:
                                     theme_text_color: "Primary"
                                     font_style: "Caption"
 
-                        MDRaisedButton:
-                            text: "CẤP QUYỀN APP"
-                            icon: "shield-check"
-                            size_hint_x: 1
+                        # --- KHỐI NÚT ĐIỀU KHIỂN HỆ THỐNG ---
+                        MDBoxLayout:
+                            orientation: "vertical"
                             size_hint_y: None
-                            height: "40dp"
-                            md_bg_color: 0.8, 0.4, 0.1, 1
-                            on_release: app.check_permissions_and_guide()
-                        MDRaisedButton:
-                            text: "CHỐNG NGỦ ĐÔNG (QUAN TRỌNG)"
-                            icon: "battery-alert"
-                            size_hint_x: 1
-                            size_hint_y: None
-                            height: "40dp"
-                            md_bg_color: 0.6, 0.1, 0.1, 1
-                            on_release: app.request_ignore_battery()        
-                        MDCard:
+                            height: self.minimum_height
+                            adaptive_height: True
+                            spacing: "10dp"
+
+                            MDRaisedButton:
+                                text: "CẤP QUYỀN APP"
+                                icon: "shield-check"
+                                size_hint_x: 1
+                                size_hint_y: None
+                                height: "40dp"
+                                md_bg_color: 0.8, 0.4, 0.1, 1
+                                on_release: app.check_permissions_and_guide()
+                                
+                            MDRaisedButton:
+                                text: "CHỐNG NGỦ ĐÔNG (QUAN TRỌNG)"
+                                icon: "battery-alert"
+                                size_hint_x: 1
+                                size_hint_y: None
+                                height: "40dp"
+                                md_bg_color: 0.6, 0.1, 0.1, 1
+                                on_release: app.request_ignore_battery()
+                                
+                        MDBoxLayout: # Thay MDCard bằng MDBoxLayout
                             orientation: "vertical"
                             size_hint_y: None
                             height: self.minimum_height
                             adaptive_height: True
                             padding: "10dp"
                             radius: [12, ]
-                            elevation: 1
                             md_bg_color: 1, 1, 1, 1
                             MDBoxLayout:
                                 size_hint_y: None
@@ -469,7 +478,7 @@ MDScreen:
                                     id: sw_filter
                                     pos_hint: {'center_y': .5}
                         
-                        MDCard:
+                        MDBoxLayout: # Thay MDCard bằng MDBoxLayout
                             orientation: "vertical"
                             size_hint_y: None
                             height: self.minimum_height
@@ -477,7 +486,6 @@ MDScreen:
                             padding: "15dp"
                             spacing: "15dp"
                             radius: [12, ]
-                            elevation: 1
                             md_bg_color: 1, 1, 1, 1
                             MDTextField:
                                 id: inp_nhan
@@ -503,7 +511,7 @@ MDScreen:
                             elevation: 2
                             on_release: app.save_config()
 
-                        MDCard:
+                        MDBoxLayout: # Thay MDCard bằng MDBoxLayout
                             orientation: "vertical"
                             size_hint_y: None
                             height: "180dp"
