@@ -116,14 +116,13 @@ def verify_license(lic_string, machine_id):
     except: pass
     return False, 0
 KV = '''
-# --- ĐỊNH NGHĨA THẺ CUỐC XE (RIDE CARD) ---
 <RideCard>:
     orientation: "vertical"
     padding: "16dp"
     spacing: "12dp"
     size_hint_y: None
-    height: self.minimum_height # TỰ ĐỘNG CO CAO THEO NỘI DUNG
-    adaptive_height: True        # GOM NỘI DUNG VỪA VẶN
+    height: self.minimum_height
+    adaptive_height: True
     elevation: 2
     shadow_radius: 6
     radius: [15, 15, 15, 15]
@@ -162,10 +161,12 @@ KV = '''
         text_color: 0.15, 0.15, 0.15, 1
         valign: "top"
         halign: "left"
+        size_hint_y: None
+        height: self.texture_size[1]
 
     MDBoxLayout:
         orientation: "horizontal"
-        spacing: "15dp"
+        spacing: "10dp"
         size_hint_y: None
         height: "45dp"
         MDRoundFlatButton:
@@ -173,17 +174,14 @@ KV = '''
             size_hint_x: 0.4
             text_color: 0.6, 0.2, 0.2, 1
             line_color: 0.9, 0.5, 0.5, 1
-            font_name: "Roboto-Medium"
             on_release: app.remove_ride(root)
         MDRaisedButton:
-            text: "NHẬN CUỐC NGAY"
+            text: "NHẬN CUỐC"
             size_hint_x: 0.6
             md_bg_color: 0.1, 0.5, 0.8, 1
-            font_name: "Roboto-Medium"
             elevation: 2
             on_release: app.manual_accept_ride(root)
 
-# --- GIAO DIỆN CHÍNH ---
 MDScreen:
     md_bg_color: 0.95, 0.96, 0.98, 1
 
@@ -194,7 +192,7 @@ MDScreen:
         text_color_normal: 0.6, 0.6, 0.6, 1
         use_text: True
 
-        # ================= TAB 1: CANH ME (RADAR & AUTO CHỐT) =================
+        # ================= TAB 1: CANH ME =================
         MDBottomNavigationItem:
             name: 'tab_canhme'
             text: 'Canh me'
@@ -203,11 +201,11 @@ MDScreen:
             MDBoxLayout:
                 orientation: "vertical"
                 
-                # --- CỤM ĐIỀU KHIỂN RADAR & AUTO ---
                 MDBoxLayout:
                     orientation: "vertical"
                     size_hint_y: None
-                    height: "115dp"
+                    height: self.minimum_height
+                    adaptive_height: True
                     padding: "15dp"
                     spacing: "10dp"
                     md_bg_color: 1, 1, 1, 1
@@ -216,11 +214,11 @@ MDScreen:
                     MDBoxLayout:
                         orientation: "horizontal"
                         size_hint_y: None
-                        height: "35dp"
+                        height: "40dp"
                         
                         MDLabel:
                             id: lbl_radar_status
-                            text: "HỆ THỐNG ĐANG TẠM DỪNG"
+                            text: "TẠM DỪNG"
                             font_style: "Subtitle2"
                             bold: True
                             theme_text_color: "Custom"
@@ -228,14 +226,14 @@ MDScreen:
                             valign: "center"
                             
                         MDLabel:
-                            text: "Auto chốt:"
+                            text: "Auto:"
                             font_style: "Caption"
                             bold: True
                             theme_text_color: "Primary"
                             halign: "right"
                             valign: "center"
                             size_hint_x: None
-                            width: "70dp"
+                            width: "40dp"
                             
                         MDSwitch:
                             id: sw_auto_main
@@ -244,19 +242,17 @@ MDScreen:
                             
                     MDFillRoundFlatButton:
                         id: btn_toggle_radar
-                        text: "BẬT RADAR QUÉT CUỐC"
+                        text: "BẬT QUÉT CUỐC"
                         font_name: "Roboto-Bold"
-                        font_size: "18sp"
                         size_hint_x: 1
                         size_hint_y: None
-                        height: "50dp"
+                        height: "45dp"
                         md_bg_color: 0.1, 0.6, 0.2, 1
                         on_release: app.toggle_radar()
                 
-                # --- BANNER CẢNH BÁO ---
                 MDBoxLayout:
                     size_hint_y: None
-                    height: "35dp"
+                    height: "40dp"
                     md_bg_color: 1, 0.95, 0.8, 1
                     padding: ["10dp", "0dp"]
                     MDIcon:
@@ -264,9 +260,8 @@ MDScreen:
                         theme_text_color: "Custom"
                         text_color: 0.8, 0.5, 0, 1
                         pos_hint: {"center_y": .5}
-                        font_size: "18sp"
                     MDLabel:
-                        text: " Hãy giữ màn hình sáng để ứng dụng bắt cuốc nhanh nhất."
+                        text: " Giữ sáng màn hình để bắt cuốc"
                         font_style: "Caption"
                         theme_text_color: "Custom"
                         text_color: 0.6, 0.4, 0, 1
@@ -276,11 +271,13 @@ MDScreen:
                     MDBoxLayout:
                         id: ride_list
                         orientation: "vertical"
-                        padding: "16dp"
-                        spacing: "16dp"
+                        padding: "10dp"
+                        spacing: "10dp"
+                        size_hint_y: None
+                        height: self.minimum_height
                         adaptive_height: True
 
-        # ================= TAB 2: LỊCH SỬ BẮT CUỐC =================
+        # ================= TAB 2: LỊCH SỬ =================
         MDBottomNavigationItem:
             name: 'tab_tinnhan'
             text: 'Tin nhắn'
@@ -288,19 +285,18 @@ MDScreen:
             MDBoxLayout:
                 orientation: 'vertical'
                 MDTopAppBar:
-                    title: "Lịch sử bắt cuốc"
+                    title: "Lịch sử chốt"
                     elevation: 1
                     md_bg_color: 1, 1, 1, 1
                     specific_text_color: 0.1, 0.1, 0.1, 1
                     right_action_items: [["delete-sweep-outline", lambda x: app.clear_history()]]
                 
-                # Nút mở khung chat trôi (Giải pháp 2)
                 MDBoxLayout:
                     size_hint_y: None
-                    height: "70dp"
-                    padding: "12dp"
+                    height: "60dp"
+                    padding: "10dp"
                     MDRaisedButton:
-                        text: "MỞ KHUNG CHAT ZALO WEB"
+                        text: "MỞ KHUNG CHAT ZALO"
                         icon: "chat-processing"
                         size_hint_x: 1
                         md_bg_color: 0.1, 0.6, 0.2, 1
@@ -309,7 +305,8 @@ MDScreen:
                 ScrollView:
                     MDList:
                         id: msg_history_list
-        # ---------- TAB MỚI: QUẢN LÝ NHÓM ----------
+
+        # ================= TAB NHÓM =================
         MDBottomNavigationItem:
             name: 'tab_nhom'
             text: 'Nhóm'
@@ -317,15 +314,16 @@ MDScreen:
             MDBoxLayout:
                 orientation: 'vertical'
                 MDTopAppBar:
-                    title: "Danh sách nhóm Zalo"
+                    title: "Danh sách nhóm"
                     elevation: 1
                 ScrollView:
                     MDList:
-                        id: group_filter_list # Nơi hiện danh sách nhóm và nút gạt
-        # ================= TAB 3: TÀI KHOẢN ZALO (QUẢN LÝ KẾT NỐI) =================
+                        id: group_filter_list
+
+        # ================= TAB TÀI KHOẢN ZALO =================
         MDBottomNavigationItem:
             name: 'tab_zalo'
-            text: 'Tài khoản'
+            text: 'Zalo'
             icon: 'account-circle'
             on_tab_press: app._init_webview_android()
             on_enter: app.set_webview_visible(True)
@@ -337,19 +335,17 @@ MDScreen:
                 MDBoxLayout:
                     id: zalo_status_bar
                     size_hint_y: None
-                    height: "48dp"
-                    padding: ["12dp", "4dp"]
+                    height: "65dp"
+                    padding: ["10dp", "5dp"]
                     spacing: "10dp"
-                    md_bg_color: 0.5, 0.5, 0.5, 1
+                    md_bg_color: 0.1, 0.5, 0.8, 1
                     
-                    # ... (Các phần icon và label bên trong giữ nguyên) ...
-
                     FitImage:
                         id: zalo_avatar_view
                         source: "profile.jpg"
                         size_hint: None, None
-                        size: "45dp", "45dp"
-                        radius: [22.5, ]
+                        size: "40dp", "40dp"
+                        radius: [20, ]
                         pos_hint: {"center_y": .5}
 
                     MDBoxLayout:
@@ -357,13 +353,13 @@ MDScreen:
                         pos_hint: {"center_y": .5}
                         MDLabel:
                             id: zalo_name_view
-                            text: "Chưa kết nối Zalo Web"
+                            text: "Chưa kết nối Zalo"
                             theme_text_color: "Custom"
                             text_color: 1, 1, 1, 1
-                            font_style: "Subtitle1"
+                            font_style: "Subtitle2"
                             bold: True
                         MDLabel:
-                            text: "Trình duyệt nhân Chromium chìm"
+                            text: "Trình duyệt chìm"
                             theme_text_color: "Custom"
                             text_color: 0.9, 0.9, 0.9, 1
                             font_style: "Caption"
@@ -377,12 +373,11 @@ MDScreen:
                         pos_hint: {"center_y": .5}
                         on_release: app.reload_zalo_web()
 
-                # Placeholder — Python nhúng WebView Java vào đây
                 BoxLayout:
                     id: webview_container
                     size_hint_y: 1
 
-        # ================= TAB 4: CÀI ĐẶT (CẤU HÌNH & THÔNG TIN APP) =================
+        # ================= TAB CÀI ĐẶT =================
         MDBottomNavigationItem:
             name: 'tab_caidat'
             text: 'Cài đặt'
@@ -398,15 +393,17 @@ MDScreen:
                 ScrollView:
                     MDBoxLayout:
                         orientation: 'vertical'
+                        size_hint_y: None
+                        height: self.minimum_height
                         adaptive_height: True
-                        padding: "16dp"
-                        spacing: "15dp"
+                        padding: "10dp"
+                        spacing: "10dp"
                         
-                        # --- 1. THÔNG TIN NGƯỜI TẠO ---
                         MDCard:
                             orientation: "horizontal"
-                            adaptive_height: True
-                            padding: "12dp"
+                            size_hint_y: None
+                            height: "70dp"
+                            padding: "10dp"
                             radius: [12, ]
                             md_bg_color: 1, 1, 1, 1
                             FitImage:
@@ -416,10 +413,10 @@ MDScreen:
                                 radius: [25, ]
                             MDBoxLayout:
                                 orientation: 'vertical'
-                                padding: ["15dp", 0, 0, 0]
+                                padding: ["10dp", 0, 0, 0]
                                 MDLabel:
                                     text: "Taxi Lắk - ZAuto VIP"
-                                    font_style: "Subtitle1"
+                                    font_style: "Subtitle2"
                                     bold: True
                                 MDLabel:
                                     text: "Hỗ trợ mua: 0838429999"
@@ -430,12 +427,22 @@ MDScreen:
                             text: "CẤP QUYỀN APP"
                             icon: "shield-check"
                             size_hint_x: 1
+                            size_hint_y: None
+                            height: "40dp"
                             md_bg_color: 0.8, 0.4, 0.1, 1
                             on_release: app.check_permissions_and_guide()
-                                
-                        # --- 2. CỤM CÔNG TẮC ĐIỀU KHIỂN ---
+                        MDRaisedButton:
+                            text: "CHỐNG NGỦ ĐÔNG (QUAN TRỌNG)"
+                            icon: "battery-alert"
+                            size_hint_x: 1
+                            size_hint_y: None
+                            height: "40dp"
+                            md_bg_color: 0.6, 0.1, 0.1, 1
+                            on_release: app.request_ignore_battery()        
                         MDCard:
                             orientation: "vertical"
+                            size_hint_y: None
+                            height: self.minimum_height
                             adaptive_height: True
                             padding: "10dp"
                             radius: [12, ]
@@ -443,7 +450,7 @@ MDScreen:
                             md_bg_color: 1, 1, 1, 1
                             MDBoxLayout:
                                 size_hint_y: None
-                                height: "45dp"
+                                height: "40dp"
                                 MDLabel:
                                     text: "Tự động chốt cuốc"
                                     font_style: "Subtitle2"
@@ -454,7 +461,7 @@ MDScreen:
                             MDSeparator:
                             MDBoxLayout:
                                 size_hint_y: None
-                                height: "45dp"
+                                height: "40dp"
                                 MDLabel:
                                     text: "Chỉ nhận tin chứa Từ Khóa"
                                     font_style: "Subtitle2"
@@ -462,79 +469,78 @@ MDScreen:
                                     id: sw_filter
                                     pos_hint: {'center_y': .5}
                         
-                        # --- 3. CỤM TỪ KHÓA ---
                         MDCard:
                             orientation: "vertical"
+                            size_hint_y: None
+                            height: self.minimum_height
                             adaptive_height: True
                             padding: "15dp"
-                            spacing: "10dp"
+                            spacing: "15dp"
                             radius: [12, ]
                             elevation: 1
                             md_bg_color: 1, 1, 1, 1
                             MDTextField:
                                 id: inp_nhan
-                                hint_text: "Từ khóa NHẬN (cách nhau dấu phẩy)"
-                                helper_text: "Ví dụ: taxi, xe, đón, book"
+                                hint_text: "Từ khóa NHẬN"
+                                helper_text: "Ví dụ: taxi, xe, đón"
                                 helper_text_mode: "on_focus"
-                                icon_right: "check-circle-outline"
-                                icon_right_color: 0.1, 0.6, 0.2, 1
                             MDTextField:
                                 id: inp_loai
-                                hint_text: "Từ khóa BỎ QUA (cách nhau dấu phẩy)"
-                                helper_text: "Ví dụ: gửi đồ, 16c, xe tải"
+                                hint_text: "Từ khóa BỎ QUA"
+                                helper_text: "Ví dụ: 16c, xe tải"
                                 helper_text_mode: "on_focus"
-                                icon_right: "close-circle-outline"
-                                icon_right_color: 0.8, 0.2, 0.2, 1
                             MDTextField:
                                 id: inp_reply
                                 hint_text: "Nội dung trả lời tự động"
-                                helper_text: "Ví dụ: Dạ em nhận cuốc này ạ."
                                 helper_text_mode: "on_focus"
-                                icon_right: "message-reply-text-outline"
                         
                         MDRaisedButton:
-                            text: "LƯU CẤU HÌNH HỆ THỐNG"
+                            text: "LƯU CẤU HÌNH"
                             size_hint_x: 1
                             size_hint_y: None
-                            height: "50dp"
+                            height: "45dp"
                             md_bg_color: 0.1, 0.5, 0.8, 1
-                            font_name: "Roboto-Bold"
                             elevation: 2
                             on_release: app.save_config()
 
-                        # --- 4. TRẠNG THÁI BẢN QUYỀN (GIỮ NGUYÊN KIỂU DÁNG GỐC) ---
                         MDCard:
                             orientation: "vertical"
                             size_hint_y: None
-                            height: "220dp"
+                            height: "180dp"
                             padding: "15dp"
+                            spacing: "5dp"
                             radius: [12, ]
                             md_bg_color: 1, 1, 1, 1
                             MDLabel:
-                                text: "TRẠNG THÁI BẢN QUYỀN"
+                                text: "BẢN QUYỀN"
                                 bold: True
-                                font_style: "Subtitle1"
+                                font_style: "Subtitle2"
                             MDSeparator:
-                                padding: [0, 10]
                             MDLabel:
                                 id: lbl_key_type
                                 text: "Loại Key: Đang kiểm tra..."
+                                font_style: "Caption"
                             MDLabel:
                                 id: lbl_expiry
                                 text: "Hết hạn: --/--/----"
+                                font_style: "Caption"
                             MDLabel:
                                 text: "SĐT Mua Key: 0838429999"
                                 theme_text_color: "Custom"
                                 text_color: 0.1, 0.5, 0.8, 1
+                                font_style: "Caption"
                             MDRaisedButton:
-                                text: "MUA THÊM HẠN / ĐỔI KEY"
+                                text: "MUA THÊM HẠN"
+                                size_hint_y: None
+                                height: "35dp"
                                 pos_hint: {"center_x": .5}
                                 on_release: app.show_activation_popup_from_settings()
 
                         MDBoxLayout:
                             size_hint_y: None
-                            height: "30dp"
+                            height: "20dp"
 '''
+
 class ActivationPopup(Popup):
     def __init__(self, machine_id, on_success, can_cancel=False, **kwargs):
         super().__init__(**kwargs)
@@ -1223,20 +1229,8 @@ class ZAutoProApp(MDApp):
         try:
             ids = self.root.ids
             
-            # --- ĐÃ XÓA 2 DÒNG LOGIC GÂY NHẬN DIỆN NHẦM TẠI ĐÂY ---
-
-            # Thêm điều kiện kiểm tra id có tồn tại trong KV không
             if 'zalo_name_view' in ids:
                 ids.zalo_name_view.text = self.config_data.get('zalo_name', "Đã kết nối") if self.is_linked else "Chưa kết nối Zalo"
-
-            if 'zalo_avatar_view' in ids:
-                ids.zalo_avatar_view.source = self.config_data.get('zalo_avatar', 'profile.jpg') if self.is_linked else 'profile.jpg'
-
-            if 'btn_zalo_action' in ids:
-                ids.btn_zalo_action.text = "HUỶ LIÊN KẾT ZALO" if self.is_linked else "LIÊN KẾT ZALO NGAY"
-                ids.btn_zalo_action.md_bg_color = (0.8, 0.2, 0.2, 1) if self.is_linked else (0.1, 0.5, 0.8, 1)
-        except Exception as e:
-            print(f"Lỗi UI Profile: {e}")
 
             if 'zalo_avatar_view' in ids:
                 ids.zalo_avatar_view.source = self.config_data.get('zalo_avatar', 'profile.jpg') if self.is_linked else 'profile.jpg'
@@ -1406,14 +1400,28 @@ class ZAutoProApp(MDApp):
     def set_webview_visible(self, is_visible):
         self.webview_visible = is_visible
         if is_visible:
+            # 1. Ép giao diện cập nhật ngay lập tức
+            self.update_profile_ui()
+            
+            # 2. Xóa cache toạ độ cũ để WebView vẽ lại đúng chỗ
+            self.last_webview_bounds = None
+            
+            # 3. Kích hoạt bộ đếm thời gian đồng bộ toạ độ
             if not getattr(self, '_webview_timer', None):
-                # GIẢM LAG CPU: Quét toạ độ 0.35s / lần
-                self._webview_timer = Clock.schedule_interval(self._sync_webview_pos, 0.35)
+                self._webview_timer = Clock.schedule_interval(self._sync_webview_pos, 0.2) # Tăng tốc độ đồng bộ
+
+            if platform == 'android' and self.webview_inited:
+                # 4. GỌI LỆNH ĐÁNH THỨC WEB (BẮT BUỘC)
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                # Đánh thức nhân Javascript của WebView
+                autoclass('org.zauto.ZaloWebManager').onResume(PythonActivity.mActivity)
         else:
+            # Khi rời Tab: Chỉ ẩn đi chứ TUYỆT ĐỐI không hủy WebView
             if getattr(self, '_webview_timer', None):
                 self._webview_timer.cancel()
                 self._webview_timer = None
-            if platform == 'android' and getattr(self, 'webview_inited', False):
+            if platform == 'android' and self.webview_inited:
                 self._hide_webview_overlay()
 
     @run_on_ui_thread
@@ -1450,6 +1458,21 @@ class ZAutoProApp(MDApp):
             )
         except Exception:
             pass
+    def request_ignore_battery(self):
+        if platform == 'android':
+            from jnius import autoclass
+            Context = autoclass('android.content.Context')
+            Intent = autoclass('android.content.Intent')
+            Uri = autoclass('android.net.Uri')
+            PowerManager = autoclass('android.os.PowerManager')
+            
+            activity = autoclass('org.kivy.android.PythonActivity').mActivity
+            pm = activity.getSystemService(Context.POWER_SERVICE)
+            
+            if not pm.isIgnoringBatteryOptimizations(activity.getPackageName()):
+                intent = Intent(autoclass('android.provider.Settings').ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
+                intent.setData(Uri.parse("package:" + activity.getPackageName()))
+                activity.startActivity(intent)        
     def on_stop(self):
         self.app_running = False 
         
