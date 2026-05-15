@@ -1611,14 +1611,21 @@ class ZAutoProApp(MDApp):
             w, h = container.size
             
             from kivy.core.window import Window
+            from kivy.metrics import dp
             android_y = Window.height - (y + h)
             
-            new_bounds = (int(x), int(android_y), int(w), int(h))
+            # SỬA LỖI ĐÈ GIAO DIỆN TRONG ẢNH: Trừ hao 65dp phần đáy màn hình
+            safe_height = int(h) - int(dp(65))
+            if safe_height < 0: safe_height = 0
+            
+            new_bounds = (int(x), int(android_y), int(w), safe_height)
             if new_bounds == getattr(self, 'last_webview_bounds', None):
                 return # Cache bounds -> Không đổi thì không gọi Bridge Java
             
             self.last_webview_bounds = new_bounds
             
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
             activity = PythonActivity.mActivity
             autoclass('org.zauto.ZaloWebManager').updateWebViewBounds(
                 activity, new_bounds[0], new_bounds[1], new_bounds[2], new_bounds[3], True
