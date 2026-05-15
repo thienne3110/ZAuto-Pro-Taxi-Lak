@@ -32,6 +32,7 @@ from kivymd.toast import toast
 # BẮT BUỘC: Cấu hình đồ họa để giảm lag GPU trên Android yếu
 from kivy.config import Config
 Config.set('graphics', 'multisamples', '0')
+Config.set('kivy', 'pause_on_minimize', '0') # CẤM KIVY NGỦ ĐÔNG KHI ẨN APP
 
 # --- 1. HỆ THỐNG LOG PRODUCTION ---
 if platform == 'android':
@@ -404,7 +405,6 @@ MDScreen:
                             size_hint_y: None
                             height: "70dp"
                             padding: "10dp"
-                            radius: [12, ]
                             md_bg_color: 1, 1, 1, 1
                             FitImage:
                                 source: 'profile.jpg'
@@ -455,7 +455,6 @@ MDScreen:
                             height: self.minimum_height
                             adaptive_height: True
                             padding: "10dp"
-                            radius: [12, ]
                             md_bg_color: 1, 1, 1, 1
                             MDBoxLayout:
                                 size_hint_y: None
@@ -485,7 +484,6 @@ MDScreen:
                             adaptive_height: True
                             padding: "15dp"
                             spacing: "15dp"
-                            radius: [12, ]
                             md_bg_color: 1, 1, 1, 1
                             MDTextField:
                                 id: inp_nhan
@@ -517,7 +515,6 @@ MDScreen:
                             height: "180dp"
                             padding: "15dp"
                             spacing: "5dp"
-                            radius: [12, ]
                             md_bg_color: 1, 1, 1, 1
                             MDLabel:
                                 text: "BẢN QUYỀN"
