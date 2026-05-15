@@ -314,15 +314,7 @@ public class ZaloWebManager {
             "               } else { item.click(); }" +
             "           }" +
             
-            "           setTimeout(() => {" +
-            "               let realMsgId = '';" +
-            "               try {" +
-            "                   let msgs = document.querySelectorAll('[id^=\"msg_\"]');" +
-            "                   if (msgs && msgs.length > 0) {" +
-            "                       let lastMsg = msgs[msgs.length - 1];" +
-            "                       realMsgId = lastMsg.getAttribute('id').substring(4);" +
-            "                   }" +
-            "               } catch(err) { realMsgId = ''; }" +
+            "               let realMsgId = fakeMsgId || '';" +
             
                         // 2. THỬ GỬI BẰNG API NGẦM TRƯỚC
             "               if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
@@ -398,7 +390,16 @@ public class ZaloWebManager {
             "           let msgText   = (bodyEl.innerText || bodyEl.textContent || '').trim();" +
             "           if(!groupName || !msgText) return;" +
             "           let convId = msgItemEl.getAttribute('anim-data-id') || '';" +
-            "           let fp = convId + '|' + msgText.substring(0, 40);" +
+			"           let realMsgId = '';" +
+			"           try {" +
+			"               realMsgId = msgItemEl.getAttribute('data-msg-id') || msgItemEl.dataset.msgId || '';" +
+			"               if(!realMsgId) {" +
+			"                   let rK = Object.keys(msgItemEl).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactProps'));" +
+			"                   let p = msgItemEl[rK]?.memoizedProps || msgItemEl[rK]?.return?.memoizedProps;" +
+			"                   realMsgId = p?.msgId || p?.messageId || p?.data?.msgId || '';" +
+			"               }" +
+			"           } catch(e) {}" +
+			"           let fp = convId + '|' + realMsgId + '|' + msgText.substring(0, 40);" +
             "           if(window.zauto_seen[fp]) return;" +
             "           window.zauto_seen[fp] = true;" +
             "           window.zauto_seen_keys.push(fp);" +
@@ -407,7 +408,7 @@ public class ZaloWebManager {
             "               old.forEach(k => delete window.zauto_seen[k]);" +
             "           }" +
             "           if (Date.now() - window.zauto_boot_time > 8000) {" +
-            "               ZAutoBridge.onNewWebMsg(groupName, msgText, '', convId);" +
+            "               ZAutoBridge.onNewWebMsg(groupName, msgText, realMsgId, convId);" +
             "           }" +
             "       } catch(e) {}" +
             "   }" +
