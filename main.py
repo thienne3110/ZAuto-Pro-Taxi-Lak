@@ -817,23 +817,21 @@ class ZAutoProApp(MDApp):
                 request_permissions([Permission.INTERNET, Permission.ACCESS_FINE_LOCATION, Permission.POST_NOTIFICATIONS])
                 autoclass('org.zauto.ZaloForegroundService').startService(PythonActivity.mActivity)
 
-                # ÉP CPU VÀ WIFI KHÔNG ĐƯỢC NGỦ CỰC MẠNH
+                # ÉP CPU KHÔNG NGỦ (MỨC 1)
                 PowerManager = autoclass('android.os.PowerManager')
                 Context = autoclass('android.content.Context')
                 pm = cast(PowerManager, PythonActivity.mActivity.getSystemService(Context.POWER_SERVICE))
-                self.wakelock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK | PowerManager.ON_AFTER_RELEASE, "ZAuto::WakeLockCore")
-                # BẢO VỆ WAKELOCK ANDROID 14+ BẰNG TIMEOUT 10 PHÚT
-                if self.wakelock is not None:
-                    try:
-                        if self.wakelock.isHeld(): self.wakelock.release()
-                    except: pass
-                    self.wakelock.acquire(10 * 60 * 1000)
+                self.wakelock = pm.newWakeLock(1, "ZAuto::WakeLockCore") # Mức 1 là PARTIAL_WAKE_LOCK
+                if not self.wakelock.isHeld():
+                    self.wakelock.acquire()
 
+                # ÉP WIFI KHÔNG ĐƯỢC NGẮT (MỨC 3 - HIGH PERFORMANCE)
                 WifiManager = autoclass('android.net.wifi.WifiManager')
                 wm = cast(WifiManager, PythonActivity.mActivity.getApplicationContext().getSystemService(Context.WIFI_SERVICE))
-                self.wifilock = wm.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "ZAuto::WifiLockCore")
-                if not self.wifilock.isHeld(): self.wifilock.acquire()
-
+                # Số 3 đại diện cho WIFI_MODE_FULL_HIGH_PERF trên Android
+                self.wifilock = wm.createWifiLock(3, "ZAuto::WifiLockCore")
+                if not self.wifilock.isHeld():
+                    self.wifilock.acquire()
                 # KHỞI TẠO KIẾN TRÚC REALTIME
                 self.processed_msg_hashes = LRUCache(maxsize=1000) # Memory safe
                 self.global_last_reply = 0
