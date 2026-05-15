@@ -46,31 +46,15 @@ android.manifest_queries = com.zing.zalo
 android.permissions = INTERNET,WAKE_LOCK,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,POST_NOTIFICATIONS,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,RECEIVE_BOOT_COMPLETED,SYSTEM_ALERT_WINDOW,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
 
 # =====================================================
-# MANIFEST (Tiêm Service Ngầm Chạy Bất Tử)
+# MANIFEST (Trỏ đến file bên ngoài để chống lỗi Buildozer)
 # =====================================================
-android.extra_manifest_application = \
-    <receiver android:name="org.zauto.BootReceiver" android:enabled="true" android:exported="true"> \
-        <intent-filter> \
-            <action android:name="android.intent.action.BOOT_COMPLETED" /> \
-        </intent-filter> \
-    </receiver> \
-    <service android:name="org.zauto.ZaloNotificationService" android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE" android:exported="true"> \
-        <intent-filter> \
-            <action android:name="android.service.notification.NotificationListenerService" /> \
-        </intent-filter> \
-    </service> \
-    <service android:name="org.zauto.ZaloAccessibility" android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE" android:exported="true" android:label="ZAuto VIP"> \
-        <intent-filter> \
-            <action android:name="android.accessibilityservice.AccessibilityService" /> \
-        </intent-filter> \
-        <meta-data android:name="android.accessibilityservice" android:resource="@xml/accessibility_config" /> \
-    </service> \
-    <service android:name="org.zauto.ZaloForegroundService" android:exported="false" android:foregroundServiceType="dataSync" />
+android.extra_manifest_application = %(source.dir)s/manifest_services.xml
 
 # =====================================================
 # LOG & SYSTEM
 # =====================================================
 log_level = 2
+
 [buildozer]
 build_dir = ./.buildozer
 bin_dir = ./bin
