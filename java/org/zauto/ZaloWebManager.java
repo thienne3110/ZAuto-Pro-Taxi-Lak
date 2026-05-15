@@ -210,6 +210,18 @@ public class ZaloWebManager {
                 hiddenWebView.setWebChromeClient(new WebChromeClient());
 
                 hiddenWebView.setWebViewClient(new WebViewClient() {
+                    // --- ĐOẠN QUAN TRỌNG: TỰ ĐỘNG REFRESH KHI MẤT MẠNG ---
+                    @Override
+                    public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                        if (request.isForMainFrame()) {
+                            Log.e(TAG, "Lỗi kết nối Zalo: " + error.getDescription());
+                            // Nếu tắt màn hình bị mất mạng, khi có mạng lại nó sẽ tự tải lại trang sau 5 giây
+                            view.postDelayed(() -> {
+                                if (view != null) view.reload();
+                            }, 5000);
+                        }
+                    }
+
                     @Override
                     public void onPageFinished(WebView view, String url) {
                         super.onPageFinished(view, url);
@@ -222,21 +234,7 @@ public class ZaloWebManager {
                             }
                         }, 5000);
                     }
-
-                    @Override
-                    public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                        if (request.isForMainFrame()) safeReload();
-                    }
-
-                    @Override
-                    public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                        if (error.getPrimaryError() == SslError.SSL_UNTRUSTED) {
-                            handler.cancel();
-                        } else {
-                            handler.proceed();
-                        }
-                    }
-
+                    
                     @Override
                     public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
                         Log.e(TAG, "WEBVIEW RENDER DEAD. RECOVERING...");
@@ -672,3 +670,4 @@ public class ZaloWebManager {
             hiddenWebView.evaluateJavascript(js, null);
         });
     }
+}	
