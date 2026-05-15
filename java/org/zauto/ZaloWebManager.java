@@ -378,32 +378,45 @@ public class ZaloWebManager {
             "           }, 800);" + // Đợi 0.8 giây để Zalo load màn hình chat
             "       } catch(e) {}" +
             "   };" +
-            // HÀM QUÉT SIDEBAR
+            // HÀM QUÉT SIDEBAR (BẢN VÔ ĐỊCH - BẤT CHẤP ZALO ĐỔI GIAO DIỆN)
             "   function scanConvItem(msgItemEl) {" +
             "       try {" +
-            "           let convItem = msgItemEl.querySelector('.gridv2.conv-item');" +
+                        // 1. TÌM KHUNG TIN NHẮN (Bỏ .gridv2 đi để chống lỗi khi Zalo update)
+            "           let convItem = msgItemEl.querySelector('.conv-item') || msgItemEl;" +
             "           if(!convItem) return;" +
-            "           let nameEl = convItem.querySelector('.conv-item-title__name');" +
-            "           let bodyEl = msgItemEl.querySelector('.conv-item-body');" +
+            "           let nameEl = convItem.querySelector('.conv-item-title__name') || convItem.querySelector('[class*=\"name\"]');" +
+            "           let bodyEl = convItem.querySelector('.conv-item-body') || convItem.querySelector('[class*=\"message\"]') || convItem.querySelector('[class*=\"msg\"]');" +
             "           if(!nameEl || !bodyEl) return;" +
-            "           let groupName = (nameEl.innerText || nameEl.textContent || '').trim();" +
-            "           let msgText   = (bodyEl.innerText || bodyEl.textContent || '').trim();" +
+            "           let groupName = nameEl.textContent.trim();" +
+            "           let msgText   = bodyEl.textContent.trim();" +
             "           if(!groupName || !msgText) return;" +
-            "           let convId = msgItemEl.getAttribute('anim-data-id') || '';" +
-			"           let realMsgId = '';" +
-			"           try {" +
-			"               realMsgId = msgItemEl.getAttribute('data-msg-id') || msgItemEl.dataset.msgId || '';" +
-			"               if(!realMsgId) {" +
-			"                   let rK = Object.keys(msgItemEl).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactProps'));" +
-			"                   let p = msgItemEl[rK]?.memoizedProps || msgItemEl[rK]?.return?.memoizedProps;" +
-			"                   realMsgId = p?.msgId || p?.messageId || p?.data?.msgId || '';" +
-			"               }" +
-			"           } catch(e) {}" +
-			"           let fp = convId + '|' + realMsgId + '|' + msgText.substring(0, 40);" +
+            "           let convId = msgItemEl.getAttribute('anim-data-id') || msgItemEl.id || '';" +
+            "           let realMsgId = '';" +
+            "           try {" +
+                            // 2. BỚI TUNG REACT ĐỂ TÌM MSG_ID THẬT CỦA ZALO
+            "               realMsgId = msgItemEl.getAttribute('data-msg-id') || '';" +
+            "               if(!realMsgId && msgItemEl.dataset) realMsgId = msgItemEl.dataset.msgId || '';" +
+            "               if(!realMsgId) {" +
+            "                   let rK = Object.keys(msgItemEl).find(k => k.startsWith('__reactFiber') || k.startsWith('__reactProps'));" +
+            "                   if(rK && msgItemEl[rK]) {" +
+            "                       let p = msgItemEl[rK].memoizedProps;" +
+            "                       if(!p && msgItemEl[rK].return) p = msgItemEl[rK].return.memoizedProps;" +
+                                    // Zalo thường giấu msgId trong p.msgId, p.messageId, hoặc sâu hơn trong p.message.msgId
+            "                       if(p) realMsgId = p.msgId || p.messageId || (p.data ? p.data.msgId : (p.message ? p.message.msgId : ''));" +
+            "                   }" +
+            "               }" +
+            "           } catch(e) {}" +
+                        // 3. NẾU VẪN KHÔNG TÌM ĐƯỢC -> DÙNG THỜI GIAN LÀM ID ĐỂ CHỐNG IM LẶNG KHI TEST
+            "           if (!realMsgId) {" +
+            "               let timeEl = convItem.querySelector('.conv-item-title__time') || convItem.querySelector('[class*=\"time\"]');" +
+            "               let tText = timeEl ? timeEl.textContent.trim() : '';" +
+            "               realMsgId = tText ? 'TIME_' + tText : 'TS_' + Date.now().toString().substring(0,10);" +
+            "           }" +
+            "           let fp = convId + '|' + realMsgId + '|' + msgText.substring(0, 40);" +
             "           if(window.zauto_seen[fp]) return;" +
             "           window.zauto_seen[fp] = true;" +
             "           window.zauto_seen_keys.push(fp);" +
-"           if(window.zauto_seen_keys.length > 800) {" +
+            "           if(window.zauto_seen_keys.length > 800) {" +
             "               let old = window.zauto_seen_keys.splice(0, 100);" +
             "               old.forEach(k => delete window.zauto_seen[k]);" +
             "           }" +
