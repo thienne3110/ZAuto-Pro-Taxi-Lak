@@ -124,8 +124,7 @@ KV = '''
     size_hint_y: None
     height: self.minimum_height
     adaptive_height: True
-    elevation: 2
-    shadow_radius: 6
+    elevation: 0
     radius: [15, 15, 15, 15]
     md_bg_color: 1, 1, 1, 1
 
@@ -180,7 +179,6 @@ KV = '''
             text: "NHẬN CUỐC"
             size_hint_x: 0.6
             md_bg_color: 0.1, 0.5, 0.8, 1
-            elevation: 2
             on_release: app.manual_accept_ride(root)
 
 MDScreen:
@@ -210,7 +208,7 @@ MDScreen:
                     padding: "15dp"
                     spacing: "10dp"
                     md_bg_color: 1, 1, 1, 1
-                    elevation: 2
+                    radius: [0, 0, 15, 15]
                     
                     MDBoxLayout:
                         orientation: "horizontal"
@@ -287,7 +285,7 @@ MDScreen:
                 orientation: 'vertical'
                 MDTopAppBar:
                     title: "Lịch sử chốt"
-                    elevation: 1
+                    elevation: 0
                     md_bg_color: 1, 1, 1, 1
                     specific_text_color: 0.1, 0.1, 0.1, 1
                     right_action_items: [["delete-sweep-outline", lambda x: app.clear_history()]]
@@ -296,6 +294,7 @@ MDScreen:
                     size_hint_y: None
                     height: "60dp"
                     padding: "10dp"
+                    md_bg_color: 1, 1, 1, 1
                     MDRaisedButton:
                         text: "MỞ KHUNG CHAT ZALO"
                         icon: "chat-processing"
@@ -306,6 +305,7 @@ MDScreen:
                 ScrollView:
                     MDList:
                         id: msg_history_list
+                        md_bg_color: 0.95, 0.96, 0.98, 1
 
         # ================= TAB NHÓM =================
         MDBottomNavigationItem:
@@ -316,10 +316,13 @@ MDScreen:
                 orientation: 'vertical'
                 MDTopAppBar:
                     title: "Danh sách nhóm"
-                    elevation: 1
+                    elevation: 0
+                    md_bg_color: 1, 1, 1, 1
+                    specific_text_color: 0.1, 0.1, 0.1, 1
                 ScrollView:
                     MDList:
                         id: group_filter_list
+                        md_bg_color: 0.95, 0.96, 0.98, 1
 
         # ================= TAB TÀI KHOẢN ZALO =================
         MDBottomNavigationItem:
@@ -349,34 +352,36 @@ MDScreen:
                         radius: [20, ]
                         pos_hint: {"center_y": .5}
 
-                    MDBoxLayout:
-                        orientation: "vertical"
-                        pos_hint: {"center_y": .5}
-                        MDLabel:
-                            id: zalo_name_view
-                            text: "Chưa kết nối Zalo"
-                            theme_text_color: "Custom"
-                            text_color: 1, 1, 1, 1
-                            font_style: "Subtitle2"
-                            bold: True
-                        MDLabel:
-                            text: "Trình duyệt chìm"
-                            theme_text_color: "Custom"
-                            text_color: 0.9, 0.9, 0.9, 1
-                            font_style: "Caption"
+                MDBoxLayout:
+                    orientation: "vertical"
+                    pos_hint: {"center_y": .5}
+                    md_bg_color: 0.1, 0.5, 0.8, 1
+                    MDLabel:
+                        id: zalo_name_view
+                        text: "Chưa kết nối Zalo"
+                        theme_text_color: "Custom"
+                        text_color: 1, 1, 1, 1
+                        font_style: "Subtitle2"
+                        bold: True
+                    MDLabel:
+                        text: "Trình duyệt chìm"
+                        theme_text_color: "Custom"
+                        text_color: 0.9, 0.9, 0.9, 1
+                        font_style: "Caption"
 
-                    MDRaisedButton:
-                        id: btn_zalo_action
-                        text: "TẢI LẠI"
-                        size_hint_y: None
-                        height: "36dp"
-                        md_bg_color: 1, 1, 1, 0.25
-                        pos_hint: {"center_y": .5}
-                        on_release: app.reload_zalo_web()
+                MDRaisedButton:
+                    id: btn_zalo_action
+                    text: "TẢI LẠI"
+                    size_hint_y: None
+                    height: "36dp"
+                    md_bg_color: 1, 1, 1, 0.25
+                    pos_hint: {"center_y": .5}
+                    on_release: app.reload_zalo_web()
 
                 BoxLayout:
                     id: webview_container
                     size_hint_y: 1
+                    md_bg_color: 1, 1, 1, 1
 
         # ================= TAB CÀI ĐẶT =================
         MDBottomNavigationItem:
@@ -387,7 +392,7 @@ MDScreen:
                 orientation: 'vertical'
                 MDTopAppBar:
                     title: "Thiết lập hệ thống"
-                    elevation: 1
+                    elevation: 0
                     md_bg_color: 1, 1, 1, 1
                     specific_text_color: 0.1, 0.1, 0.1, 1
                 
@@ -399,6 +404,7 @@ MDScreen:
                         adaptive_height: True
                         padding: "10dp"
                         spacing: "15dp"
+                        md_bg_color: 0.95, 0.96, 0.98, 1
                         
                         MDBoxLayout: # Thông tin tài khoản
                             orientation: "horizontal"
@@ -491,13 +497,13 @@ MDScreen:
                                     id: sw_filter
                                     pos_hint: {'center_y': .5}
 
-                        # --- HƯỚNG DẪN DÙNG TIẾNG VIỆT (ĐÃ SỬA LỖI ĐÈ CHỮ) ---
+                        # --- HƯỚNG DẪN DÙNG TIẾNG VIỆT ---
                         MDBoxLayout:
                             orientation: "vertical"
                             size_hint_y: None
-                            height: self.minimum_height # Ép khung phải cao bằng nội dung bên trong
+                            height: self.minimum_height 
                             padding: "12dp"
-                            spacing: "5dp" # Khoảng cách giữa tiêu đề và nội dung
+                            spacing: "5dp" 
                             md_bg_color: 0.9, 0.95, 1, 1
                             radius: [10, ]
                             
@@ -507,14 +513,14 @@ MDScreen:
                                 bold: True
                                 theme_text_color: "Primary"
                                 size_hint_y: None
-                                height: self.texture_size[1] # Ép dòng này tự tính độ cao chữ
+                                height: self.texture_size[1]
                                 
                             MDLabel:
                                 text: "Soạn chữ ở Zalo rồi Copy,bấm biểu tượng DÁN ở bên cạnh mỗi ô."
                                 font_style: "Caption"
                                 theme_text_color: "Secondary"
                                 size_hint_y: None
-                                height: self.texture_size[1] # Ép dòng này tự tính độ cao chữ
+                                height: self.texture_size[1]
 
                         # --- CÁC Ô NHẬP LIỆU CÓ NÚT DÁN NHANH ---
                         MDBoxLayout: 
@@ -527,7 +533,6 @@ MDScreen:
                             md_bg_color: 1, 1, 1, 1
                             radius: [10, ]
                             
-                            # Nhập Từ Khóa Nhận
                             MDBoxLayout:
                                 orientation: "horizontal"
                                 size_hint_y: None
@@ -542,7 +547,6 @@ MDScreen:
                                     pos_hint: {"center_y": .5}
                                     on_release: inp_nhan.text = app.Clipboard.paste()
 
-                            # Nhập Từ Khóa Loại
                             MDBoxLayout:
                                 orientation: "horizontal"
                                 size_hint_y: None
@@ -557,7 +561,6 @@ MDScreen:
                                     pos_hint: {"center_y": .5}
                                     on_release: inp_loai.text = app.Clipboard.paste()
 
-                            # Nhập Câu Trả Lời
                             MDBoxLayout:
                                 orientation: "horizontal"
                                 size_hint_y: None
@@ -572,7 +575,6 @@ MDScreen:
                                     pos_hint: {"center_y": .5}
                                     on_release: inp_reply.text = app.Clipboard.paste()
                                 
-                            # Ô Thời Gian Chờ
                             MDTextField:
                                 id: inp_delay
                                 hint_text: "Thời gian chốt cuốc mới (giây)"
@@ -587,16 +589,16 @@ MDScreen:
                             size_hint_y: None
                             height: "45dp"
                             md_bg_color: 0.1, 0.5, 0.8, 1
-                            elevation: 2
                             on_release: app.save_config()
 
-                        MDBoxLayout: # Thay MDCard bằng MDBoxLayout
+                        MDBoxLayout:
                             orientation: "vertical"
                             size_hint_y: None
                             height: "180dp"
                             padding: "15dp"
                             spacing: "5dp"
                             md_bg_color: 1, 1, 1, 1
+                            radius: [10, ]
                             MDLabel:
                                 text: "BẢN QUYỀN"
                                 bold: True
@@ -625,6 +627,7 @@ MDScreen:
                         MDBoxLayout:
                             size_hint_y: None
                             height: "20dp"
+                            md_bg_color: 0.95, 0.96, 0.98, 1
 '''
 
 class ActivationPopup(Popup):
@@ -1097,18 +1100,16 @@ class ZAutoProApp(MDApp):
         if not getattr(self, 'is_radar_running', False): return
         if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
 
-        # ƯU TIÊN DÙNG ID THẬT TỪ SIDEBAR, NẾU KHÔNG CÓ MỚI DÙNG MD5
-        real_msg_id = msg_id if msg_id else hashlib.md5(msg.encode('utf-8')).hexdigest()[:8]
-        cache_key = f"{group}_{real_msg_id}"
+        # BĂM NỘI DUNG VÀ KẾT HỢP VỚI ID ĐỂ CHỐNG IM LẶNG KHI TEST
+        msg_hash = hashlib.md5(msg.encode('utf-8')).hexdigest()[:8]
+        real_msg_id = msg_id if msg_id else msg_hash
+        
+        cache_key = f"{group}_{real_msg_id}_{msg_hash}"
         
         if cache_key in self.processed_msg_hashes: return
         self.processed_msg_hashes[cache_key] = True
         
-        # Gán lại msg_id để lát nữa truyền xuống Java chốt cho đúng tin
         msg_id = real_msg_id
-        
-        if cache_key in self.processed_msg_hashes: return
-        self.processed_msg_hashes[cache_key] = True
 
         # TUYỆT ĐỐI KHÔNG ĐỌC UI
         sw_filter_active = self.config_data.get('sw_filter', False)
