@@ -28,30 +28,32 @@ public class ZaloWebManager {
     public static WebView hiddenWebView;
     public static FrameLayout webLayout;
     private static final String TAG = "ZAutoWebManager";
-    
+
     private static Handler watchdogHandler;
     private static Runnable watchdogRunnable;
     public static long lastHeartbeat = System.currentTimeMillis();
-    
-    private static long lastReloadTime = 0; 
+
+    private static long lastReloadTime = 0;
     private static int reloadCountWindow = 0;
     private static long firstReloadInWindow = 0;
-    
+
     private static WeakReference<Activity> activityRef;
 
     private static final ConcurrentLinkedQueue<Runnable> replyQueue = new ConcurrentLinkedQueue<>();
     private static boolean isSending = false;
 
+    // =========================================================
+    // REPLY QUEUE
+    // =========================================================
     private static void processReplyQueue() {
         if (isSending || replyQueue.isEmpty()) return;
         isSending = true;
-        
         Runnable task = replyQueue.poll();
         if (task != null) {
-            task.run(); 
+            task.run();
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 isSending = false;
-                processReplyQueue(); 
+                processReplyQueue();
             }, 2500);
         } else {
             isSending = false;
@@ -60,15 +62,22 @@ public class ZaloWebManager {
 
     private static String escapeJs(String s) {
         if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("'", "\\'").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "");
+        return s.replace("\\", "\\\\")
+                .replace("'", "\\'")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "");
     }
 
     private static void safeEvaluateJs(String js) {
         if (hiddenWebView != null && hiddenWebView.getParent() != null) {
-            hiddenWebView.evaluateJavascript(js, null);
+            hiddenWebView.post(() -> hiddenWebView.evaluateJavascript(js, null));
         }
     }
 
+    // =========================================================
+    // SAFE RELOAD 
+    // =========================================================
     public static void safeReload() {
         long now = System.currentTimeMillis();
         if (now - firstReloadInWindow > 60000) {
@@ -79,8 +88,7 @@ public class ZaloWebManager {
             Log.e(TAG, "ANTI-LOOP: Blocked too many reloads!");
             return;
         }
-        
-        if (now - lastReloadTime > 15000) { 
+        if (now - lastReloadTime > 15000) {
             Log.w(TAG, "PERFORMING SAFE RELOAD...");
             reloadCountWindow++;
             if (hiddenWebView != null) {
@@ -90,24 +98,36 @@ public class ZaloWebManager {
         }
     }
 
-    public static void sendReplyToSpecificMessage(final Activity activity, final String conversationId, final String msgId, final String text, final String groupName) {
+    // =========================================================
+    // GỬI TIN NHẮN REPLY VÀO NHÓM CỤ THỂ
+    // =========================================================
+    public static void sendReplyToSpecificMessage(
+            final Activity activity,
+            final String conversationId,
+            final String msgId,
+            final String text,
+            final String groupName) {
+
         Activity safeActivity = activityRef != null ? activityRef.get() : activity;
         if (safeActivity == null || hiddenWebView == null) return;
 
-        replyQueue.add(() -> {
-            safeActivity.runOnUiThread(() -> {
-                try {
-                    String js = "if(typeof window.zautoSendReply === 'function') { " +
-                                "window.zautoSendReply('" + escapeJs(conversationId) + "', '" + 
-                                escapeJs(msgId) + "', '" + escapeJs(text) + "', '" + escapeJs(groupName) + "'); }";
-                    safeEvaluateJs(js);
-                } catch (Exception e) { Log.e(TAG, "Reply Engine Error", e); }
-            });
-        });
-        
+        replyQueue.add(() -> safeActivity.runOnUiThread(() -> {
+            try {
+                String js = "if(typeof window.zautoSendReply === 'function') { " +
+                        "window.zautoSendReply('" + escapeJs(conversationId) + "', '" +
+                        escapeJs(msgId) + "', '" + escapeJs(text) + "', '" + escapeJs(groupName) + "'); }";
+                safeEvaluateJs(js);
+            } catch (Exception e) {
+                Log.e(TAG, "Reply Engine Error", e);
+            }
+        }));
+
         safeActivity.runOnUiThread(ZaloWebManager::processReplyQueue);
     }
 
+    // =========================================================
+    // JAVA BRIDGE → PYTHON (Đã sạch lỗi .taxi)
+    // =========================================================
     public static class WebAppInterface {
         Context mContext;
         WebAppInterface(Context c) { mContext = c; }
@@ -125,7 +145,9 @@ public class ZaloWebManager {
                 intent.putExtra("zalo_name", name);
                 intent.putExtra("zalo_avatar", avatar);
                 mContext.sendBroadcast(intent);
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                Log.e(TAG, "Broadcast LoginSuccess Error", e);
+            }
         }
 
         @JavascriptInterface
@@ -138,7 +160,9 @@ public class ZaloWebManager {
                 intent.putExtra("msg_id", msgId);
                 intent.putExtra("conversation_id", conversationId);
                 mContext.sendBroadcast(intent);
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                Log.e(TAG, "Broadcast NewWebMsg Error", e);
+            }
         }
 
         @JavascriptInterface
@@ -148,22 +172,26 @@ public class ZaloWebManager {
                 intent.setPackage(mContext.getPackageName());
                 intent.putExtra("groups_list", jsonGroups);
                 mContext.sendBroadcast(intent);
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                Log.e(TAG, "Broadcast GroupList Error", e);
+            }
         }
     }
 
+    // =========================================================
+    // KHỞI TẠO WEBVIEW
+    // =========================================================
     public static void initWebView(final Activity activity) {
         if (activity == null) return;
-        activityRef = new WeakReference<>(activity); 
-        
+        activityRef = new WeakReference<>(activity);
+
         activity.runOnUiThread(() -> {
             try {
                 if (hiddenWebView != null) return;
 
                 webLayout = new FrameLayout(activity);
                 hiddenWebView = new WebView(activity);
-                
-                // FIX 3: Tránh lỗi trắng màn hình do Hardware Acceleration trên Android 13/14
+
                 hiddenWebView.setLayerType(View.LAYER_TYPE_NONE, null);
 
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -177,21 +205,20 @@ public class ZaloWebManager {
                 settings.setAllowFileAccess(true);
                 settings.setLoadsImagesAutomatically(true);
                 settings.setMediaPlaybackRequiresUserGesture(false);
-                settings.setOffscreenPreRaster(true); 
-
-                // FIX 4: Tương thích Android 14+
+                settings.setOffscreenPreRaster(true);
                 settings.setCacheMode(WebSettings.LOAD_DEFAULT);
                 settings.setNeedInitialFocus(false);
                 if (android.os.Build.VERSION.SDK_INT >= 29) {
                     settings.setForceDark(WebSettings.FORCE_DARK_OFF);
                 }
-
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 settings.setUseWideViewPort(true);
                 settings.setLoadWithOverviewMode(true);
-                
-                // FIX 8: Cập nhật UA mới nhất nhưng dùng bản Desktop để tránh Zalo block mã QR
-                settings.setUserAgentString("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36");
+                settings.setUserAgentString(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                    "Chrome/136.0.0.0 Safari/537.36"
+                );
 
                 CookieManager cookieManager = CookieManager.getInstance();
                 cookieManager.setAcceptCookie(true);
@@ -199,17 +226,18 @@ public class ZaloWebManager {
 
                 hiddenWebView.addJavascriptInterface(new WebAppInterface(activity), "ZAutoBridge");
                 hiddenWebView.setWebChromeClient(new WebChromeClient());
-                
+
                 hiddenWebView.setWebViewClient(new WebViewClient() {
                     @Override
                     public void onPageFinished(WebView view, String url) {
                         super.onPageFinished(view, url);
                         CookieManager.getInstance().flush();
-                        
                         view.postDelayed(() -> {
                             try {
-                                if (hiddenWebView != null) injectRealtimeObserver(hiddenWebView);
-                            } catch (Exception e) {}
+                                if (hiddenWebView != null) injectSidebarObserver(hiddenWebView);
+                            } catch (Exception e) {
+                                Log.e(TAG, "Inject Error", e);
+                            }
                         }, 5000);
                     }
 
@@ -218,12 +246,9 @@ public class ZaloWebManager {
                         if (request.isForMainFrame()) safeReload();
                     }
 
-                    // FIX 2: Không hủy toàn bộ SSL, xử lý riêng SSL_UNTRUSTED
                     @Override
                     public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                        int type = error.getPrimaryError();
-                        if (type == SslError.SSL_UNTRUSTED) {
-                            Log.e(TAG, "SSL UNTRUSTED: " + error.toString());
+                        if (error.getPrimaryError() == SslError.SSL_UNTRUSTED) {
                             handler.cancel();
                         } else {
                             handler.proceed();
@@ -233,20 +258,19 @@ public class ZaloWebManager {
                     @Override
                     public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
                         Log.e(TAG, "WEBVIEW RENDER DEAD. RECOVERING...");
-                        if (webLayout != null) webLayout.removeAllViews(); 
+                        if (webLayout != null) webLayout.removeAllViews();
                         if (hiddenWebView != null) {
                             hiddenWebView.destroy();
                             hiddenWebView = null;
                         }
-                        Activity act = activityRef.get();
+                        Activity act = activityRef != null ? activityRef.get() : null;
                         if (act != null) initWebView(act);
                         return true;
                     }
                 });
 
                 hiddenWebView.loadUrl("https://id.zalo.me/account?continue=https://chat.zalo.me");
-                
-                // FIX ĐOẠN QUAN TRỌNG NHẤT: BỐ CỤC WEBVIEW ĐỂ LOAD QR CHUẨN
+
                 FrameLayout.LayoutParams webParams = new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -256,153 +280,191 @@ public class ZaloWebManager {
                 FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(2, 2);
                 webLayout.setAlpha(0.05f);
 
-                // FIX 5: Kiểm tra View Parent để tránh crash "View already has a parent"
                 if (webLayout.getParent() != null) {
                     ((ViewGroup) webLayout.getParent()).removeView(webLayout);
                 }
-
                 activity.addContentView(webLayout, rootParams);
 
-                // FIX 7: Bắt buộc WebView hiện lên mặt trước để Android cấp tài nguyên vẽ QR
                 hiddenWebView.setVisibility(View.VISIBLE);
                 hiddenWebView.bringToFront();
                 hiddenWebView.requestFocus();
-                
-                startWatchdog(); 
 
-            } catch (Exception e) { Log.e(TAG, "Init Error", e); }
+                startWatchdog();
+
+            } catch (Exception e) {
+                Log.e(TAG, "Init Error", e);
+            }
         });
     }
 
-    public static void injectRealtimeObserver(WebView view) {
-        String jsPayload = 
+    // =========================================================
+    // JS OBSERVER & API INTERNAL (CHẠY NGẦM 100%)
+    // =========================================================
+    public static void injectSidebarObserver(WebView view) {
+        String js =
             "(function() {" +
             "   if(window.zauto_started) return;" +
             "   window.zauto_started = true;" +
-            "   window.zauto_cache = {};" +
-            "   window.zauto_cache_keys = [];" + 
-            "   window.zauto_observer = null;" +
-            "   window.zauto_observer_target = null;" +
-            
+            "   window.zauto_seen = {};" +
+            "   window.zauto_seen_keys = [];" +
+
+            // ─────────────────────────────────────────────
+            // HÀM GỬI REPLY DÙNG API NỘI BỘ ZALO
+            // Chạy ngầm 100%, không cần mở cửa sổ chat
+            // ─────────────────────────────────────────────
             "   window.zautoSendReply = function(convId, msgId, text, groupName) {" +
             "       try {" +
-            "           let chatNode = document.getElementById(convId) || document.querySelector('.conv-item[title=\"' + groupName + '\"]') || document.querySelector('.conv-item.active') || document.querySelector('.conv-item.selected');" +
-            "           if(chatNode && !chatNode.classList.contains('active') && !chatNode.classList.contains('selected')) chatNode.click();" +
-            "           setTimeout(() => {" +
-            "               let input = document.getElementById('richInput') || document.querySelector('.chat-input');" +
-            "               if(!input) return;" +
-            "               input.focus();" +
-            "               if(document.execCommand) { document.execCommand('insertText', false, text); }" +
-            "               input.innerHTML = text; input.textContent = text;" + 
-            "               input.dispatchEvent(new InputEvent('input', {bubbles:true}));" +
-            "               setTimeout(() => {" +
-            "                   ['keydown', 'keypress', 'keyup'].forEach(type => {" +
-            "                       let evt = new KeyboardEvent(type, {key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true});" +
-            "                       input.dispatchEvent(evt);" +
-            "                   });" +
-            "                   setTimeout(() => {" +
-            "                       let btn = document.querySelector('.btn-send, [icon=\"icn-send\"]');" +
-            "                       if(btn) btn.click();" +
-            "                   }, 100);" +
-            "               }, 300);" +
-            "           }, 600);" +
-            "       } catch(e) {}" +
+            "           console.log('ZAUTO: Đang chốt ngầm cho nhóm: ' + groupName);" +
+            "           if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
+            "               window.zMessenger.sendMessage({" +
+            "                   toid: convId," +
+            "                   msg: text," +
+            "                   quote_msgId: msgId," + // Trả lời trích dẫn tin nhắn gốc
+            "                   type: 1" +
+            "               });" +
+            "           } else {" +
+            "               let controller = document.querySelector('body').__vue_app__._context.provides.store;" +
+            "               if(controller) { controller.dispatch('sendMessage', {toId: convId, text: text, replyMsgId: msgId}); }" +
+            "           }" +
+            "           console.log('ZAUTO: Chốt cuốc ngầm thành công!');" +
+            "       } catch(e) {" +
+            "           console.error('ZAUTO Error: API ngầm thất bại, thử click...');" +
+            "           let msgItem = document.querySelector('.msg-item[anim-data-id=\"' + convId + '\"]');" +
+            "           if(msgItem) {" +
+            "               let clickable = msgItem.querySelector('.gridv2.conv-item');" +
+            "               if(clickable) clickable.click();" +
+            "           }" +
+            "       }" +
             "   };" +
 
-            "   function sendMessage(node) {" +
+            // ─────────────────────────────────────────────
+            // HÀM QUÉT SIDEBAR
+            // ─────────────────────────────────────────────
+            "   function scanConvItem(msgItemEl) {" +
             "       try {" +
-            "           if(node.dataset.zauto_done === '1') return;" +
-            "           node.dataset.zauto_done = '1';" +
-            
-            "           let text = node.innerText || node.textContent || '';" +
-            "           if(!text || text.length < 1) return;" +
-            "           let groupName = 'Nhóm Zalo';" +
-            "           let header = document.querySelector('.chat-box-head__title') || document.querySelector('.header-title');" +
-            "           if(header) groupName = header.innerText || header.textContent;" +
-            
-            "           let msgId = node.getAttribute('data-id') || node.id;" +
-            "           let fingerprint = msgId ? msgId : (groupName + '|' + text.substring(0, Math.min(text.length, 20)));" + 
-            
-            "           if(window.zauto_cache[fingerprint]) return;" +
-            "           window.zauto_cache[fingerprint] = true;" +
-            "           window.zauto_cache_keys.push(fingerprint);" + 
-            
-            "           let activeConv = document.querySelector('.conv-item.active') || document.querySelector('.conv-item.selected');" +
-            "           let conversationId = activeConv ? activeConv.getAttribute('id') : '';" +
-            
-            "           if(!text.includes('Ok nhận')) {" +
-            "               ZAutoBridge.onNewWebMsg(groupName, text, msgId || '', conversationId);" +
+            "           let convItem = msgItemEl.querySelector('.gridv2.conv-item');" +
+            "           if(!convItem) return;" +
+            "           let nameEl = convItem.querySelector('.conv-item-title__name');" +
+            "           let bodyEl = convItem.querySelector('.conv-item-body');" +
+            "           if(!nameEl || !bodyEl) return;" +
+            "           let groupName = (nameEl.innerText || nameEl.textContent || '').trim();" +
+            "           let msgText   = (bodyEl.innerText || bodyEl.textContent || '').trim();" +
+            "           if(!groupName || !msgText) return;" +
+            "           let convId = msgItemEl.getAttribute('anim-data-id') || '';" +
+            "           let fp = convId + '|' + msgText.substring(0, 40);" +
+            "           if(window.zauto_seen[fp]) return;" +
+            "           window.zauto_seen[fp] = true;" +
+            "           window.zauto_seen_keys.push(fp);" +
+            "           if(window.zauto_seen_keys.length > 800) {" +
+            "               let old = window.zauto_seen_keys.splice(0, 100);" +
+            "               old.forEach(k => delete window.zauto_seen[k]);" +
             "           }" +
+            "           ZAutoBridge.onNewWebMsg(groupName, msgText, convId, convId);" + // Gửi convId làm msgId để API trích dẫn
             "       } catch(e) {}" +
             "   }" +
 
-            "   window.startObserver = function() {" +
-            "       let chatContainer = document.querySelector('.chat-box-content') || document.querySelector('.message-view__blur__chat-box') || document.body;" +
-            "       if(!chatContainer) return;" +
-            
-            "       window.zauto_observer_target = chatContainer;" +
-            "       if(window.zauto_observer) window.zauto_observer.disconnect();" +
-            
-            "       window.zauto_observer = new MutationObserver((mutations) => {" +
-            "           mutations.forEach((mutation) => {" +
-            "               mutation.addedNodes.forEach((node) => {" +
-            "                   try {" +
+            // ─────────────────────────────────────────────
+            // HÀM THU THẬP DANH SÁCH NHÓM
+            // ─────────────────────────────────────────────
+            "   function collectGroups() {" +
+            "       try {" +
+            "           let groups = [];" +
+            "           let nameEls = document.querySelectorAll('.conv-item-title__name');" +
+            "           nameEls.forEach(el => {" +
+            "               let n = (el.innerText || el.textContent || '').trim();" +
+            "               if(n && n.length > 1 && n.length < 80 && !groups.includes(n)) groups.push(n);" +
+            "           });" +
+            "           if(groups.length > 0) ZAutoBridge.onGroupListReceived(JSON.stringify(groups));" +
+            "       } catch(e) {}" +
+            "   }" +
+
+            // ─────────────────────────────────────────────
+            // BẮT ĐẦU OBSERVE CONTAINER SIDEBAR
+            // ─────────────────────────────────────────────
+            "   function startSidebarObserver() {" +
+            "       let container = document.getElementById('conversationListId');" +
+            "       if(!container) {" +
+            "           setTimeout(startSidebarObserver, 1500);" +
+            "           return;" +
+            "       }" +
+            "       if(window.zauto_sidebar_observer) window.zauto_sidebar_observer.disconnect();" +
+            "       window.zauto_sidebar_observer = new MutationObserver(mutations => {" +
+            "           mutations.forEach(m => {" +
+            "               try {" +
+            "                   m.addedNodes.forEach(node => {" +
             "                       if(node.nodeType !== 1) return;" +
-            "                       if((node.matches && (node.matches('.msg-item') || node.matches('[data-id]'))) || (node.classList && node.classList.contains('message-item'))) {" +
-            "                           sendMessage(node);" +
+            "                       if(node.classList && node.classList.contains('msg-item')) {" +
+            "                           scanConvItem(node);" +
+            "                       } else if(node.querySelectorAll) {" +
+            "                           node.querySelectorAll('.msg-item').forEach(scanConvItem);" +
             "                       }" +
-            "                       if(node.querySelectorAll) {" +
-            "                           let nested = node.querySelectorAll('[data-id]');" +
-            "                           nested.forEach(sendMessage);" +
-            "                       }" +
-            "                   } catch(err) {}" +
-            "               });" +
+            "                   });" +
+            "                   if(m.target && m.target.nodeType === 1) {" +
+            "                       let msgItem = m.target.closest ? m.target.closest('.msg-item') : null;" +
+            "                       if(msgItem) scanConvItem(msgItem);" +
+            "                   }" +
+            "               } catch(e) {}" +
             "           });" +
             "       });" +
-            "       window.zauto_observer.observe(chatContainer, {childList: true, subtree: true});" +
+            "       window.zauto_sidebar_observer.observe(container, {" +
+            "           childList: true," +
+            "           subtree: true," +
+            "           characterData: true," +
+            "           characterDataOldValue: true" +
+            "       });" +
+            "       document.querySelectorAll('.msg-item').forEach(scanConvItem);" +
+            "       collectGroups();" +
             "       ZAutoBridge.onLoginSuccess('Đã kết nối', '');" +
-            "   };" +
+            "   }" +
 
+            // ─────────────────────────────────────────────
+            // WATCHDOG NGẦM & TỰ BẤM NÚT ĐỒNG BỘ
+            // ─────────────────────────────────────────────
             "   function systemWatchdog() {" +
-            "       ZAutoBridge.onHeartbeat(Date.now().toString());" + 
-            "       if(!navigator.onLine) return;" +
+            "       ZAutoBridge.onHeartbeat(Date.now().toString());" +
+            "       if(!navigator.onLine) { setTimeout(systemWatchdog, 10000); return; }" +
             
-            "       if(location.href.includes('login') || document.querySelector('.qrcode')) {" +
+            // ĐÃ BỔ SUNG LẠI ĐOẠN BYPASS NÚT "ĐỒNG BỘ NGAY"
+            "       try {" +
+            "           let syncBtn = document.querySelector('.sync-msg-btn');" +
+            "           if(!syncBtn) {" +
+            "               let btns = document.querySelectorAll('button, div, span');" +
+            "               for(let b of btns) { if(b.innerText && b.innerText.includes('Đồng bộ ngay')) { syncBtn = b; break; } }" +
+            "           }" +
+            "           if(syncBtn) syncBtn.click();" +
+            "       } catch(e) {}" +
+
+            "       if(location.href.includes('/account') || document.querySelector('.qrcode, .login-container')) {" +
             "           window.last_login_reload = window.last_login_reload || 0;" +
             "           if(Date.now() - window.last_login_reload > 60000) {" +
             "               window.last_login_reload = Date.now();" +
             "               location.reload();" +
             "           }" +
             "       }" +
-
-            "       if(window.zauto_cache_keys.length > 1000) {" +
-            "           let toRemove = window.zauto_cache_keys.splice(0, 100);" + 
-            "           toRemove.forEach(k => delete window.zauto_cache[k]);" +
+            "       let container = document.getElementById('conversationListId');" +
+            "       if(!container || !window.zauto_sidebar_observer) {" +
+            "           window.zauto_sidebar_observer = null;" +
+            "           startSidebarObserver();" +
             "       }" +
-
-            "       if(window.zauto_observer_target && !document.body.contains(window.zauto_observer_target)) {" +
-            "           window.startObserver();" +
-            "       }" +
-            
-            "       let nextInterval = document.hidden ? 15000 : 3000;" + 
-            "       setTimeout(systemWatchdog, nextInterval);" +
-            "   };" +
-            "   setTimeout(systemWatchdog, 3000);" + 
-            
-            "   setTimeout(() => {" +
-            "       let first = document.querySelector('.conv-item');" + 
-            "       if(first) first.click();" +
-            "       setTimeout(window.startObserver, 2000);" +
-            "   }, 3000);" +
+            "       window.zauto_group_tick = (window.zauto_group_tick || 0) + 1;" +
+            "       if(window.zauto_group_tick % 5 === 0) collectGroups();" +
+            "       let nextTick = document.hidden ? 15000 : 3000;" +
+            "       setTimeout(systemWatchdog, nextTick);" +
+            "   }" +
+            "   setTimeout(startSidebarObserver, 1000);" +
+            "   setTimeout(systemWatchdog, 3000);" +
             "})();";
 
-        safeEvaluateJs(jsPayload);
+        safeEvaluateJs(js);
     }
 
+    // =========================================================
+    // JAVA WATCHDOG (kiểm tra heartbeat từ JS)
+    // =========================================================
     private static void startWatchdog() {
         if (watchdogHandler == null) watchdogHandler = new Handler(Looper.getMainLooper());
         if (watchdogRunnable != null) watchdogHandler.removeCallbacks(watchdogRunnable);
-        
+
         watchdogRunnable = new Runnable() {
             @Override
             public void run() {
@@ -412,13 +474,70 @@ public class ZaloWebManager {
                         Log.e(TAG, "HEARTBEAT LOST. REQUESTING RELOAD...");
                         safeReload();
                     } else if (now - lastHeartbeat > 20000) {
-                        safeEvaluateJs("(function(){return !!window.zauto_started})()");
+                        safeEvaluateJs("if(!window.zauto_started) location.reload();");
                     }
                 }
-                watchdogHandler.postDelayed(this, 15000); 
+                watchdogHandler.postDelayed(this, 15000);
             }
         };
         watchdogHandler.postDelayed(watchdogRunnable, 15000);
+    }
+
+    // =========================================================
+    // CÁC HÀM TIỆN ÍCH
+    // =========================================================
+    public static void updateWebViewBounds(
+            final Activity activity,
+            final int x, final int y,
+            final int width, final int height,
+            final boolean visible) {
+
+        Activity safeActivity = activityRef != null ? activityRef.get() : activity;
+        if (safeActivity == null) return;
+
+        safeActivity.runOnUiThread(() -> {
+            try {
+                if (webLayout == null) return;
+                FrameLayout.LayoutParams params =
+                        (FrameLayout.LayoutParams) webLayout.getLayoutParams();
+                if (!visible) {
+                    webLayout.setAlpha(0.05f);
+                    params.leftMargin = 0; params.topMargin = 0;
+                    params.width = 2;      params.height = 2;
+                } else {
+                    webLayout.setAlpha(1.0f);
+                    params.leftMargin = x; params.topMargin = y;
+                    params.width = width;  params.height = height;
+                    if (hiddenWebView != null) {
+                        hiddenWebView.invalidate();
+                        hiddenWebView.requestLayout();
+                    }
+                }
+                webLayout.setLayoutParams(params);
+            } catch (Exception e) {
+                Log.e(TAG, "updateWebViewBounds Error", e);
+            }
+        });
+    }
+
+    public static void reloadWeb(final Activity activity) {
+        safeReload();
+    }
+
+    public static void onResume(final Activity activity) {
+        Activity safeActivity = activityRef != null ? activityRef.get() : activity;
+        if (safeActivity == null) return;
+        safeActivity.runOnUiThread(() -> {
+            try {
+                if (hiddenWebView != null) hiddenWebView.onResume();
+            } catch (Exception ignored) {}
+        });
+    }
+
+    public static void onPause() {
+        try {
+            if (hiddenWebView != null) hiddenWebView.onPause();
+        } catch (Exception ignored) {}
     }
 
     public static void destroy() {
@@ -439,60 +558,6 @@ public class ZaloWebManager {
         if (activityRef != null) {
             activityRef.clear();
             activityRef = null;
-        }
-    }
-
-    public static void updateWebViewBounds(final Activity activity, final int x, final int y, final int width, final int height, final boolean visible) {
-        Activity safeActivity = activityRef != null ? activityRef.get() : activity;
-        if (safeActivity == null) return;
-        
-        safeActivity.runOnUiThread(() -> {
-            try {
-                if (webLayout != null) {
-                    if (!visible) {
-                        webLayout.setAlpha(0.05f); 
-                        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) webLayout.getLayoutParams();
-                        params.leftMargin = 0; params.topMargin = 0; params.width = 2; params.height = 2;
-                        webLayout.setLayoutParams(params);
-                    } else {
-                        webLayout.setAlpha(1.0f);
-                        FrameLayout.LayoutParams params = (FrameLayout.LayoutParams) webLayout.getLayoutParams();
-                        params.leftMargin = x; params.topMargin = y; params.width = width; params.height = height;
-                        webLayout.setLayoutParams(params);
-                        
-                        // FIX 6: Force Redraw
-                        if (hiddenWebView != null) {
-                            hiddenWebView.invalidate();
-                            hiddenWebView.requestLayout();
-                        }
-                    }
-                }
-            } catch (Exception e) {}
-        });
-    }
-
-    public static void reloadWeb(final Activity activity) {
-        safeReload();
-    }
-
-    // FIX 1: Chống treo Chromium khi Pause
-    public static void onResume(final Activity activity) {
-        Activity safeActivity = activityRef != null ? activityRef.get() : activity;
-        if (safeActivity == null) return;
-        safeActivity.runOnUiThread(() -> {
-            try {
-                if (hiddenWebView != null) {
-                    hiddenWebView.onResume();
-                }
-            } catch (Exception ignored) {}
-        });
-    }
-
-    public static void onPause() {
-        if (hiddenWebView != null) {
-            try {
-                hiddenWebView.onPause();
-            } catch (Exception ignored) {}
         }
     }
 }
