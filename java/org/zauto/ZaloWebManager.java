@@ -288,6 +288,7 @@ public class ZaloWebManager {
             "(function() {" +
             "   if(window.zauto_started) return;" +
             "   window.zauto_started = true;" +
+            "   window.zauto_boot_time = Date.now();" +
             "   window.zauto_seen = {};" +
             "   window.zauto_seen_keys = [];" +
 
@@ -296,14 +297,21 @@ public class ZaloWebManager {
             "       try {" +
             "           if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
             "               window.zMessenger.sendMessage({ toid: convId, msg: text, quote_msgId: msgId, type: 1 });" +
-            "           } else {" +
-            "               let controller = document.querySelector('body').__vue_app__._context.provides.store;" +
-            "               if(controller) { controller.dispatch('sendMessage', {toId: convId, text: text, replyMsgId: msgId}); }" +
+            "               return;" +
             "           }" +
-            "       } catch(e) {" +
-            "           let msgItem = document.querySelector('.msg-item[anim-data-id=\"' + convId + '\"]');" +
-            "           if(msgItem) { let clickable = msgItem.querySelector('.gridv2.conv-item'); if(clickable) clickable.click(); }" +
-            "       }" +
+            "           let item = document.querySelector('.msg-item[anim-data-id=\"'+convId+'\"] .conv-item');" +
+            "           if(item) {" +
+            "               let key = Object.keys(item).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
+            "               if (key && item[key]) {" +
+            "                   if (item[key].onClick) item[key].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
+            "                   else if (item[key].return && item[key].return.memoizedProps.onClick) item[key].return.memoizedProps.onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
+            "               } else { item.click(); }" +
+            "               setTimeout(() => {" +
+            "                   let input = document.getElementById('richInput');" +
+            "                   if(input) { input.innerHTML = text; input.dispatchEvent(new Event('input', {bubbles:true})); let btn = document.querySelector('.btn-send'); if(btn) btn.click(); }" +
+            "               }, 800);" +
+            "           }" +
+            "       } catch(e) {}" +
             "   };" +
 
             // HÀM QUÉT SIDEBAR
@@ -326,7 +334,9 @@ public class ZaloWebManager {
             "               let old = window.zauto_seen_keys.splice(0, 100);" +
             "               old.forEach(k => delete window.zauto_seen[k]);" +
             "           }" +
-            "           ZAutoBridge.onNewWebMsg(groupName, msgText, convId, convId);" +
+            "           if (Date.now() - window.zauto_boot_time > 8000) {" +
+            "               ZAutoBridge.onNewWebMsg(groupName, msgText, convId, convId);" +
+            "           }" +
             "       } catch(e) {}" +
             "   }" +
 
@@ -378,20 +388,20 @@ public class ZaloWebManager {
             "           }" +
             "           if(syncBtn) syncBtn.click();" +
             "       } catch(e) {}" +
-            "       if(location.href.includes('/account') || document.querySelector('.qrcode, .login-container')) {" +
-            "           window.last_login_reload = window.last_login_reload || 0;" +
-            "           if(Date.now() - window.last_login_reload > 60000) {" +
-            "               window.last_login_reload = Date.now();" +
-            "               location.reload();" +
+            "       let isLoginScreen = document.querySelector('.qrcode') || document.querySelector('.login-container');" +
+            "       if(isLoginScreen) {" +
+            "           if(!window.login_start_time) window.login_start_time = Date.now();" +
+            "           if(Date.now() - window.login_start_time > 180000) { window.login_start_time = Date.now(); location.reload(); }" +
+            "       } else {" +
+            "           window.login_start_time = null;" +
+            "           let container = document.getElementById('conversationListId');" +
+            "           if(!container || !window.zauto_sidebar_observer) {" +
+            "               window.zauto_sidebar_observer = null;" +
+            "               startSidebarObserver();" +
             "           }" +
+            "           window.zauto_group_tick = (window.zauto_group_tick || 0) + 1;" +
+            "           if(window.zauto_group_tick % 5 === 0) collectGroups();" +
             "       }" +
-            "       let container = document.getElementById('conversationListId');" +
-            "       if(!container || !window.zauto_sidebar_observer) {" +
-            "           window.zauto_sidebar_observer = null;" +
-            "           startSidebarObserver();" +
-            "       }" +
-            "       window.zauto_group_tick = (window.zauto_group_tick || 0) + 1;" +
-            "       if(window.zauto_group_tick % 5 === 0) collectGroups();" +
             "       let nextTick = document.hidden ? 15000 : 3000;" +
             "       setTimeout(systemWatchdog, nextTick);" +
             "   }" +
@@ -485,7 +495,7 @@ public class ZaloWebManager {
 
     public static void onPause() {
         try {
-            if (hiddenWebView != null) hiddenWebView.onPause();
+            // ĐÃ XÓA LỆNH: hiddenWebView.onPause(); -> Để Javascript vẫn chạy khi app ẩn
         } catch (Exception ignored) {}
     }
 
