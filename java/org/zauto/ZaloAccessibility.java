@@ -44,7 +44,7 @@ public class ZaloAccessibility extends AccessibilityService {
     }
 
     // =====================================================
-    // LISTEN EVENTS
+    // LISTEN EVENTS (THÚC THẲNG VÀO RAM PYTHON)
     // =====================================================
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
@@ -63,13 +63,10 @@ public class ZaloAccessibility extends AccessibilityService {
                     String full = texts.toString();
                     Log.d(TAG, "Notification: " + full);
                     try {
-                        Intent intent = new Intent("org.zauto.NEW_MSG");
-                        intent.setPackage(getPackageName());
-                        intent.putExtra("group", "Zalo");
-                        intent.putExtra("msg", full);
-                        sendBroadcast(intent);
+                        // BYPASS 100% LỆNH CẤM BROADCAST CỦA ANDROID 14 BẰNG RAM QUEUE
+                        ZaloWebManager.pythonMsgQueue.add("WEB_NEW_MSG|||Zalo|||" + full + "||||||");
                     } catch (Exception e) {
-                        Log.e(TAG, "Broadcast error");
+                        Log.e(TAG, "Queue error");
                     }
                 }
             }
@@ -90,7 +87,7 @@ public class ZaloAccessibility extends AccessibilityService {
     }
 
     // =====================================================
-    // AUTO REPLY (Fallback Native)
+    // AUTO REPLY (Fallback Native) - GIỮ NGUYÊN HOÀN TOÀN
     // =====================================================
     public void executeReplyContext(final String groupName, final String replyText) {
         executor.execute(() -> {
@@ -147,7 +144,7 @@ public class ZaloAccessibility extends AccessibilityService {
     }
 
     // =====================================================
-    // CÁC HÀM TIỆN ÍCH ACCESSIBILITY
+    // CÁC HÀM TIỆN ÍCH ACCESSIBILITY - GIỮ NGUYÊN HOÀN TOÀN
     // =====================================================
     private AccessibilityNodeInfo waitForStableRoot(int timeoutMs) {
         int waited = 0;
