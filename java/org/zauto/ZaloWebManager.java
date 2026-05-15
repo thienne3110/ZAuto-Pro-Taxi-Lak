@@ -43,6 +43,11 @@ public class ZaloWebManager {
     private static boolean isSending = false;
 
     // =========================================================
+    // ỐNG DẪN RAM SIÊU TỐC (BYPASS ANDROID 14 BROADCAST BAN)
+    // =========================================================
+    public static final ConcurrentLinkedQueue<String> pythonMsgQueue = new ConcurrentLinkedQueue<>();
+
+    // =========================================================
     // REPLY QUEUE
     // =========================================================
     private static void processReplyQueue() {
@@ -126,7 +131,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // JAVA BRIDGE → PYTHON (Đã sạch lỗi .taxi)
+    // JAVA BRIDGE → NÉM VÀO RAM PYTHON THAY VÌ BROADCAST
     // =========================================================
     public static class WebAppInterface {
         Context mContext;
@@ -139,42 +144,17 @@ public class ZaloWebManager {
 
         @JavascriptInterface
         public void onLoginSuccess(String name, String avatar) {
-            try {
-                Intent intent = new Intent("org.zauto.LOGIN_SUCCESS");
-                intent.setPackage(mContext.getPackageName());
-                intent.putExtra("zalo_name", name);
-                intent.putExtra("zalo_avatar", avatar);
-                mContext.sendBroadcast(intent);
-            } catch (Exception e) {
-                Log.e(TAG, "Broadcast LoginSuccess Error", e);
-            }
+            pythonMsgQueue.add("LOGIN_SUCCESS|||" + name + "|||" + avatar);
         }
 
         @JavascriptInterface
         public void onNewWebMsg(String group, String msg, String msgId, String conversationId) {
-            try {
-                Intent intent = new Intent("org.zauto.WEB_NEW_MSG");
-                intent.setPackage(mContext.getPackageName());
-                intent.putExtra("group", group);
-                intent.putExtra("msg", msg);
-                intent.putExtra("msg_id", msgId);
-                intent.putExtra("conversation_id", conversationId);
-                mContext.sendBroadcast(intent);
-            } catch (Exception e) {
-                Log.e(TAG, "Broadcast NewWebMsg Error", e);
-            }
+            pythonMsgQueue.add("WEB_NEW_MSG|||" + group + "|||" + msg + "|||" + msgId + "|||" + conversationId);
         }
 
         @JavascriptInterface
         public void onGroupListReceived(String jsonGroups) {
-            try {
-                Intent intent = new Intent("org.zauto.GROUPS_DATA");
-                intent.setPackage(mContext.getPackageName());
-                intent.putExtra("groups_list", jsonGroups);
-                mContext.sendBroadcast(intent);
-            } catch (Exception e) {
-                Log.e(TAG, "Broadcast GroupList Error", e);
-            }
+            pythonMsgQueue.add("GROUPS_DATA|||" + jsonGroups);
         }
     }
 
@@ -277,8 +257,11 @@ public class ZaloWebManager {
                 );
                 webLayout.addView(hiddenWebView, webParams);
 
-                FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(2, 2);
-                webLayout.setAlpha(0.05f);
+                // KHỞI TẠO KHỔNG LỒ (ĐÁNH LỪA REACT VIRTUALIZED) VÀ ĐẨY RA KHỎI MÀN HÌNH
+                FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(1080, 2400);
+                rootParams.leftMargin = -10000;
+                rootParams.topMargin = -10000;
+                webLayout.setAlpha(0.0f);
 
                 if (webLayout.getParent() != null) {
                     ((ViewGroup) webLayout.getParent()).removeView(webLayout);
@@ -308,44 +291,28 @@ public class ZaloWebManager {
             "   window.zauto_seen = {};" +
             "   window.zauto_seen_keys = [];" +
 
-            // ─────────────────────────────────────────────
             // HÀM GỬI REPLY DÙNG API NỘI BỘ ZALO
-            // Chạy ngầm 100%, không cần mở cửa sổ chat
-            // ─────────────────────────────────────────────
             "   window.zautoSendReply = function(convId, msgId, text, groupName) {" +
             "       try {" +
-            "           console.log('ZAUTO: Đang chốt ngầm cho nhóm: ' + groupName);" +
             "           if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
-            "               window.zMessenger.sendMessage({" +
-            "                   toid: convId," +
-            "                   msg: text," +
-            "                   quote_msgId: msgId," + // Trả lời trích dẫn tin nhắn gốc
-            "                   type: 1" +
-            "               });" +
+            "               window.zMessenger.sendMessage({ toid: convId, msg: text, quote_msgId: msgId, type: 1 });" +
             "           } else {" +
             "               let controller = document.querySelector('body').__vue_app__._context.provides.store;" +
             "               if(controller) { controller.dispatch('sendMessage', {toId: convId, text: text, replyMsgId: msgId}); }" +
             "           }" +
-            "           console.log('ZAUTO: Chốt cuốc ngầm thành công!');" +
             "       } catch(e) {" +
-            "           console.error('ZAUTO Error: API ngầm thất bại, thử click...');" +
             "           let msgItem = document.querySelector('.msg-item[anim-data-id=\"' + convId + '\"]');" +
-            "           if(msgItem) {" +
-            "               let clickable = msgItem.querySelector('.gridv2.conv-item');" +
-            "               if(clickable) clickable.click();" +
-            "           }" +
+            "           if(msgItem) { let clickable = msgItem.querySelector('.gridv2.conv-item'); if(clickable) clickable.click(); }" +
             "       }" +
             "   };" +
 
-            // ─────────────────────────────────────────────
             // HÀM QUÉT SIDEBAR
-            // ─────────────────────────────────────────────
             "   function scanConvItem(msgItemEl) {" +
             "       try {" +
             "           let convItem = msgItemEl.querySelector('.gridv2.conv-item');" +
             "           if(!convItem) return;" +
             "           let nameEl = convItem.querySelector('.conv-item-title__name');" +
-            "           let bodyEl = convItem.querySelector('.conv-item-body');" +
+            "           let bodyEl = msgItemEl.querySelector('.conv-item-body');" +
             "           if(!nameEl || !bodyEl) return;" +
             "           let groupName = (nameEl.innerText || nameEl.textContent || '').trim();" +
             "           let msgText   = (bodyEl.innerText || bodyEl.textContent || '').trim();" +
@@ -359,13 +326,11 @@ public class ZaloWebManager {
             "               let old = window.zauto_seen_keys.splice(0, 100);" +
             "               old.forEach(k => delete window.zauto_seen[k]);" +
             "           }" +
-            "           ZAutoBridge.onNewWebMsg(groupName, msgText, convId, convId);" + // Gửi convId làm msgId để API trích dẫn
+            "           ZAutoBridge.onNewWebMsg(groupName, msgText, convId, convId);" +
             "       } catch(e) {}" +
             "   }" +
 
-            // ─────────────────────────────────────────────
             // HÀM THU THẬP DANH SÁCH NHÓM
-            // ─────────────────────────────────────────────
             "   function collectGroups() {" +
             "       try {" +
             "           let groups = [];" +
@@ -378,9 +343,7 @@ public class ZaloWebManager {
             "       } catch(e) {}" +
             "   }" +
 
-            // ─────────────────────────────────────────────
-            // BẮT ĐẦU OBSERVE CONTAINER SIDEBAR
-            // ─────────────────────────────────────────────
+            // OBSERVE CONTAINER SIDEBAR
             "   function startSidebarObserver() {" +
             "       let container = document.getElementById('conversationListId');" +
             "       if(!container) {" +
@@ -391,49 +354,30 @@ public class ZaloWebManager {
             "       window.zauto_sidebar_observer = new MutationObserver(mutations => {" +
             "           mutations.forEach(m => {" +
             "               try {" +
-            "                   m.addedNodes.forEach(node => {" +
-            "                       if(node.nodeType !== 1) return;" +
-            "                       if(node.classList && node.classList.contains('msg-item')) {" +
-            "                           scanConvItem(node);" +
-            "                       } else if(node.querySelectorAll) {" +
-            "                           node.querySelectorAll('.msg-item').forEach(scanConvItem);" +
-            "                       }" +
-            "                   });" +
-            "                   if(m.target && m.target.nodeType === 1) {" +
-            "                       let msgItem = m.target.closest ? m.target.closest('.msg-item') : null;" +
-            "                       if(msgItem) scanConvItem(msgItem);" +
-            "                   }" +
+            "                   let targetNode = m.target.nodeType === 3 ? m.target.parentNode : m.target;" +
+            "                   let msgItem = targetNode.closest('.msg-item');" +
+            "                   if(msgItem) scanConvItem(msgItem);" +
             "               } catch(e) {}" +
             "           });" +
             "       });" +
-            "       window.zauto_sidebar_observer.observe(container, {" +
-            "           childList: true," +
-            "           subtree: true," +
-            "           characterData: true," +
-            "           characterDataOldValue: true" +
-            "       });" +
+            "       window.zauto_sidebar_observer.observe(container, { childList: true, subtree: true, characterData: true });" +
             "       document.querySelectorAll('.msg-item').forEach(scanConvItem);" +
             "       collectGroups();" +
             "       ZAutoBridge.onLoginSuccess('Đã kết nối', '');" +
             "   }" +
 
-            // ─────────────────────────────────────────────
-            // WATCHDOG NGẦM & TỰ BẤM NÚT ĐỒNG BỘ
-            // ─────────────────────────────────────────────
+            // WATCHDOG + NÚT ĐỒNG BỘ
             "   function systemWatchdog() {" +
             "       ZAutoBridge.onHeartbeat(Date.now().toString());" +
             "       if(!navigator.onLine) { setTimeout(systemWatchdog, 10000); return; }" +
-            
-            // ĐÃ BỔ SUNG LẠI ĐOẠN BYPASS NÚT "ĐỒNG BỘ NGAY"
             "       try {" +
             "           let syncBtn = document.querySelector('.sync-msg-btn');" +
             "           if(!syncBtn) {" +
             "               let btns = document.querySelectorAll('button, div, span');" +
-            "               for(let b of btns) { if(b.innerText && b.innerText.includes('Đồng bộ ngay')) { syncBtn = b; break; } }" +
+            "               for(let b of btns) { if(b.innerText && (b.innerText.includes('Đồng bộ') || b.innerText.includes('Khôi phục'))) { syncBtn = b; break; } }" +
             "           }" +
             "           if(syncBtn) syncBtn.click();" +
             "       } catch(e) {}" +
-
             "       if(location.href.includes('/account') || document.querySelector('.qrcode, .login-container')) {" +
             "           window.last_login_reload = window.last_login_reload || 0;" +
             "           if(Date.now() - window.last_login_reload > 60000) {" +
@@ -451,6 +395,7 @@ public class ZaloWebManager {
             "       let nextTick = document.hidden ? 15000 : 3000;" +
             "       setTimeout(systemWatchdog, nextTick);" +
             "   }" +
+            "   setInterval(() => { let container = document.getElementById('conversationListId'); if(container) document.querySelectorAll('.msg-item').forEach(scanConvItem); }, 2000);" +
             "   setTimeout(startSidebarObserver, 1000);" +
             "   setTimeout(systemWatchdog, 3000);" +
             "})();";
@@ -484,7 +429,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // CÁC HÀM TIỆN ÍCH
+    // CÁC HÀM TIỆN ÍCH - GIỮ NGUYÊN KÍCH THƯỚC KHỔNG LỒ
     // =========================================================
     public static void updateWebViewBounds(
             final Activity activity,
@@ -501,13 +446,17 @@ public class ZaloWebManager {
                 FrameLayout.LayoutParams params =
                         (FrameLayout.LayoutParams) webLayout.getLayoutParams();
                 if (!visible) {
-                    webLayout.setAlpha(0.05f);
-                    params.leftMargin = 0; params.topMargin = 0;
-                    params.width = 2;      params.height = 2;
+                    webLayout.setAlpha(0.0f);
+                    params.leftMargin = -10000;
+                    params.topMargin = -10000;
+                    params.width = 1080;
+                    params.height = 2400;
                 } else {
                     webLayout.setAlpha(1.0f);
-                    params.leftMargin = x; params.topMargin = y;
-                    params.width = width;  params.height = height;
+                    params.leftMargin = x;
+                    params.topMargin = y;
+                    params.width = width;
+                    params.height = height;
                     if (hiddenWebView != null) {
                         hiddenWebView.invalidate();
                         hiddenWebView.requestLayout();
