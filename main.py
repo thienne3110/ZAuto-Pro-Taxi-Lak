@@ -1124,8 +1124,11 @@ class ZAutoProApp(MDApp):
 
         # 1. Bật Auto thì CHỐT LUÔN, không thèm đưa ra màn hình Canh me nữa
         if sw_auto_active:
-            reply_text = self.config_data.get('reply_msg', 'Ok nhận')
-            self.queue_reply(group, conversation_id, msg_id, reply_text)
+            raw_reply = self.config_data.get('reply_msg', 'Ok nhận')
+            replies = [r.strip() for r in raw_reply.split(',') if r.strip()]
+            final_reply = random.choice(replies) if replies else "Ok nhận"
+            
+            self.queue_reply(group, conversation_id, msg_id, final_reply)
         else:
             try:
                 self.ui_queue.put_nowait(('add_ride', (group, msg, msg_id, conversation_id)))
@@ -1265,8 +1268,13 @@ class ZAutoProApp(MDApp):
         except Exception: logger.error(traceback.format_exc())
 
     def manual_accept_ride(self, card_widget):
+        # Băm nhỏ các câu chốt theo dấu phẩy và bốc ngẫu nhiên 1 câu
+        raw_reply = self.root.ids.inp_reply.text
+        replies = [r.strip() for r in raw_reply.split(',') if r.strip()]
+        final_reply = random.choice(replies) if replies else "Ok nhận"
+
         # Lấy data ẩn ra và ném vào Hàng đợi Reply
-        self.queue_reply(card_widget.group_text, getattr(card_widget, 'conversation_id', ''), getattr(card_widget, 'msg_id', ''), self.root.ids.inp_reply.text)
+        self.queue_reply(card_widget.group_text, getattr(card_widget, 'conversation_id', ''), getattr(card_widget, 'msg_id', ''), final_reply)
         toast(f"Đang chốt: {card_widget.group_text}")
         self.remove_ride(card_widget)
 
