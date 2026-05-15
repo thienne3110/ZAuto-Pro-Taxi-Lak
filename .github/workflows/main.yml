@@ -37,9 +37,9 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.cache/pip
-          key: ${{ runner.os }}-gradle-pip-v25-${{ hashFiles('buildozer.spec') }}
+          key: ${{ runner.os }}-gradle-pip-v55-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-pip-v25-
+            ${{ runner.os }}-gradle-pip-v55-
 
       - name: ⚙️ Install System Dependencies
         run: |
