@@ -1097,9 +1097,15 @@ class ZAutoProApp(MDApp):
         if not getattr(self, 'is_radar_running', False): return
         if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
 
-        # FIX LỖI TỊT NGÒI: Tạo ID giả từ nội dung tin nhắn vì Sidebar không có msg_id
-        fake_msg_id = hashlib.md5(msg.encode('utf-8')).hexdigest()[:8]
-        cache_key = f"{group}_{fake_msg_id}"
+        # ƯU TIÊN DÙNG ID THẬT TỪ SIDEBAR, NẾU KHÔNG CÓ MỚI DÙNG MD5
+        real_msg_id = msg_id if msg_id else hashlib.md5(msg.encode('utf-8')).hexdigest()[:8]
+        cache_key = f"{group}_{real_msg_id}"
+        
+        if cache_key in self.processed_msg_hashes: return
+        self.processed_msg_hashes[cache_key] = True
+        
+        # Gán lại msg_id để lát nữa truyền xuống Java chốt cho đúng tin
+        msg_id = real_msg_id
         
         if cache_key in self.processed_msg_hashes: return
         self.processed_msg_hashes[cache_key] = True
