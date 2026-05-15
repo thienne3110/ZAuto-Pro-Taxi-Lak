@@ -292,13 +292,9 @@ public class ZaloWebManager {
             "   window.zauto_seen = {};" +
             "   window.zauto_seen_keys = [];" +
 
-            // HÀM GỬI REPLY DÙNG API NỘI BỘ ZALO
-            "   window.zautoSendReply = function(convId, msgId, text, groupName) {" +
+            // HÀM GỬI REPLY THÔNG MINH (TRÍCH DẪN NẾU CÓ, KHÔNG THÌ GỬI THƯỜNG - PHƯƠNG ÁN 2)
+            "   window.zautoSendReply = function(convId, fakeMsgId, text, groupName) {" +
             "       try {" +
-            "           if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
-            "               window.zMessenger.sendMessage({ toid: convId, msg: text, quote_msgId: msgId, type: 1 });" +
-            "               return;" +
-            "           }" +
             "           let item = document.querySelector('.msg-item[anim-data-id=\"'+convId+'\"] .conv-item');" +
             "           if(item) {" +
             "               let key = Object.keys(item).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
@@ -306,14 +302,35 @@ public class ZaloWebManager {
             "                   if (item[key].onClick) item[key].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
             "                   else if (item[key].return && item[key].return.memoizedProps.onClick) item[key].return.memoizedProps.onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
             "               } else { item.click(); }" +
-            "               setTimeout(() => {" +
-            "                   let input = document.getElementById('richInput');" +
-            "                   if(input) { input.innerHTML = text; input.dispatchEvent(new Event('input', {bubbles:true})); let btn = document.querySelector('.btn-send'); if(btn) btn.click(); }" +
-            "               }, 800);" +
             "           }" +
+            "           setTimeout(() => {" +
+            "               let realMsgId = '';" +
+            "               try {" +
+            "                   let msgs = document.querySelectorAll('[id^=\"msg_\"]');" +
+            "                   if (msgs && msgs.length > 0) {" +
+            "                       let lastMsg = msgs[msgs.length - 1];" +
+            "                       realMsgId = lastMsg.getAttribute('id').substring(4);" +
+            "                   }" +
+            "               } catch(err) { realMsgId = ''; }" +
+            
+            "               if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
+            "                   let req = { toid: convId, msg: text, type: 1 };" +
+            "                   if (realMsgId && realMsgId !== '') {" +
+            "                       req.quote_msgId = realMsgId;" +
+            "                   }" +
+            "                   window.zMessenger.sendMessage(req);" +
+            "               } else {" +
+            "                   let input = document.getElementById('richInput');" +
+            "                   if(input) {" +
+            "                       input.innerHTML = text; " +
+            "                       input.dispatchEvent(new Event('input', {bubbles:true})); " +
+            "                       let btn = document.querySelector('.btn-send'); " +
+            "                       if(btn) btn.click(); " +
+            "                   }" +
+            "               }" +
+            "           }, 800);" +
             "       } catch(e) {}" +
             "   };" +
-
             // HÀM QUÉT SIDEBAR
             "   function scanConvItem(msgItemEl) {" +
             "       try {" +
@@ -330,12 +347,12 @@ public class ZaloWebManager {
             "           if(window.zauto_seen[fp]) return;" +
             "           window.zauto_seen[fp] = true;" +
             "           window.zauto_seen_keys.push(fp);" +
-            "           if(window.zauto_seen_keys.length > 800) {" +
+"           if(window.zauto_seen_keys.length > 800) {" +
             "               let old = window.zauto_seen_keys.splice(0, 100);" +
             "               old.forEach(k => delete window.zauto_seen[k]);" +
             "           }" +
             "           if (Date.now() - window.zauto_boot_time > 8000) {" +
-            "               ZAutoBridge.onNewWebMsg(groupName, msgText, convId, convId);" +
+            "               ZAutoBridge.onNewWebMsg(groupName, msgText, '', convId);" +
             "           }" +
             "       } catch(e) {}" +
             "   }" +
