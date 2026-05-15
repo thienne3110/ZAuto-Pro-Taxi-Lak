@@ -29,7 +29,7 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
 
-      # ĐỔI KHÓA CACHE SANG V7 ĐỂ ÉP HỆ THỐNG QUÊN ĐI LỖI 403 CŨ
+      # ĐỔI KHÓA CACHE SANG V8 ĐỂ ÉP HỆ THỐNG QUÊN ĐI MANIFEST CŨ
       - name: ⚡ Cache Gradle & Pip
         uses: actions/cache@v3
         with:
@@ -37,9 +37,9 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.cache/pip
-          key: ${{ runner.os }}-gradle-pip-v7-${{ hashFiles('buildozer.spec') }}
+          key: ${{ runner.os }}-gradle-pip-v8-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-gradle-pip-v7-
+            ${{ runner.os }}-gradle-pip-v8-
 
       - name: ⚙️ Install System Dependencies
         run: |
@@ -57,10 +57,11 @@ jobs:
           pip install setuptools wheel
           pip install Cython==0.29.36 buildozer==1.5.0
 
+      # ĐÃ THÊM FILE manifest_services.xml VÀO DANH SÁCH KIỂM TRA BẮT BUỘC
       - name: 🛡️ Fail-Fast (Kiểm dịch cấu trúc)
         run: |
           find . -type f -name "*.py" -not -path "*/\.buildozer/*" -not -path "*/bin/*" -print -exec python -m py_compile {} \;
-          FILES_TO_CHECK=("java/org/zauto/ZaloForegroundService.java" "java/org/zauto/ZaloWebManager.java" "res/xml/accessibility_config.xml" "buildozer.spec")
+          FILES_TO_CHECK=("java/org/zauto/ZaloForegroundService.java" "java/org/zauto/ZaloWebManager.java" "res/xml/accessibility_config.xml" "manifest_services.xml" "buildozer.spec")
           for FILE in "${FILES_TO_CHECK[@]}"; do
             if [ ! -f "$FILE" ]; then echo "::error::THIẾU FILE: $FILE"; exit 1; fi
           done
