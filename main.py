@@ -770,16 +770,8 @@ class ZAutoProApp(MDApp):
                 # Kích hoạt UI Queue Processor chạy 0.1s/lần
                 Clock.schedule_interval(self._process_ui_queue, 0.1)
 
-                if not hasattr(self, 'receiver_started'):
-                    self.br = BroadcastReceiver(self.on_broadcast_received, 
-                            actions=[
-                                'org.zauto.LOGIN_SUCCESS',
-                                'org.zauto.WEB_NEW_MSG',
-                                'org.zauto.GROUPS_DATA',
-                                'org.zauto.REPLY_RESULT',
-                            ])
-                    self.br.start()
-                    self.receiver_started = True
+                # THAY THẾ BROADCAST BẰNG POLLING HÀNG ĐỢI JAVA TỐC ĐỘ CAO
+                Clock.schedule_interval(self._poll_java_queue, 0.2)
             except Exception as e:
                 logger.error(f"Lỗi on_start: {traceback.format_exc()}")
     def update_group_list_ui(self, groups):
@@ -1090,44 +1082,58 @@ class ZAutoProApp(MDApp):
             except: pass
         except Exception as e:
             logger.error(f"Lỗi remove_ride: {e}")
-    def on_broadcast_received(self, context, intent):
-        action = intent.getAction()
-        
-        # ĐÃ XÓA CHỮ .taxi Ở ĐÂY ĐỂ KHỚP VỚI JAVA
-        if action == 'org.zauto.LOGIN_SUCCESS':
-            self.is_linked = True
-            zalo_name = intent.getStringExtra("zalo_name")
-            zalo_avatar = intent.getStringExtra("zalo_avatar")
-            if zalo_name: self.config_data['zalo_name'] = zalo_name
-            if zalo_avatar: self.config_data['zalo_avatar'] = zalo_avatar
-            Clock.schedule_once(lambda dt: self.save_config_silent())
-            Clock.schedule_once(lambda dt: self.update_profile_ui())
-            Clock.schedule_once(lambda dt: toast("Đã liên kết Zalo Web thành công!"))
-            return
-            
-        # ĐÃ XÓA CHỮ .taxi Ở ĐÂY
-        if action == 'org.zauto.GROUPS_DATA':
+    def _poll_java_queue(self, dt):
+        if platform == 'android':
             try:
-                groups_json = intent.getStringExtra("groups_list")
-                if groups_json:
-                    groups = json.loads(groups_json)
-                    Clock.schedule_once(lambda dt: self.update_group_list_ui(groups))
-            except Exception as e: logger.error(f"GROUPS_DATA Error: {e}")
-            return
-            
-        # ĐÃ XÓA CHỮ .taxi Ở ĐÂY
-        if action == 'org.zauto.WEB_NEW_MSG':
-            payload = {
-                'group': intent.getStringExtra("group") or "",
-                'msg': intent.getStringExtra("msg") or "",
-                'msg_id': intent.getStringExtra("msg_id") or "", 
-                'conversation_id': intent.getStringExtra("conversation_id") or ""
-            }
-            if payload['group'] and payload['msg']:
-                try:
-                    self.msg_queue.put(('WEB_NEW_MSG', payload), timeout=0.3)
-                except queue.Full:
-                    logger.warning("msg_queue full bỏ qua Broadcast")
+                from jnius import autoclass
+                ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
+                
+                # Rút tin nhắn liên tục từ RAM Java
+                while not ZaloWebManager.pythonMsgQueue.isEmpty():
+                    raw_msg = ZaloWebManager.pythonMsgQueue.poll()
+                    if not raw_msg: continue
+                    
+                    parts = raw_msg.split("|||")
+                    action = parts[0]
+                    
+                    if action == 'LOGIN_SUCCESS':
+                        self.is_linked = True
+                        zalo_name = parts[1] if len(parts) > 1 else ""
+                        zalo_avatar = parts[2] if len(parts) > 2 else ""
+                        if zalo_name: self.config_data['zalo_name'] = zalo_name
+                        if zalo_avatar: self.config_data['zalo_avatar'] = zalo_avatar
+                        self.save_config_silent()
+                        self.update_profile_ui()
+                        toast("Đã liên kết Zalo Web thành công!")
+                        
+                    elif action == 'GROUPS_DATA':
+                        groups_json = parts[1] if len(parts) > 1 else ""
+                        if groups_json:
+                            try:
+                                groups = json.loads(groups_json)
+                                self.update_group_list_ui(groups)
+                            except Exception as e:
+                                logger.error(f"GROUPS_DATA Error: {e}")
+                                
+                    elif action == 'WEB_NEW_MSG':
+                        group = parts[1] if len(parts) > 1 else ""
+                        msg = parts[2] if len(parts) > 2 else ""
+                        msg_id = parts[3] if len(parts) > 3 else ""
+                        conv_id = parts[4] if len(parts) > 4 else ""
+                        
+                        if group and msg:
+                            payload = {
+                                'group': group,
+                                'msg': msg,
+                                'msg_id': msg_id,
+                                'conversation_id': conv_id
+                            }
+                            try:
+                                self.msg_queue.put(('WEB_NEW_MSG', payload), timeout=0.3)
+                            except queue.Full:
+                                logger.warning("msg_queue full bỏ qua")
+            except Exception as e:
+                pass # Bỏ qua lỗi jnius khi khởi động
 
     def add_ride_card(self, group, msg, msg_id="", conversation_id=""):
         try:
