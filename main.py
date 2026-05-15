@@ -496,8 +496,11 @@ MDScreen:
                                 helper_text: "Ví dụ: 16c, xe tải"
                                 helper_text_mode: "on_focus"
                             MDTextField:
-                                id: inp_reply
-                                hint_text: "Nội dung trả lời tự động"
+                                id: inp_delay
+                                hint_text: "Thời gian chốt cuốc mới (giây)"
+                                text: "30"
+                                input_filter: "int"
+                                helper_text: "Khoảng cách giữa 2 lần chốt (giây)"
                                 helper_text_mode: "on_focus"
                         
                         MDRaisedButton:
@@ -716,8 +719,10 @@ class ZAutoProApp(MDApp):
         self.theme_cls.primary_palette = "Blue"
         self.config_data = {
             'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận', 'gia_km': '12000',
+            'global_delay': '30', # Thêm dòng này
             'sw_filter': False, 'sw_auto': False, 'is_linked': False
         }
+        self.last_global_reply_time = 0 # Thêm dòng này để theo dõi thời gian chốt cuối cùng
         self.is_linked = False # Khai báo mặc định là chưa liên kết
         self.root = Builder.load_string(KV)
         
@@ -1014,9 +1019,9 @@ class ZAutoProApp(MDApp):
         if not getattr(self, 'is_radar_running', False): return
         if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
 
-        # TỐI ƯU CPU TUYỆT ĐỐI: Dùng thẳng ID tin nhắn làm Key (Không cần hash)
-        # Thêm dấu "_" để tách biệt rõ ràng, chống lỗi dính chùm chuỗi
-        cache_key = f"{group}_{msg_id}"
+        # FIX LỖI TỊT NGÒI: Tạo ID giả từ nội dung tin nhắn vì Sidebar không có msg_id
+        fake_msg_id = hashlib.md5(msg.encode('utf-8')).hexdigest()[:8]
+        cache_key = f"{group}_{fake_msg_id}"
         
         if cache_key in self.processed_msg_hashes: return
         self.processed_msg_hashes[cache_key] = True
@@ -1157,25 +1162,41 @@ class ZAutoProApp(MDApp):
     def queue_reply(self, group, conversation_id, msg_id, reply_text):
         now = time.time()
         
-        # Chỉ lọc trùng chính xác theo ID tin nhắn, KHÔNG DÙNG block 1.5s nữa
+        # 1. Lấy thời gian chờ từ cấu hình người dùng (mặc định 30s)
+        try:
+            user_delay = float(self.config_data.get('global_delay', '30'))
+        except:
+            user_delay = 30.0
+
+        # 2. KIỂM TRA TOÀN CỤC: Nếu vừa chốt xong 1 cuốc bất kỳ, thì phải đợi đủ thời gian
+        # Đây chính là cơ chế "nhận 1 nhóm rồi thì nhóm sau bỏ chờ"
+        time_passed = now - getattr(self, 'last_global_reply_time', 0)
+        if time_passed < user_delay:
+            logger.info(f"Đang trong thời gian chờ chốt cuốc mới. Còn {int(user_delay - time_passed)} giây.")
+            return 
+
+        # 3. Lọc trùng chính xác tin nhắn cũ (giữ nguyên)
         cache_key = f"{conversation_id}_{msg_id}"
         if now - self.last_reply_time.get(cache_key, 0) < 30: return 
         self.last_reply_time[cache_key] = now
 
-        # BACKPRESSURE: Chặn Queue Overflow
-        if self.reply_queue.qsize() > 40:
-            logger.warning("Reply queue overload")
-            return
-
+        if self.reply_queue.qsize() > 40: return
+        
         try:
+            # Ghi nhận thời điểm chốt THÀNH CÔNG để bắt đầu tính thời gian chờ cho cuốc tiếp theo
+            self.last_global_reply_time = now 
+            
             self.reply_queue.put({
                 'group': group, 
                 'conversation_id': conversation_id, 
                 'msg_id': msg_id, 
                 'reply_text': reply_text
             }, timeout=0.3)
-        except queue.Full:
-            logger.warning("reply_queue timeout")
+            
+            # Thông báo cho tài xế biết hệ thống sẽ tạm nghỉ X giây
+            self.safe_toast(f"Đã chốt {group}. Tạm dừng quét {int(user_delay)}s.")
+            
+        except queue.Full: pass
 
     @run_on_ui_thread
     def _execute_reply_safe(self, payload):
@@ -1219,6 +1240,7 @@ class ZAutoProApp(MDApp):
             if ids.get('inp_nhan'): ids.inp_nhan.text = self.config_data.get('nhan', '')
             if ids.get('inp_loai'): ids.inp_loai.text = self.config_data.get('loai', '')
             if ids.get('inp_reply'): ids.inp_reply.text = self.config_data.get('reply_msg', 'Ok nhận')
+            if ids.get('inp_delay'): ids.inp_delay.text = self.config_data.get('global_delay', '30')
             if ids.get('sw_filter'): ids.sw_filter.active = self.config_data.get('sw_filter', False)
             
             is_auto = self.config_data.get('sw_auto', False)
@@ -1265,6 +1287,7 @@ class ZAutoProApp(MDApp):
             if ids.get('inp_nhan'): self.config_data['nhan'] = ids.inp_nhan.text
             if ids.get('inp_loai'): self.config_data['loai'] = ids.inp_loai.text
             if ids.get('inp_reply'): self.config_data['reply_msg'] = ids.inp_reply.text
+            if ids.get('inp_delay'): self.config_data['global_delay'] = ids.inp_delay.text
             if ids.get('sw_filter'): self.config_data['sw_filter'] = ids.sw_filter.active
             if ids.get('sw_auto_main'): self.config_data['sw_auto'] = ids.sw_auto_main.active
             self.config_data['enabled_groups'] = self.enabled_groups
