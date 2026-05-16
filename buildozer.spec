@@ -16,7 +16,7 @@ presplash.color = #FFFFFF
 # =====================================================
 # REQUIREMENTS (Tuyệt đối KHÔNG có Pillow)
 # =====================================================
-requirements = python3,kivy==2.2.1,kivymd==1.1.1,pyjnius
+requirements = python3,kivy,kivymd==1.1.1,pyjnius
 
 # =====================================================
 # ANDROID CONFIG (Chuẩn 2026 Ít Lỗi Nhất)
@@ -41,10 +41,9 @@ android.foreground_service = True
 android.manifest_queries = com.zing.zalo
 
 # =====================================================
-# PERMISSIONS 
+# PERMISSIONS 
 # =====================================================
-# ĐÃ BỔ SUNG: READ_EXTERNAL_STORAGE, WRITE_EXTERNAL_STORAGE CHỐNG GIAN LẬN
-android.permissions = INTERNET,WAKE_LOCK,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,POST_NOTIFICATIONS,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,RECEIVE_BOOT_COMPLETED,SYSTEM_ALERT_WINDOW,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,READ_EXTERNAL_STORAGE,WRITE_EXTERNAL_STORAGE
+android.permissions = INTERNET,WAKE_LOCK,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,POST_NOTIFICATIONS,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,RECEIVE_BOOT_COMPLETED,SYSTEM_ALERT_WINDOW,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
 
 # =====================================================
 # MANIFEST (Trỏ đến file bên ngoài để chống lỗi Buildozer)
