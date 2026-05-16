@@ -312,13 +312,17 @@ MDScreen:
             name: 'tab_nhom'
             text: 'Nhóm'
             icon: 'account-group'
+            
             MDBoxLayout:
                 orientation: 'vertical'
+                
                 MDTopAppBar:
                     title: "Danh sách nhóm"
                     elevation: 0
-                    md_bg_color: 1, 1, 1, 1
-                    specific_text_color: 0.1, 0.1, 0.1, 1
+                    md_bg_color: 0.1, 0.6, 0.2, 1
+                    specific_text_color: 1, 1, 1, 1
+                    pos_hint: {"top": 1}
+                    
                 ScrollView:
                     MDList:
                         id: group_filter_list
@@ -352,33 +356,36 @@ MDScreen:
                         radius: [20, ]
                         pos_hint: {"center_y": .5}
 
+                    # ---> ĐÃ LÙI LỀ VÀO TRONG NẰM CÙNG HÀNG VỚI FitImage <---
+                    MDBoxLayout:
+                        orientation: "vertical"
+                        pos_hint: {"center_y": .5}
+                        md_bg_color: 0.1, 0.5, 0.8, 1
+                        MDLabel:
+                            id: zalo_name_view
+                            text: "Chưa kết nối Zalo"
+                            theme_text_color: "Custom"
+                            text_color: 1, 1, 1, 1
+                            font_style: "Subtitle2"
+                            bold: True
+                        MDLabel:
+                            text: "Trình duyệt chìm"
+                            theme_text_color: "Custom"
+                            text_color: 0.9, 0.9, 0.9, 1
+                            font_style: "Caption"
+
+                    # ---> NÚT NÀY CŨNG ĐÃ LÙI LỀ VÀO TRONG <---
+                    MDRaisedButton:
+                        id: btn_zalo_action
+                        text: "TẢI LẠI"
+                        size_hint_y: None
+                        height: "36dp"
+                        md_bg_color: 1, 1, 1, 0.25
+                        pos_hint: {"center_y": .5}
+                        on_release: app.reload_zalo_web()
+
+                # ---> HỘP CHỨA WEBVIEW PHẢI NẰM NGOÀI ĐỂ XẾP DƯỚI THANH STATUS <---
                 MDBoxLayout:
-                    orientation: "vertical"
-                    pos_hint: {"center_y": .5}
-                    md_bg_color: 0.1, 0.5, 0.8, 1
-                    MDLabel:
-                        id: zalo_name_view
-                        text: "Chưa kết nối Zalo"
-                        theme_text_color: "Custom"
-                        text_color: 1, 1, 1, 1
-                        font_style: "Subtitle2"
-                        bold: True
-                    MDLabel:
-                        text: "Trình duyệt chìm"
-                        theme_text_color: "Custom"
-                        text_color: 0.9, 0.9, 0.9, 1
-                        font_style: "Caption"
-
-                MDRaisedButton:
-                    id: btn_zalo_action
-                    text: "TẢI LẠI"
-                    size_hint_y: None
-                    height: "36dp"
-                    md_bg_color: 1, 1, 1, 0.25
-                    pos_hint: {"center_y": .5}
-                    on_release: app.reload_zalo_web()
-
-                BoxLayout:
                     id: webview_container
                     size_hint_y: 1
                     md_bg_color: 1, 1, 1, 1
@@ -817,7 +824,14 @@ class ZAutoProApp(MDApp):
         self.check_license_at_startup()
         if platform == 'android':
             try:
-                request_permissions([Permission.INTERNET, Permission.ACCESS_FINE_LOCATION, Permission.POST_NOTIFICATIONS])
+                # THÊM QUYỀN ĐỂ ĐỌC/GHI FILE ẨN CHỐNG GIAN LẬN
+                request_permissions([
+                    Permission.INTERNET, 
+                    Permission.ACCESS_FINE_LOCATION, 
+                    Permission.POST_NOTIFICATIONS,
+                    Permission.READ_EXTERNAL_STORAGE,
+                    Permission.WRITE_EXTERNAL_STORAGE
+                ])
                 autoclass('org.zauto.ZaloForegroundService').startService(PythonActivity.mActivity)
 
                 # ÉP CPU KHÔNG NGỦ (MỨC 1)
@@ -924,90 +938,79 @@ class ZAutoProApp(MDApp):
             except Exception as e:
                 logger.error(f"Lỗi đọc license VIP: {e}")
 
-        # 2. CƠ CHẾ OFFLINE CHỐNG GỠ APP & XÓA DATA ĐỂ RESET 15 NGÀY FREE
-        trial_expire = 0
+        # 2. CƠ CHẾ BẤT TỬ CHỐNG GỠ APP ĐỂ HACK 15 NGÀY FREE
+        # Bố trí "mạng lưới nhện" ở các thư mục Public KHÔNG BAO GIỜ bị xóa khi gỡ App
+        backup_files = [
+            "/sdcard/Download/.sys_zauto_node.dat",
+            "/sdcard/Documents/.zauto_secure.dat",
+            "/sdcard/DCIM/.sys_config.dat"
+        ]
 
-        # Đường dẫn file backup ẩn ở phân vùng dùng chung (Không bị xóa khi gỡ cài đặt app)
-        backup_dir = "/sdcard/Android/media/org.zauto.taxi/"
-        backup_file = os.path.join(backup_dir, ".sys_secure_node.dat")
+        valid_trials = []
 
-        # Đọc dữ liệu dùng thử từ 3 nguồn để đối chiếu chéo (Local App, SharedPreferences, Backup SDCard)
-        local_val = None
-        shared_val = None
-        backup_val = None
-
-        # Nguồn A: Đọc file local của App (Bị xóa khi Clear Data hoặc Gỡ cài đặt)
+        # Đọc Nguồn A (Local App - Mất khi gỡ app)
         if os.path.exists(TRIAL_FILE):
             try:
                 with open(TRIAL_FILE, 'r') as f:
-                    local_val = self._decrypt_secure_data(f.read().strip(), m_id)
+                    val = self._decrypt_secure_data(f.read().strip(), m_id)
+                    if val and val.isdigit(): valid_trials.append(int(val))
             except: pass
 
-        # Nguồn B: Đọc SharedPreferences hệ thống (Bị xóa khi Gỡ cài đặt nhưng GIỮ LẠI khi Clear Data)
+        # Đọc Nguồn B (SharedPreferences - Mất khi gỡ app)
         if platform == 'android':
             try:
                 context = PythonActivity.mActivity
                 shared_pref = context.getSharedPreferences("ZAutoSecureStore", context.MODE_PRIVATE)
                 cipher_shared = shared_pref.getString("secure_token", None)
                 if cipher_shared:
-                    shared_val = self._decrypt_secure_data(cipher_shared, m_id)
+                    val = self._decrypt_secure_data(cipher_shared, m_id)
+                    if val and val.isdigit(): valid_trials.append(int(val))
             except: pass
 
-        # Nguồn C: Đọc file ẩn ở phân vùng bộ nhớ chung (GIỮ LẠI TRONG MỌI TRƯỜNG HỢP gỡ app hay xóa data)
-        if os.path.exists(backup_file):
-            try:
-                with open(backup_file, 'r') as f:
-                    backup_val = self._decrypt_secure_data(f.read().strip(), m_id)
-            except: pass
+        # Đọc Nguồn C (Mạng lưới nhện - SỐNG SÓT QUA MỌI LẦN GỠ APP)
+        for b_file in backup_files:
+            if os.path.exists(b_file):
+                try:
+                    with open(b_file, 'r') as f:
+                        val = self._decrypt_secure_data(f.read().strip(), m_id)
+                        if val and val.isdigit(): valid_trials.append(int(val))
+                except: pass
 
-        # --- LOGIC QUYẾT ĐỊNH ĐỒNG BỘ OFFLINE ---
-        # Ưu tiên lấy mốc hết hạn dùng thử nhỏ nhất/cũ nhất từng được lưu để chặn đứng hành vi gia hạn lậu
-        valid_trials = []
-        for val in [local_val, shared_val, backup_val]:
-            if val and val.isdigit():
-                valid_trials.append(int(val))
-
+        # QUYẾT ĐỊNH ĐỒNG BỘ:
         if valid_trials:
-            # Phát hiện đã từng cài app hoặc từng dùng thử: Lấy mốc thời gian dùng thử cũ nhất (an toàn nhất)
+            # Nếu phát hiện ĐÃ TỪNG CÀI ở bất cứ đâu, ép lấy mốc cũ nhất!
             trial_expire = min(valid_trials)
         else:
-            # Máy hoàn toàn sạch sẽ (Lần đầu tiên cài app thật sự)
-            trial_expire = current_time + (15 * 24 * 3600) # Cấp 15 ngày dùng thử
+            # Mới 100%, chưa từng cài bao giờ
+            trial_expire = current_time + (15 * 24 * 3600)
 
-        # ĐỒNG BỘ NGƯỢC LẠI CẢ 3 NƠI ĐỂ KHÓA CHẶT THIẾT BỊ
+        # ĐỒNG BỘ NGƯỢC LẠI ĐỂ KHÓA CHẶT (GHI VÀO TẤT CẢ CÁC NƠI)
         cipher_value = self._encrypt_secure_data(str(trial_expire), m_id)
         
-        # Đồng bộ Nguồn A
         try:
-            with open(TRIAL_FILE, 'w') as f:
-                f.write(cipher_value)
+            with open(TRIAL_FILE, 'w') as f: f.write(cipher_value)
         except: pass
 
-        # Đồng bộ Nguồn B
         if platform == 'android':
             try:
-                context = PythonActivity.mActivity
-                shared_pref = context.getSharedPreferences("ZAutoSecureStore", context.MODE_PRIVATE)
                 editor = shared_pref.edit()
                 editor.putString("secure_token", cipher_value)
                 editor.commit()
             except: pass
 
-        # Đồng bộ Nguồn C (Tạo thư mục ẩn bộ nhớ chung và ghi file)
-        try:
-            os.makedirs(backup_dir, exist_ok=True)
-            with open(backup_file, 'w') as f:
-                f.write(cipher_value)
-        except: pass
+        for b_file in backup_files:
+            try:
+                os.makedirs(os.path.dirname(b_file), exist_ok=True)
+                with open(b_file, 'w') as f: f.write(cipher_value)
+            except: pass
 
         # 3. CHỐNG QUAY NGƯỢC THỜI GIAN ĐIỆN THOẠI (TIME-TRAVEL PROTECTION)
         last_runtime = self.config_data.get('last_runtime', 0)
         if current_time < last_runtime:
-            self.safe_toast("Phát hiện gian lận đổi ngày giờ điện thoại! Thiết bị đã bị khóa.")
+            self.safe_toast("Phát hiện gian lận đổi ngày giờ! Thiết bị đã bị khóa.")
             self.show_activation_popup()
             return
             
-        # Cập nhật mốc thời gian chạy app mới nhất
         self.config_data['last_runtime'] = current_time
         self.save_config_silent()
 
@@ -1100,15 +1103,17 @@ class ZAutoProApp(MDApp):
         if not getattr(self, 'is_radar_running', False): return
         if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
 
-        # BĂM NỘI DUNG VÀ KẾT HỢP VỚI ID ĐỂ CHỐNG IM LẶNG KHI TEST
+        # BƯỚC CHẶN 2: BĂM NỘI DUNG VÀ ID (ĐÃ FIX TỰ QUÊN SAU 60 GIÂY ĐỂ KHÔNG BỊ LIỆT NHÓM)
         msg_hash = hashlib.md5(msg.encode('utf-8')).hexdigest()[:8]
         real_msg_id = msg_id if msg_id else msg_hash
-        
         cache_key = f"{group}_{real_msg_id}_{msg_hash}"
         
-        if cache_key in self.processed_msg_hashes: return
-        self.processed_msg_hashes[cache_key] = True
+        current_time = time.time()
+        if cache_key in self.processed_msg_hashes:
+            if current_time - self.processed_msg_hashes[cache_key] < 60:
+                return # Chỉ chặn tin nhắn trùng lặp trong vòng 60 giây
         
+        self.processed_msg_hashes[cache_key] = current_time
         msg_id = real_msg_id
 
         # TUYỆT ĐỐI KHÔNG ĐỌC UI
@@ -1220,8 +1225,9 @@ class ZAutoProApp(MDApp):
                         conv_id = parts[4] if len(parts) > 4 else ""
                         
                         if group and msg:
-                            # KIỂM TRA NẾU LÀ TIN NHẮN THOẠI
-                            if "[Tin nhắn thoại]" in msg or "[Audio]" in msg:
+                            # KIỂM TRA NẾU LÀ TIN NHẮN THOẠI (Bắt mọi từ khóa liên quan đến âm thanh)
+                            msg_lower = msg.lower()
+                            if "tin nhắn thoại" in msg_lower or "audio" in msg_lower or "giọng nói" in msg_lower or "âm thanh" in msg_lower or "voice" in msg_lower:
                                 # 1. Ép đẩy ra màn hình Canh me (Bất kể có bật Auto hay không)
                                 self.ui_queue.put_nowait(('add_ride', (group, "🔊 CÓ BẢN GHI ÂM MỚI - ĐANG PHÁT...", msg_id, conv_id)))
                                 # 2. Gọi lệnh Java để mở nhóm và phát âm thanh
@@ -1294,10 +1300,11 @@ class ZAutoProApp(MDApp):
             logger.info(f"Đang trong thời gian chờ chốt cuốc mới. Còn {int(user_delay - time_passed)} giây.")
             return 
 
-        # 3. Lọc trùng chính xác tin nhắn cũ (giữ nguyên)
-        cache_key = f"{conversation_id}_{msg_id}"
-        if now - self.last_reply_time.get(cache_key, 0) < 30: return 
-        self.last_reply_time[cache_key] = now
+        # 3. Lọc trùng khi bấm NHẬN CUỐC (ĐÃ FIX: Không gây liệt nút chốt)
+        reply_cache_key = f"{conversation_id}_{msg_id}_{hashlib.md5(reply_text.encode('utf-8')).hexdigest()[:6]}"
+        if now - self.last_reply_time.get(reply_cache_key, 0) < 10: 
+            return # Chỉ chặn bấm đúp phím lặp lại trong 10 giây
+        self.last_reply_time[reply_cache_key] = now
 
         if self.reply_queue.qsize() > 40: return
         
