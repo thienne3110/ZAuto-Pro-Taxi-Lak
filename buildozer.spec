@@ -4,10 +4,12 @@
 # APP INFO
 # =====================================================
 title = ZAuto VIP
+
 package.name = zauto
 package.domain = org.zauto
 
 source.dir = .
+
 source.include_exts = py,png,jpg,jpeg,kv,json,xml,java,db,ttf,otf,txt,html,css,js
 
 version = 7.0
@@ -16,15 +18,16 @@ orientation = portrait
 fullscreen = 0
 
 icon.filename = profile.jpg
+presplash.filename = profile.jpg
 presplash.color = #FFFFFF
 
 # =====================================================
-# PYTHON / KIVY (ỔN ĐỊNH NHẤT 2026)
+# PYTHON / KIVY
 # =====================================================
-requirements = python3==3.11.9,kivy==2.2.1,kivymd==1.1.1,pyjnius,requests
+requirements = python3,kivy==2.2.1,kivymd==1.1.1,pyjnius,requests
 
 # =====================================================
-# BUILD SETTINGS
+# LOG
 # =====================================================
 log_level = 2
 warn_on_root = 0
@@ -40,15 +43,14 @@ android.ndk = 25b
 android.accept_sdk_license = True
 
 # =====================================================
-# ARCH
+# ARCHITECTURE
 # =====================================================
 android.archs = arm64-v8a
 
 # =====================================================
-# P4A / BOOTSTRAP
+# P4A
 # =====================================================
 p4a.bootstrap = sdl2
-p4a.branch = master
 
 # =====================================================
 # ANDROIDX
@@ -56,13 +58,13 @@ p4a.branch = master
 android.enable_androidx = True
 
 # =====================================================
-# JAVA / RES
+# JAVA / RESOURCES
 # =====================================================
 android.add_src = ./java
 android.add_res = ./res
 
 # =====================================================
-# JAVA DEPENDENCIES
+# GRADLE DEPENDENCIES
 # =====================================================
 android.gradle_dependencies = androidx.core:core:1.12.0,androidx.webkit:webkit:1.7.0
 
@@ -70,6 +72,7 @@ android.gradle_dependencies = androidx.core:core:1.12.0,androidx.webkit:webkit:1
 # APK OUTPUT
 # =====================================================
 android.release_artifact = apk
+android.package_format = apk
 
 # =====================================================
 # FOREGROUND SERVICE
@@ -77,7 +80,7 @@ android.release_artifact = apk
 android.foreground_service = True
 
 # =====================================================
-# QUERY ZALO PACKAGE (ANDROID 11+)
+# PACKAGE QUERY
 # =====================================================
 android.manifest_queries = com.zing.zalo
 
@@ -87,12 +90,12 @@ android.manifest_queries = com.zing.zalo
 android.permissions = INTERNET,WAKE_LOCK,FOREGROUND_SERVICE,FOREGROUND_SERVICE_DATA_SYNC,POST_NOTIFICATIONS,ACCESS_NETWORK_STATE,ACCESS_WIFI_STATE,RECEIVE_BOOT_COMPLETED,SYSTEM_ALERT_WINDOW,REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
 
 # =====================================================
-# MANIFEST SERVICES
+# MANIFEST EXTRA
 # =====================================================
 android.extra_manifest_application = %(source.dir)s/manifest_services.xml
 
 # =====================================================
-# SERVICE CONFIG
+# JAVA SERVICE
 # =====================================================
 services = ZaloForegroundService:java
 
@@ -102,84 +105,49 @@ services = ZaloForegroundService:java
 android.gradle_args = -Xmx4096m
 
 # =====================================================
-# KIVY OPTIMIZATION
+# OPENGL
 # =====================================================
-android.presplash_lottie = 0
+android.opengl_es_version = 2
 
 # =====================================================
-# IGNORE FILES KHÔNG CẦN BUILD
+# BUILD PERFORMANCE
+# =====================================================
+android.copy_libs = 1
+
+# =====================================================
+# DEBUG LOGCAT
+# =====================================================
+android.logcat_filters = python:D *:S
+
+# =====================================================
+# BUILD FIX
+# =====================================================
+android.skip_update = False
+
+# =====================================================
+# EXCLUDE FILES
 # =====================================================
 source.exclude_dirs = venv,.venv,env,.git,.github,__pycache__,bin,.buildozer
 
 source.exclude_patterns = *.pyc,*.pyo,*.log,*.tmp
 
 # =====================================================
-# UTF-8 FIX
-# =====================================================
-android.encoding = utf-8
-
-# =====================================================
-# DEBUG
-# =====================================================
-android.logcat_filters = python:D *:S
-
-# =====================================================
-# BUILD TIMEOUT FIX
-# =====================================================
-android.skip_update = False
-
-# =====================================================
-# PACKAGE FORMAT
-# =====================================================
-android.package_format = apk
-
-# =====================================================
-# SPLASH
-# =====================================================
-presplash.filename = profile.jpg
-
-# =====================================================
-# ORIENTATION FIX
-# =====================================================
-orientation = portrait
-
-# =====================================================
-# EXTRA ASSETS
+# ASSETS
 # =====================================================
 android.add_assets = .
 
 # =====================================================
-# OPENGL FIX
-# =====================================================
-android.opengl_es_version = 2
-
-# =====================================================
-# SDL2 FIX
-# =====================================================
-sdl2_gradle_dependencies = True
-
-# =====================================================
-# BUILD CACHE FIX
+# BUILD CACHE
 # =====================================================
 build_dir = ./.buildozer
 bin_dir = ./bin
-
-# =====================================================
-# COMPILER FIX
-# =====================================================
-android.copy_libs = 1
-
-# =====================================================
-# STABILITY FIX
-# =====================================================
-osx.kivy_version = 2.2.1
 
 
 [buildozer]
 
-build_dir = ./.buildozer
-bin_dir = ./bin
-
 log_level = 2
 
 warn_on_root = 0
+
+build_dir = ./.buildozer
+bin_dir = ./bin
