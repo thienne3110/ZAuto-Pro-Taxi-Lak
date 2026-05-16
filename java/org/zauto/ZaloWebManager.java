@@ -161,7 +161,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // KHỞI TẠO WEBVIEW
+    // KHỞI TẠO WEBVIEW (BẢN FIX CHUẨN TƯƠNG THÍCH MỌI ANDROID)
     // =========================================================
     public static void initWebView(final Activity activity) {
         if (activity == null) return;
@@ -174,7 +174,8 @@ public class ZaloWebManager {
                 webLayout = new FrameLayout(activity);
                 hiddenWebView = new WebView(activity);
 
-                hiddenWebView.setLayerType(View.LAYER_TYPE_NONE, null);
+                // FIX 1: Ép phần cứng render, cấm hệ điều hành Android cũ cho WebView ngủ đông
+                hiddenWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     hiddenWebView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true);
@@ -182,24 +183,32 @@ public class ZaloWebManager {
 
                 WebSettings settings = hiddenWebView.getSettings();
                 settings.setJavaScriptEnabled(true);
-                settings.setDomStorageEnabled(true);
+                settings.setDomStorageEnabled(true); // BẮT BUỘC: Cho Zalo lưu LocalStorage
                 settings.setDatabaseEnabled(true);
                 settings.setAllowFileAccess(true);
+                
+                // Bổ sung cởi trói bảo mật truy cập nội bộ cho Android cũ
+                settings.setAllowContentAccess(true);
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN) {
+                    settings.setAllowFileAccessFromFileURLs(true);
+                    settings.setAllowUniversalAccessFromFileURLs(true);
+                }
+                
                 settings.setLoadsImagesAutomatically(true);
                 settings.setMediaPlaybackRequiresUserGesture(false);
-                settings.setOffscreenPreRaster(true);
+                settings.setOffscreenPreRaster(true); // QUAN TRỌNG: Ép load ngầm
                 settings.setCacheMode(WebSettings.LOAD_DEFAULT);
                 settings.setNeedInitialFocus(false);
                 if (android.os.Build.VERSION.SDK_INT >= 29) {
                     settings.setForceDark(WebSettings.FORCE_DARK_OFF);
                 }
+                
+                // BẮT BUỘC: Cho phép HTTP tải tài nguyên bên trong HTTPS (Tránh lỗi Zalo load thiếu ảnh)
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 settings.setUseWideViewPort(true);
                 settings.setLoadWithOverviewMode(true);
                 settings.setUserAgentString(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                    "Chrome/136.0.0.0 Safari/537.36"
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
                 );
 
                 CookieManager cookieManager = CookieManager.getInstance();
@@ -210,12 +219,18 @@ public class ZaloWebManager {
                 hiddenWebView.setWebChromeClient(new WebChromeClient());
 
                 hiddenWebView.setWebViewClient(new WebViewClient() {
-                    // --- ĐOẠN QUAN TRỌNG: TỰ ĐỘNG REFRESH KHI MẤT MẠNG ---
+                    
+                    // FIX 2: BỎ QUA LỖI CHỨNG CHỈ BẢO MẬT SSL (Cứu sống màn hình trắng do chứng chỉ cũ trên máy cũ)
+                    @Override
+                    public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                        Log.w(TAG, "Bo qua loi SSL tren Android cu: " + error.toString());
+                        handler.proceed(); // BẮT BUỘC PHẢI CÓ LỆNH NÀY!
+                    }
+
                     @Override
                     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                         if (request.isForMainFrame()) {
                             Log.e(TAG, "Lỗi kết nối Zalo: " + error.getDescription());
-                            // Nếu tắt màn hình bị mất mạng, khi có mạng lại nó sẽ tự tải lại trang sau 5 giây
                             view.postDelayed(() -> {
                                 if (view != null) view.reload();
                             }, 5000);
@@ -257,11 +272,13 @@ public class ZaloWebManager {
                 );
                 webLayout.addView(hiddenWebView, webParams);
 
-                // KHỞI TẠO KHỔNG LỒ (ĐÁNH LỪA REACT VIRTUALIZED) VÀ ĐẨY RA KHỎI MÀN HÌNH
+                // FIX 3: ĐÁNH LỪA ANDROID CŨ (Tránh View Clipping)
                 FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(1080, 2400);
-                rootParams.leftMargin = -10000;
-                rootParams.topMargin = -10000;
-                webLayout.setAlpha(0.0f);
+                rootParams.leftMargin = -2000; // Không để -10000 nữa, -2000 là đủ che khỏi màn hình rồi
+                rootParams.topMargin = -2000;
+                
+                // QUAN TRỌNG NHẤT: Không để 0.0f, dùng 0.01f ép GPU Android cũ phải xử lý ngầm mã QR
+                webLayout.setAlpha(0.01f); 
 
                 if (webLayout.getParent() != null) {
                     ((ViewGroup) webLayout.getParent()).removeView(webLayout);
@@ -272,7 +289,6 @@ public class ZaloWebManager {
                 hiddenWebView.bringToFront();
                 hiddenWebView.requestFocus();
 
-                // KHỞI TẠO GIỌNG NÓI TIẾNG VIỆT
                 if (tts == null) {
                     tts = new TextToSpeech(activity.getApplicationContext(), status -> {
                         if (status == TextToSpeech.SUCCESS) {
@@ -290,7 +306,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // JS OBSERVER & API INTERNAL (CHẠY NGẦM 100%)
+    // JS OBSERVER & API INTERNAL (BẢN TỔNG HỢP CUỐI CÙNG - CHUẨN 100%)
     // =========================================================
     public static void injectSidebarObserver(WebView view) {
         String js =
@@ -301,10 +317,9 @@ public class ZaloWebManager {
             "   window.zauto_seen = {};" +
             "   window.zauto_seen_keys = [];" +
 
-            // HÀM GỬI REPLY ĐA TẦNG (DÙNG SELECTOR CHUẨN + ENTER + BÁO CÁO TOAST)
+            // 1. HÀM GỬI REPLY ĐA TẦNG (CHỈ QUOTE KHI LÀ ID THẬT CỦA ZALO)
             "   window.zautoSendReply = function(convId, fakeMsgId, text, groupName) {" +
             "       try {" +
-                        // 1. CHUYỂN SANG NHÓM CẦN CHỐT
             "           let item = document.querySelector('.msg-item[anim-data-id=\"'+convId+'\"] .conv-item');" +
             "           if(item) {" +
             "               let key = Object.keys(item).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
@@ -315,17 +330,16 @@ public class ZaloWebManager {
             "           }" +
             
             "           setTimeout(() => {" +
-            // SỬA: SỬ DỤNG ID DO PYTHON TRUYỀN VÀO ĐỂ QUOTE ĐÚNG TIN
             "               let realMsgId = fakeMsgId || '';" +
-            
-                        // 2. THỬ GỬI BẰNG API NGẦM TRƯỚC
             "               if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
             "                   let req = { toid: convId, msg: text, type: 1 };" +
-            "                   if (realMsgId && realMsgId !== '') req.quote_msgId = realMsgId;" +
+                                // CHIẾN THUẬT QUOTE CHUẨN: Chỉ đè tin nhắn nếu ID bắt đầu bằng "msg_"
+            "                   if (realMsgId && realMsgId.startsWith('msg_')) {" +
+            "                       req.quote_msgId = realMsgId;" +
+            "                   }" +
             "                   window.zMessenger.sendMessage(req);" +
             "                   ZAutoBridge.onLoginSuccess('Đã chốt xong:', groupName);" + 
             "               } else {" +
-                        // 3. NẾU BỊ CHẶN API -> DÙNG PHƯƠNG ÁN UI (ĐẬP PHÍM)
             "                   let input = document.getElementById('richInput');" +
             "                   if(input) {" +
             "                       input.focus();" +
@@ -334,41 +348,29 @@ public class ZaloWebManager {
             "                       input.dispatchEvent(new Event('input', {bubbles:true}));" + 
             "                       input.blur();" + 
             "                       let attempts = 0;" +
-            
             "                       let trySend = setInterval(() => {" +
             "                           attempts++;" +
             "                           let btnSend = null;" +
             "                           let primarySelector = '#chat-input-container-id > div.chat-input-container__right-layout > div.normal-buttons-group > div.send-msg-btn';" +
             "                           let fallbackSelectors = ['.fa-Sent-msg_24_Line', '[data-translate-title=\"STR_SEND\"]'];" +
-            
             "                           let el = document.querySelector(primarySelector);" +
-            "                           if (el) {" +
-            "                               btnSend = el;" +
-            "                           } else {" +
+            "                           if (el) { btnSend = el; } else {" +
             "                               for (let sel of fallbackSelectors) {" +
             "                                   let fallbackEl = document.querySelector(sel);" +
-            "                                   if (fallbackEl) {" +
-            "                                       btnSend = fallbackEl.closest('.z--btn--v2') || fallbackEl.parentElement || fallbackEl;" +
-            "                                       break;" +
-            "                                   }" +
+            "                                   if (fallbackEl) { btnSend = fallbackEl.closest('.z--btn--v2') || fallbackEl.parentElement || fallbackEl; break; }" +
             "                               }" +
             "                           }" +
-            
             "                           if (btnSend) {" +
             "                               btnSend.click();" +
             "                               let key = Object.keys(btnSend).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
             "                               if(key && btnSend[key] && btnSend[key].onClick) btnSend[key].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
             "                           }" +
-            
             "                           let enterEvent = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });" +
             "                           input.dispatchEvent(enterEvent);" +
-            
             "                           if (input.innerHTML === '' || input.innerHTML === '<br>') {" +
             "                               clearInterval(trySend);" +
-            "                               ZAutoBridge.onLoginSuccess('Đã chốt xong:', groupName);" + 
-            "                           } else if (attempts > 12) {" +
-            "                               clearInterval(trySend);" +
-            "                           }" +
+            "                               ZAutoBridge.onLoginSuccess('Đã chốt xong:', groupName);" +
+            "                           } else if (attempts > 12) { clearInterval(trySend); }" +
             "                       }, 250);" + 
             "                   }" +
             "               }" +
@@ -376,98 +378,95 @@ public class ZaloWebManager {
             "       } catch(e) {}" +
             "   };" +
 
-            // HÀM QUÉT SIDEBAR (SỬA DÙNG textContent VÀ TÌM MSG_ID CỔ ĐIỂN AN TOÀN)
+            // 2. HÀM QUÉT SIDEBAR (FULL TEXT + VOICE + ỔN ĐỊNH RAM)
             "   function scanConvItem(msgItemEl) {" +
             "       try {" +
-            "           let convItem = msgItemEl.querySelector('.gridv2.conv-item');" +
+            "           let convItem = msgItemEl.querySelector('.conv-item') || msgItemEl;" +
             "           if(!convItem) return;" +
             "           let nameEl = convItem.querySelector('.conv-item-title__name');" +
-            "           let bodyEl = msgItemEl.querySelector('.conv-item-body');" +
+            "           let bodyEl = convItem.querySelector('.conv-item-body');" +
             "           if(!nameEl || !bodyEl) return;" +
             "           let groupName = (nameEl.textContent || nameEl.innerText || '').trim();" +
             "           let msgText   = (bodyEl.textContent || bodyEl.innerText || '').trim();" +
-            "           if(!groupName || !msgText) return;" +
-            "           let convId = msgItemEl.getAttribute('anim-data-id') || '';" +
+            "           let convId = msgItemEl.getAttribute('anim-data-id') || msgItemEl.id || '';" +
             
-            "           let realMsgId = '';" +
+            "           let realMsgId = msgItemEl.getAttribute('data-msg-id') || '';" +
+            "           if (!realMsgId && msgItemEl.dataset) { realMsgId = msgItemEl.dataset.msgId || ''; }" +
+            "           var fullTxt = '';" +
+            
             "           try {" +
-            "               realMsgId = msgItemEl.getAttribute('data-msg-id') || '';" +
-            "               if (!realMsgId && msgItemEl.dataset) { realMsgId = msgItemEl.dataset.msgId || ''; }" +
-            "               if (!realMsgId) {" +
-            "                   var rK = null;" +
-            "                   var keys = Object.keys(msgItemEl);" +
-            "                   for (var i = 0; i < keys.length; i++) {" +
-            "                       if (keys[i].indexOf('__reactFiber') === 0 || keys[i].indexOf('__reactProps') === 0) { rK = keys[i]; break; }" +
-            "                   }" +
-            "                   if (rK && msgItemEl[rK]) {" +
-            "                       var p = msgItemEl[rK].memoizedProps;" +
-            "                       if (!p && msgItemEl[rK].return) { p = msgItemEl[rK].return.memoizedProps; }" +
-            "                       if (p) {" +
-            "                           if (p.msgId) { realMsgId = p.msgId; }" +
-            "                           else if (p.messageId) { realMsgId = p.messageId; }" +
-            "                           else if (p.data && p.data.msgId) { realMsgId = p.data.msgId; }" +
-            "                           else if (p.message && p.message.msgId) { realMsgId = p.message.msgId; }" +
+            "               var rK = null; var keys = Object.keys(msgItemEl);" +
+            "               for (var i = 0; i < keys.length; i++) { if (keys[i].indexOf('__reactFiber') === 0 || keys[i].indexOf('__reactProps') === 0) { rK = keys[i]; break; } }" +
+            "               if (rK && msgItemEl[rK]) {" +
+            "                   var p = msgItemEl[rK].memoizedProps; if (!p && msgItemEl[rK].return) { p = msgItemEl[rK].return.memoizedProps; }" +
+            "                   if (p) {" +
+            "                       var paths = [p.data && p.data.lastMsg, p.item && p.item.lastMsg, p.lastMsg, p.message, p.msg, p.data, p.item, p];" +
+            "                       for (var j=0; j<paths.length; j++) {" +
+            "                           var o = paths[j];" +
+            "                           if (o && typeof o === 'object') {" +
+            "                               if (!realMsgId && (o.msgId || o.messageId)) { realMsgId = o.msgId || o.messageId; }" +
+            "                               if (!fullTxt && typeof o.content === 'string' && o.content.trim() !== '') { fullTxt = o.content; }" +
+            "                           }" +
             "                       }" +
             "                   }" +
             "               }" +
             "           } catch(err) {}" +
-            "           if (!realMsgId) {" +
-            "               let timeEl = msgItemEl.querySelector('.conv-item-title__time, [class*=\"time\"]');" +
-            "               let tText = timeEl ? (timeEl.textContent || '').trim() : Date.now().toString().substring(0,8);" +
-            "               realMsgId = 'TIME_' + tText;" +
+            
+            "           if (fullTxt && fullTxt.length > msgText.length && !fullTxt.startsWith('{\"')) {" +
+            "               msgText = fullTxt.trim();" +
+            "           }" +
+            
+            "           let isVoiceNode = bodyEl.querySelector('[class*=\"audio\"], [class*=\"voice\"], [class*=\"Voice\"], svg');" +
+            "           let isTimeOnly = /^[0-9]{1,2}:[0-9]{2}$/.test(msgText) || /^[0-9]{1,2}:[0-9]{2}$/.test(bodyEl.innerText.trim());" + 
+            "           if (isVoiceNode || isTimeOnly) {" +
+            "               msgText = '[Tin nhắn thoại]';" +
             "           }" +
 
-            "           let fp = convId + '|' + realMsgId + '|' + msgText.substring(0, 40);" +
+            "           if(!groupName || !msgText) return;" +
+
+            "           let timeEl = convItem.querySelector('.conv-item-title__time, [class*=\"time\"]');" +
+            "           let timeString = timeEl ? (timeEl.textContent || '').trim() : '';" +
+
+                        // KHÔNG DÙNG MATH.RANDOM ĐỂ CHỐNG SPAM RAM. DÙNG THỜI GIAN LÀM ID GIẢ ỔN ĐỊNH.
+            "           if (!realMsgId || realMsgId === '') {" +
+            "               realMsgId = 'TIME_' + timeString;" +
+            "           }" +
+
+            "           let fp = convId + '|' + realMsgId + '|' + timeString + '|' + msgText.substring(0, 40);" +
             "           if(window.zauto_seen[fp]) return;" +
             "           window.zauto_seen[fp] = true;" +
             "           window.zauto_seen_keys.push(fp);" +
-            "           if(window.zauto_seen_keys.length > 800) {" +
-            "               let old = window.zauto_seen_keys.splice(0, 100);" +
-            "               old.forEach(k => delete window.zauto_seen[k]);" +
-            "           }" +
+            "           if(window.zauto_seen_keys.length > 800) { let old = window.zauto_seen_keys.splice(0, 100); old.forEach(k => delete window.zauto_seen[k]); }" +
             "           if (Date.now() - window.zauto_boot_time > 8000) {" +
-            "               ZAutoBridge.onNewWebMsg(groupName, msgText, realMsgId, convId);" + // ĐẨY ID VỀ RAM
+            "               ZAutoBridge.onNewWebMsg(groupName, msgText, realMsgId, convId);" +
             "           }" +
             "       } catch(e) {}" +
             "   }" +
 
-            // HÀM THU THẬP DANH SÁCH NHÓM
+            // 3. HÀM THU THẬP DANH SÁCH NHÓM
             "   function collectGroups() {" +
             "       try {" +
-            "           let groups = [];" +
-            "           let nameEls = document.querySelectorAll('.conv-item-title__name');" +
-            "           nameEls.forEach(el => {" +
-            "               let n = (el.innerText || el.textContent || '').trim();" +
-            "               if(n && n.length > 1 && n.length < 80 && !groups.includes(n)) groups.push(n);" +
-            "           });" +
+            "           let groups = []; let nameEls = document.querySelectorAll('.conv-item-title__name');" +
+            "           nameEls.forEach(el => { let n = (el.innerText || el.textContent || '').trim(); if(n && n.length > 1 && n.length < 80 && !groups.includes(n)) groups.push(n); });" +
             "           if(groups.length > 0) ZAutoBridge.onGroupListReceived(JSON.stringify(groups));" +
             "       } catch(e) {}" +
             "   }" +
 
-            // OBSERVE CONTAINER SIDEBAR
+            // 4. OBSERVE CONTAINER SIDEBAR
             "   function startSidebarObserver() {" +
             "       let container = document.getElementById('conversationListId');" +
-            "       if(!container) {" +
-            "           setTimeout(startSidebarObserver, 1500);" +
-            "           return;" +
-            "       }" +
+            "       if(!container) { setTimeout(startSidebarObserver, 1500); return; }" +
             "       if(window.zauto_sidebar_observer) window.zauto_sidebar_observer.disconnect();" +
             "       window.zauto_sidebar_observer = new MutationObserver(mutations => {" +
-            "           mutations.forEach(m => {" +
-            "               try {" +
-            "                   let targetNode = m.target.nodeType === 3 ? m.target.parentNode : m.target;" +
-            "                   let msgItem = targetNode.closest('.msg-item');" +
-            "                   if(msgItem) scanConvItem(msgItem);" +
-            "               } catch(e) {}" +
-            "           });" +
+            "           mutations.forEach(m => { try { let targetNode = m.target.nodeType === 3 ? m.target.parentNode : m.target; let msgItem = targetNode.closest('.msg-item'); if(msgItem) scanConvItem(msgItem); } catch(e) {} });" +
             "       });" +
             "       window.zauto_sidebar_observer.observe(container, { childList: true, subtree: true, characterData: true });" +
             "       document.querySelectorAll('.msg-item').forEach(scanConvItem);" +
             "       collectGroups();" +
-            "       ZAutoBridge.onLoginSuccess('Đã kết nối', '');" +
+            "       ZAutoBridge.onLoginSuccess('Đã kết nối', '');" + 
             "   }" +
 
-            // WATCHDOG + NÚT ĐỒNG BỘ (SỬA LỖI TRONG ẢNH CỦA BẠN: TỰ BẤM NÚT "NHẤN ĐỂ ĐỒNG BỘ")
+            // 5. WATCHDOG TỰ ĐỘNG BẤM ĐỒNG BỘ VÀ BÁO KẾT NỐI
             "   function systemWatchdog() {" +
             "       ZAutoBridge.onHeartbeat(Date.now().toString());" +
             "       if(!navigator.onLine) { setTimeout(systemWatchdog, 10000); return; }" +
@@ -475,21 +474,19 @@ public class ZaloWebManager {
             "           let syncBtn = document.querySelector('.sync-msg-btn');" +
             "           if(!syncBtn) {" +
             "               let btns = document.querySelectorAll('button, div, span, a');" +
-            "               for(let b of btns) { if(b.innerText && (b.innerText.includes('Đồng bộ') || b.innerText.includes('Khôi phục') || b.innerText.includes('Nhấn để đồng bộ'))) { syncBtn = b; break; } }" +
+            "               for(let b of btns) { if(b.innerText && (b.innerText.includes('Đồng bộ') || b.innerText.includes('Khôi phục') || b.innerText.includes('Nhấn để'))) { syncBtn = b; break; } }" +
             "           }" +
             "           if(syncBtn) syncBtn.click();" +
             "       } catch(e) {}" +
             "       let isLoginScreen = document.querySelector('.qrcode') || document.querySelector('.login-container');" +
             "       if(isLoginScreen) {" +
             "           if(!window.login_start_time) window.login_start_time = Date.now();" +
-            "           if(Date.now() - window.login_start_time > 180000) { window.login_start_time = Date.now(); location.reload(); }" +
+            "           if(Date.now() - window.login_start_time > 300000) { window.login_start_time = Date.now(); location.reload(); }" +
             "       } else {" +
             "           window.login_start_time = null;" +
+            "           if (!window.zauto_logged_in_flag) { window.zauto_logged_in_flag = true; ZAutoBridge.onLoginSuccess('Đã kết nối', ''); }" +
             "           let container = document.getElementById('conversationListId');" +
-            "           if(!container || !window.zauto_sidebar_observer) {" +
-            "               window.zauto_sidebar_observer = null;" +
-            "               startSidebarObserver();" +
-            "           }" +
+            "           if(!container || !window.zauto_sidebar_observer) { window.zauto_sidebar_observer = null; startSidebarObserver(); }" +
             "           window.zauto_group_tick = (window.zauto_group_tick || 0) + 1;" +
             "           if(window.zauto_group_tick % 5 === 0) collectGroups();" +
             "       }" +
@@ -530,7 +527,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // CÁC HÀM TIỆN ÍCH - GIỮ NGUYÊN KÍCH THƯỚC KHỔNG LỒ
+    // CÁC HÀM TIỆN ÍCH - CẬP NHẬT TỌA ĐỘ (ĐÃ FIX CHỐNG NGỦ ĐÔNG MÁY CŨ)
     // =========================================================
     public static void updateWebViewBounds(
             final Activity activity,
@@ -547,9 +544,10 @@ public class ZaloWebManager {
                 FrameLayout.LayoutParams params =
                         (FrameLayout.LayoutParams) webLayout.getLayoutParams();
                 if (!visible) {
-                    webLayout.setAlpha(0.0f);
-                    params.leftMargin = -10000;
-                    params.topMargin = -10000;
+                    // ÉP CHẠY NGẦM BẰNG CÁCH DÙNG ĐỘ TRONG SUỐT CỰC THẤP
+                    webLayout.setAlpha(0.01f); 
+                    params.leftMargin = -2000; 
+                    params.topMargin = -2000;
                     params.width = 1080;
                     params.height = 2400;
                 } else {
@@ -617,7 +615,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // HỆ THỐNG SĂN TÌM VÀ PHÁT BẢN GHI ÂM (QUÉT ĐA ĐIỂM 4 TẦNG)
+    // HỆ THỐNG SĂN TÌM VÀ PHÁT BẢN GHI ÂM (BẢN FIX LỖI CLICK)
     // =========================================================
     public static void playLastAudio(final Activity activity, final String conversationId) {
         Activity safeActivity = activityRef != null ? activityRef.get() : activity;
@@ -637,35 +635,30 @@ public class ZaloWebManager {
                 "   }" +
 
                 // BƯỚC 2: QUÉT ĐA ĐIỂM SAU KHI ĐỢI LOAD
+                // Tăng delay lên 1500ms vì tin nhắn thoại trên Zalo load rất chậm
                 "   setTimeout(() => {" +
                 "       let findAndPlay = () => {" +
                 "           let playBtn = null;" +
-                            // DANH SÁCH CÁC SELECTOR CHIẾN THUẬT (Ưu tiên Class bạn cung cấp)
+                            // Bổ sung mọi Selector mà Zalo có thể giấu nút Play
                 "           let selectors = [" +
-                "               '.fa-PlayCircle_24_Filled', " + // Class bạn soi được
-                "               '[class*=\"PlayCircle\"]', " +   // Quét mọi thứ chứa chữ PlayCircle
-                "               '.v-audio', " +
-                "               '.icon-play-audio', " +
-                "               '[class*=\"voice-message\"] i', " +
-                "               '.chat-message-audio i'" +
+                "               '.fa-PlayCircle_24_Filled', '[class*=\"PlayCircle\"]', '[class*=\"play-circle\"]', " +
+                "               '.v-audio', '.icon-play-audio', '[class*=\"voice-message\"] i', " +
+                "               '.chat-message-audio i', 'i[class*=\"play\"]', 'div[class*=\"play-btn\"]', 'svg[class*=\"play\"]'" +
                 "           ];" +
                 
-                            // CHIẾN THUẬT 1: Tìm theo Selector chính xác
                 "           for (let sel of selectors) {" +
                 "               let els = document.querySelectorAll(sel);" +
                 "               if(els.length > 0) { playBtn = els[els.length - 1]; break; }" +
                 "           }" +
 
-                            // CHIẾN THUẬT 2: Nếu chưa thấy, tìm theo vùng chứa tin nhắn cuối cùng
                 "           if (!playBtn) {" +
                 "               let allMsgs = document.querySelectorAll('.chat-item');" +
                 "               if (allMsgs.length > 0) {" +
                 "                   let lastMsg = allMsgs[allMsgs.length - 1];" +
-                "                   playBtn = lastMsg.querySelector('i, div[role=\"button\"], [class*=\"play\"]');" +
+                "                   playBtn = lastMsg.querySelector('i[class*=\"play\"], div[role=\"button\"], [class*=\"play\"], svg');" +
                 "               }" +
                 "           }" +
 
-                            // THỰC THI CLICK (Kết hợp cả click thường và click React)
                 "           if(playBtn) {" +
                 "               console.log('ZAuto: Da tim thay nut Play!');" +
                 "               playBtn.click();" +
@@ -676,17 +669,16 @@ public class ZaloWebManager {
                 "           return false;" +
                 "       };" +
 
-                        // VÒNG LẶP THỬ LẠI (Phòng trường hợp mạng chậm bản ghi âm chưa hiện icon)
                 "       if (!findAndPlay()) {" +
                 "           let retryCount = 0;" +
                 "           let interval = setInterval(() => {" +
                 "               retryCount++;" +
-                "               if (findAndPlay() || retryCount > 5) clearInterval(interval);" +
-                "           }, 500);" + // Thử lại sau mỗi 0.5s, tối đa 5 lần
+                "               if (findAndPlay() || retryCount > 8) clearInterval(interval);" +
+                "           }, 500);" + // Thử lại liên tục 8 lần (4 giây)
                 "       }" +
-                "   }, 1200);" + // Đợi 1.2s ban đầu để Zalo dựng khung chat
+                "   }, 1500);" + 
                 "})();";
             hiddenWebView.evaluateJavascript(js, null);
         });
     }
-}	
+}
