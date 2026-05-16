@@ -43,31 +43,13 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y \
-            zip \
-            unzip \
-            git \
-            openjdk-17-jdk \
-            autoconf \
-            automake \
-            libtool \
-            pkg-config \
-            zlib1g-dev \
-            libncurses5-dev \
-            libncursesw5-dev \
-            libtinfo5 \
-            cmake \
-            libffi-dev \
-            libssl-dev \
-            ccache \
-            build-essential \
-            patch \
-            libjpeg-dev \
-            libpng-dev \
-            ffmpeg \
-            libsdl2-dev \
-            libsdl2-image-dev \
-            libsdl2-mixer-dev \
-            libsdl2-ttf-dev
+            zip unzip git openjdk-17-jdk \
+            autoconf automake libtool pkg-config \
+            zlib1g-dev libncurses5-dev libncursesw5-dev \
+            libtinfo5 cmake libffi-dev libssl-dev ccache \
+            build-essential patch libjpeg-dev libpng-dev \
+            ffmpeg libsdl2-dev libsdl2-image-dev \
+            libsdl2-mixer-dev libsdl2-ttf-dev
 
       - name: Install Python Packages
         run: |
@@ -83,12 +65,9 @@ jobs:
           mkdir -p ~/.android
           touch ~/.android/repositories.cfg
 
-      - name: Clean Old Cache
+      - name: Clean Local Workspace
         run: |
           rm -rf .buildozer
-          rm -rf ~/.buildozer
-          rm -rf ~/.gradle/caches
-          rm -rf ~/.cache/pip
           rm -rf bin
 
       - name: Validate Project
