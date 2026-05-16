@@ -16,7 +16,7 @@ presplash.color = #FFFFFF
 # =====================================================
 # REQUIREMENTS (Tuyệt đối KHÔNG có Pillow)
 # =====================================================
-requirements = python3,kivy,kivymd==1.1.1,pyjnius
+requirements = python3,kivy==2.2.1,kivymd==1.1.1,pyjnius
 
 # =====================================================
 # ANDROID CONFIG (Chuẩn 2026 Ít Lỗi Nhất)
