@@ -175,11 +175,14 @@ KV = '''
             text_color: 0.6, 0.2, 0.2, 1
             line_color: 0.9, 0.5, 0.5, 1
             on_release: app.remove_ride(root)
-        MDRaisedButton:
+        Button:
             text: "NHẬN CUỐC"
             size_hint_x: 0.6
-            elevation: 0
-            md_bg_color: 0.1, 0.5, 0.8, 1
+            size_hint_y: None
+            height: "45dp"
+            bold: True
+            background_normal: ''
+            background_color: 0.1, 0.5, 0.8, 1
             on_release: app.manual_accept_ride(root)
 
 MDScreen:
@@ -296,12 +299,14 @@ MDScreen:
                     height: "60dp"
                     padding: "10dp"
                     md_bg_color: 1, 1, 1, 1
-                    MDRaisedButton:
+                    Button:
                         text: "MỞ KHUNG CHAT ZALO"
-                        icon: "chat-processing"
                         size_hint_x: 1
-                        elevation: 0
-                        md_bg_color: 0.1, 0.6, 0.2, 1
+                        size_hint_y: None
+                        height: "45dp"
+                        bold: True
+                        background_normal: ''
+                        background_color: 0.1, 0.6, 0.2, 1
                         on_release: app.root.ids.bottom_nav.switch_tab('tab_zalo')
 
                 ScrollView:
@@ -448,20 +453,24 @@ MDScreen:
                             adaptive_height: True
                             spacing: "10dp"
 
-                            MDRaisedButton:
+                            Button:
                                 text: "CẤP QUYỀN APP"
-                                icon: "shield-check"
                                 size_hint_x: 1
-                                elevation: 0
-                                md_bg_color: 0.8, 0.4, 0.1, 1
+                                size_hint_y: None
+                                height: "45dp"
+                                bold: True
+                                background_normal: ''
+                                background_color: 0.8, 0.4, 0.1, 1
                                 on_release: app.check_permissions_and_guide()
                                 
-                            MDRaisedButton:
+                            Button:
                                 text: "CHỐNG NGỦ ĐÔNG (QUAN TRỌNG)"
-                                icon: "battery-alert"
                                 size_hint_x: 1
-                                elevation: 0
-                                md_bg_color: 0.6, 0.1, 0.1, 1
+                                size_hint_y: None
+                                height: "45dp"
+                                bold: True
+                                background_normal: ''
+                                background_color: 0.6, 0.1, 0.1, 1
                                 on_release: app.request_ignore_battery()
 
                         # --- KHỐI CÔNG TẮC (GIỌNG NÓI / AUTO / FILTER) ---
@@ -614,13 +623,14 @@ MDScreen:
                                 background_color: 0.95, 0.95, 0.95, 1
                                 foreground_color: 0, 0, 0, 1
                         
-                        MDRaisedButton:
+                        Button:
                             text: "LƯU CẤU HÌNH"
                             size_hint_x: 1
                             size_hint_y: None
                             height: "45dp"
-                            elevation: 0
-                            md_bg_color: 0.1, 0.5, 0.8, 1
+                            bold: True
+                            background_normal: ''
+                            background_color: 0.1, 0.5, 0.8, 1
                             on_release: app.save_config()
 
                         MDBoxLayout:
@@ -649,12 +659,14 @@ MDScreen:
                                 theme_text_color: "Custom"
                                 text_color: 0.1, 0.5, 0.8, 1
                                 font_style: "Caption"
-                            MDRaisedButton:
+                            Button:
                                 text: "MUA THÊM HẠN"
                                 size_hint_y: None
                                 height: "35dp"
                                 pos_hint: {"center_x": .5}
-                                elevation: 0
+                                bold: True
+                                background_normal: ''
+                                background_color: 0.1, 0.6, 0.2, 1
                                 on_release: app.show_activation_popup_from_settings()
 
                         MDBoxLayout:
