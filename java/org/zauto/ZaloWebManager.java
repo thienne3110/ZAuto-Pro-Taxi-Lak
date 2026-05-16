@@ -133,7 +133,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // JAVA BRIDGE → NÉM VÀO RAM PYTHON THAY VÌ BROADCAST
+    // JAVA BRIDGE → GIAO TIẾP GIỮA JAVASCRIPT VÀ ANDROID
     // =========================================================
     public static class WebAppInterface {
         Context mContext;
@@ -157,6 +157,19 @@ public class ZaloWebManager {
         @JavascriptInterface
         public void onGroupListReceived(String jsonGroups) {
             pythonMsgQueue.add("GROUPS_DATA|||" + jsonGroups);
+        }
+
+        // ---> THÊM: KÍCH HOẠT BONG BÓNG LÚC KHỞI ĐỘNG
+        @JavascriptInterface
+        public void showFloatingBubbleAction() {
+            Activity act = activityRef != null ? activityRef.get() : null;
+            if (act != null) showFloatingBubble(act);
+        }
+
+        // ---> THÊM: BẮN LÊN BONG BÓNG KHI CÓ CUỐC MỚI
+        @JavascriptInterface
+        public void showNewRideOnBubble(String groupName, String msgText, String convId, String msgId) {
+            ZaloWebManager.showNewRideOnBubble(groupName, msgText, convId, msgId);
         }
     }
 
@@ -439,6 +452,8 @@ public class ZaloWebManager {
             "           if(window.zauto_seen_keys.length > 800) { let old = window.zauto_seen_keys.splice(0, 100); old.forEach(k => delete window.zauto_seen[k]); }" +
             "           if (Date.now() - window.zauto_boot_time > 8000) {" +
             "               ZAutoBridge.onNewWebMsg(groupName, msgText, realMsgId, convId);" +
+                            // GỌI BONG BÓNG HIỆN CUỐC XE
+            "               ZAutoBridge.showNewRideOnBubble(groupName, msgText, convId, realMsgId);" +
             "           }" +
             "       } catch(e) {}" +
             "   }" +
@@ -464,6 +479,8 @@ public class ZaloWebManager {
             "       document.querySelectorAll('.msg-item').forEach(scanConvItem);" +
             "       collectGroups();" +
             "       ZAutoBridge.onLoginSuccess('Đã kết nối', '');" + 
+                    // RA LỆNH HIỆN BONG BÓNG THU NHỎ
+            "       ZAutoBridge.showFloatingBubbleAction();" + 
             "   }" +
 
             // 5. WATCHDOG TỰ ĐỘNG BẤM ĐỒNG BỘ VÀ BÁO KẾT NỐI
@@ -615,16 +632,16 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // HỆ THỐNG SĂN TÌM VÀ PHÁT BẢN GHI ÂM (BẢN FIX LỖI CLICK)
+    // HỆ THỐNG PHÁT BẢN GHI ÂM (BẢN FIX ĐÍCH DANH ID - KHÔNG BỊ ĐÈ TIN CŨ)
     // =========================================================
-    public static void playLastAudio(final Activity activity, final String conversationId) {
+    public static void playSpecificAudio(final Activity activity, final String conversationId, final String msgId) {
         Activity safeActivity = activityRef != null ? activityRef.get() : activity;
         if (safeActivity == null || hiddenWebView == null) return;
 
         safeActivity.runOnUiThread(() -> {
             String js = "(function() {" +
-                "   console.log('ZAuto: Bat dau tim nut Play cho ' + '" + conversationId + "');" +
-                // BƯỚC 1: MỞ NHÓM (Dùng kỹ thuật React Fiber để kích hoạt Click chuẩn)
+                "   console.log('ZAuto: Bat dau tim nut Play cho ' + '" + msgId + "');" +
+                // BƯỚC 1: MỞ NHÓM ZALO
                 "   let item = document.querySelector('.msg-item[anim-data-id=\"" + conversationId + "\"] .conv-item');" +
                 "   if(item) {" +
                 "       let key = Object.keys(item).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
@@ -634,33 +651,21 @@ public class ZaloWebManager {
                 "       } else { item.click(); }" +
                 "   }" +
 
-                // BƯỚC 2: QUÉT ĐA ĐIỂM SAU KHI ĐỢI LOAD
-                // Tăng delay lên 1500ms vì tin nhắn thoại trên Zalo load rất chậm
+                // BƯỚC 2: TÌM CHÍNH XÁC ID TIN NHẮN ĐỂ BẤM (KHÔNG BẤM BỪA TIN CUỐI CÙNG)
                 "   setTimeout(() => {" +
                 "       let findAndPlay = () => {" +
-                "           let playBtn = null;" +
-                            // Bổ sung mọi Selector mà Zalo có thể giấu nút Play
-                "           let selectors = [" +
-                "               '.fa-PlayCircle_24_Filled', '[class*=\"PlayCircle\"]', '[class*=\"play-circle\"]', " +
-                "               '.v-audio', '.icon-play-audio', '[class*=\"voice-message\"] i', " +
-                "               '.chat-message-audio i', 'i[class*=\"play\"]', 'div[class*=\"play-btn\"]', 'svg[class*=\"play\"]'" +
-                "           ];" +
-                
-                "           for (let sel of selectors) {" +
-                "               let els = document.querySelectorAll(sel);" +
-                "               if(els.length > 0) { playBtn = els[els.length - 1]; break; }" +
-                "           }" +
-
-                "           if (!playBtn) {" +
+                "           let msgNode = document.querySelector('[data-msg-id=\"" + msgId + "\"]');" +
+                "           if (!msgNode) msgNode = document.querySelector('div[id*=\"" + msgId + "\"]');" +
+                "           if (!msgNode) {" +
                 "               let allMsgs = document.querySelectorAll('.chat-item');" +
-                "               if (allMsgs.length > 0) {" +
-                "                   let lastMsg = allMsgs[allMsgs.length - 1];" +
-                "                   playBtn = lastMsg.querySelector('i[class*=\"play\"], div[role=\"button\"], [class*=\"play\"], svg');" +
-                "               }" +
+                "               if(allMsgs.length > 0) msgNode = allMsgs[allMsgs.length - 1];" +
                 "           }" +
-
+                "           if (!msgNode) return false;" +
+                
+                "           let playBtn = msgNode.querySelector('.fa-PlayCircle_24_Filled, [class*=\"PlayCircle\"], .v-audio, .icon-play-audio, i[class*=\"play\"], div[class*=\"play-btn\"], svg[class*=\"play\"]');" +
+                
                 "           if(playBtn) {" +
-                "               console.log('ZAuto: Da tim thay nut Play!');" +
+                "               console.log('ZAuto: Da tim thay nut Play dung ID!');" +
                 "               playBtn.click();" +
                 "               let k = Object.keys(playBtn).find(key => key.startsWith('__reactEventHandlers') || key.startsWith('__reactFiber'));" +
                 "               if(k && playBtn[k] && playBtn[k].onClick) playBtn[k].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
@@ -674,11 +679,227 @@ public class ZaloWebManager {
                 "           let interval = setInterval(() => {" +
                 "               retryCount++;" +
                 "               if (findAndPlay() || retryCount > 8) clearInterval(interval);" +
-                "           }, 500);" + // Thử lại liên tục 8 lần (4 giây)
+                "           }, 500);" +
                 "       }" +
                 "   }, 1500);" + 
                 "})();";
             hiddenWebView.evaluateJavascript(js, null);
         });
+    }
+	// =========================================================
+    // HỆ THỐNG BONG BÓNG CHAT NỔI (FLOATING BUBBLE VIP)
+    // =========================================================
+    private static android.view.WindowManager windowManager;
+    private static View bubbleView;
+    private static FrameLayout bubbleLayout;
+    private static boolean isBubbleExpanded = false;
+
+    // Hàm gọi hiển thị Bong bóng từ Python hoặc khi khởi động
+    public static void showFloatingBubble(final Activity activity) {
+        if (activity == null) return;
+        activity.runOnUiThread(() -> {
+            try {
+                // Kiểm tra quyền vẽ trên ứng dụng khác (SYSTEM_ALERT_WINDOW)
+                if (android.os.Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(activity)) {
+                    android.widget.Toast.makeText(activity, "Vui lòng cấp quyền 'Hiển thị trên ứng dụng khác' cho ZAuto!", android.widget.Toast.LENGTH_LONG).show();
+                    Intent intent = new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            android.net.Uri.parse("package:" + activity.getPackageName()));
+                    activity.startActivity(intent);
+                    return;
+                }
+
+                if (bubbleView != null) return;
+
+                windowManager = (android.view.WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
+                bubbleLayout = new FrameLayout(activity);
+
+                // Tạo giao diện hình tròn cho bong bóng (Dùng tạm text hoặc icon tùy bạn cấu hình nút res)
+                android.widget.ImageView iconView = new android.widget.ImageView(activity);
+                // Thử lấy ảnh profile làm avatar bong bóng cho đẹp
+                try {
+                    String imgPath = activity.getFilesDir().getAbsolutePath() + "/profile.jpg";
+                    android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeFile(imgPath);
+                    if(bmp != null) iconView.setImageBitmap(bmp);
+                    else iconView.setImageResource(android.R.drawable.ic_menu_call);
+                } catch(Exception ignored) {
+                    iconView.setImageResource(android.R.drawable.ic_menu_call);
+                }
+
+                // Cấu hình bo tròn góc cho bong bóng nổi
+                iconView.setBackgroundColor(android.graphics.Color.parseColor("#1A73E8"));
+                iconView.setPadding(20, 20, 20, 20);
+
+                final android.view.WindowManager.LayoutParams params = new android.view.WindowManager.LayoutParams(
+                        android.view.WindowManager.LayoutParams.WRAP_CONTENT,
+                        android.view.WindowManager.LayoutParams.WRAP_CONTENT,
+                        android.os.Build.VERSION.SDK_INT >= 26 ? 
+                                android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : 
+                                android.view.WindowManager.LayoutParams.TYPE_PHONE,
+                        android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                        android.graphics.PixelFormat.TRANSLUCENT
+                );
+
+                params.gravity = android.view.Gravity.TOP | android.view.Gravity.LEFT;
+                params.x = 0;
+                params.y = 300; // Chiều cao xuất hiện ban đầu
+
+                bubbleLayout.addView(iconView, new FrameLayout.LayoutParams(150, 150));
+                bubbleView = bubbleLayout;
+
+                // Thêm sự kiện Kéo thả (Drag and Drop) di chuyển bong bóng và Click mở App
+                bubbleView.setOnTouchListener(new android.view.View.OnTouchListener() {
+                    private int lastAction;
+                    private int initialX, initialY;
+                    private float initialTouchX, initialTouchY;
+
+                    @Override
+                    public boolean onTouch(View v, android.view.MotionEvent event) {
+                        switch (event.getAction()) {
+                            case android.view.MotionEvent.ACTION_DOWN:
+                                initialX = params.x; initialY = params.y;
+                                initialTouchX = event.getRawX(); initialTouchY = event.getRawY();
+                                lastAction = event.getAction();
+                                return true;
+                            case android.view.MotionEvent.ACTION_UP:
+                                if (lastAction == android.view.MotionEvent.ACTION_DOWN) {
+                                    // YÊU CẦU: Bấm vào bong bóng để bật lại App lên màn hình chính
+                                    Intent intent = activity.getPackageManager().getLaunchIntentForPackage(activity.getPackageName());
+                                    if (intent != null) {
+                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                        activity.startActivity(intent);
+                                    }
+                                }
+                                lastAction = event.getAction();
+                                return true;
+                            case android.view.MotionEvent.ACTION_MOVE:
+                                params.x = initialX + (int) (event.getRawX() - initialTouchX);
+                                params.y = initialY + (int) (event.getRawY() - initialTouchY);
+                                windowManager.updateViewLayout(bubbleView, params);
+                                lastAction = event.getAction();
+                                return true;
+                        }
+                        return false;
+                    }
+                });
+
+                windowManager.addView(bubbleView, params);
+
+            } catch (Exception e) {
+                Log.e(TAG, "Loi showFloatingBubble: ", e);
+            }
+        });
+    }
+
+    // Hàm giấu ẩn bong bóng chat khi tắt trong cài đặt
+    public static void hideFloatingBubble(final Activity activity) {
+        if (activity == null) return;
+        activity.runOnUiThread(() -> {
+            try {
+                if (windowManager != null && bubbleView != null) {
+                    windowManager.removeView(bubbleView);
+                    bubbleView = null;
+                    bubbleLayout = null;
+                }
+            } catch (Exception ignored) {}
+        });
+    }
+
+    // YÊU CẦU NÂNG CẤP: Bung rộng khung nhận cuốc kèm nút bấm trực tiếp khi tắt Auto Chốt
+    public static void showNewRideOnBubble(final String groupName, final String msgText, final String convId, final String msgId) {
+        Activity activity = activityRef != null ? activityRef.get() : null;
+        if (activity == null || bubbleLayout == null) return;
+
+        activity.runOnUiThread(() -> {
+            try {
+                // Xóa bỏ giao diện thu nhỏ cũ
+                bubbleLayout.removeAllViews();
+
+                // Tạo khung bảng thông báo cuốc xe nổi
+                android.widget.LinearLayout container = new android.widget.LinearLayout(activity);
+                container.setOrientation(android.widget.LinearLayout.VERTICAL);
+                container.setBackgroundColor(android.graphics.Color.WHITE);
+                container.setPadding(30, 30, 30, 30);
+                
+                // Set khung viền bo góc sắc nét chuẩn VIP
+                android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
+                shape.setCornerRadius(25);
+                shape.setColor(android.graphics.Color.WHITE);
+                shape.setStroke(4, android.graphics.Color.parseColor("#1A73E8"));
+                container.setBackground(shape);
+
+                // Thêm chữ tên Nhóm Zalo
+                android.widget.TextView tvGroup = new android.widget.TextView(activity);
+                tvGroup.setText("🚖 " + groupName);
+                tvGroup.setTextSize(16);
+                tvGroup.setTextColor(android.graphics.Color.BLACK);
+                tvGroup.setTypeface(null, android.graphics.Typeface.BOLD);
+                container.addView(tvGroup);
+
+                // Thêm nội dung cuốc xe khách gõ
+                android.widget.TextView tvMsg = new android.widget.TextView(activity);
+                tvMsg.setText(msgText);
+                tvMsg.setTextSize(14);
+                tvMsg.setPadding(0, 10, 0, 20);
+                tvMsg.setTextColor(android.graphics.Color.DARKGRAY);
+                container.addView(tvMsg);
+
+                // Hộp ngang chứa 2 nút Nhận và Bỏ Qua
+                android.widget.LinearLayout rowButtons = new android.widget.LinearLayout(activity);
+                rowButtons.setOrientation(android.widget.LinearLayout.HORIZONTAL);
+                rowButtons.setGravity(android.view.Gravity.CENTER);
+
+                // NÚT 1: BỎ QUA CUỐC XE
+                android.widget.Button btnIgnore = new android.widget.Button(activity);
+                btnIgnore.setText("BỎ QUA");
+                btnIgnore.setTextColor(android.graphics.Color.RED);
+                btnIgnore.setBackgroundColor(android.graphics.Color.parseColor("#FFEAEA"));
+                btnIgnore.setOnClickListener(v -> {
+                    // Chạm bỏ qua: Thu nhỏ bong bóng về trạng thái cũ ngay lập tức
+                    resetBubbleToIcon(activity);
+                });
+                rowButtons.addView(btnIgnore, new android.widget.LinearLayout.LayoutParams(250, 110));
+
+                // Khoảng cách giữa 2 nút
+                View space = new View(activity);
+                rowButtons.addView(space, new android.widget.LinearLayout.LayoutParams(40, 1));
+
+                // NÚT 2: NHẬN CUỐC (Bấm trực tiếp ghi đè chuẩn xác cuốc xe)
+                android.widget.Button btnAccept = new android.widget.Button(activity);
+                btnAccept.setText("NHẬN CUỐC");
+                btnAccept.setTextColor(android.graphics.Color.WHITE);
+                btnAccept.setBackgroundColor(android.graphics.Color.parseColor("#1A73E8"));
+                btnAccept.setOnClickListener(v -> {
+                    // Gọi luôn hàm bắn lệnh trả lời của ZaloWebManager để chiếm cuốc siêu tốc
+                    sendReplyToSpecificMessage(activity, convId, msgId, "Ok nhận", groupName);
+                    // Nhận xong thu nhỏ lại
+                    resetBubbleToIcon(activity);
+                });
+                rowButtons.addView(btnAccept, new android.widget.LinearLayout.LayoutParams(350, 110));
+
+                container.addView(rowButtons);
+                bubbleLayout.addView(container, new FrameLayout.LayoutParams(750, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            } catch (Exception e) {
+                Log.e(TAG, "Loi showNewRideOnBubble: ", e);
+            }
+        });
+    }
+
+    // Hàm bổ trợ: Đưa bong bóng lớn thu gọn lại thành icon tròn sau khi thao tác xong
+    private static void resetBubbleToIcon(Context context) {
+        if (bubbleLayout == null) return;
+        bubbleLayout.removeAllViews();
+        android.widget.ImageView iconView = new android.widget.ImageView(context);
+        try {
+            String imgPath = context.getFilesDir().getAbsolutePath() + "/profile.jpg";
+            android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeFile(imgPath);
+            if(bmp != null) iconView.setImageBitmap(bmp);
+            else iconView.setImageResource(android.R.drawable.ic_menu_call);
+        } catch(Exception ignored) {
+            iconView.setImageResource(android.R.drawable.ic_menu_call);
+        }
+        iconView.setBackgroundColor(android.graphics.Color.parseColor("#1A73E8"));
+        iconView.setPadding(20, 20, 20, 20);
+        bubbleLayout.addView(iconView, new FrameLayout.LayoutParams(150, 150));
     }
 }
