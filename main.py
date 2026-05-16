@@ -178,6 +178,7 @@ KV = '''
         MDRaisedButton:
             text: "NHẬN CUỐC"
             size_hint_x: 0.6
+            elevation: 0
             md_bg_color: 0.1, 0.5, 0.8, 1
             on_release: app.manual_accept_ride(root)
 
@@ -299,6 +300,7 @@ MDScreen:
                         text: "MỞ KHUNG CHAT ZALO"
                         icon: "chat-processing"
                         size_hint_x: 1
+                        elevation: 0
                         md_bg_color: 0.1, 0.6, 0.2, 1
                         on_release: app.root.ids.bottom_nav.switch_tab('tab_zalo')
 
@@ -382,6 +384,7 @@ MDScreen:
                         height: "36dp"
                         md_bg_color: 1, 1, 1, 0.25
                         pos_hint: {"center_y": .5}
+                        elevation: 0
                         on_release: app.reload_zalo_web()
 
                 # ---> HỘP CHỨA WEBVIEW PHẢI NẰM NGOÀI ĐỂ XẾP DƯỚI THANH STATUS <---
@@ -449,6 +452,7 @@ MDScreen:
                                 text: "CẤP QUYỀN APP"
                                 icon: "shield-check"
                                 size_hint_x: 1
+                                elevation: 0
                                 md_bg_color: 0.8, 0.4, 0.1, 1
                                 on_release: app.check_permissions_and_guide()
                                 
@@ -456,6 +460,7 @@ MDScreen:
                                 text: "CHỐNG NGỦ ĐÔNG (QUAN TRỌNG)"
                                 icon: "battery-alert"
                                 size_hint_x: 1
+                                elevation: 0
                                 md_bg_color: 0.6, 0.1, 0.1, 1
                                 on_release: app.request_ignore_battery()
 
@@ -503,7 +508,18 @@ MDScreen:
                                 MDSwitch:
                                     id: sw_filter
                                     pos_hint: {'center_y': .5}
+                            MDSeparator:
 
+                            MDBoxLayout:
+                                size_hint_y: None
+                                height: "45dp"
+                                MDLabel:
+                                    text: "Bật bong bóng chat nổi (Floating Bubble)"
+                                    font_style: "Subtitle2"
+                                MDSwitch:
+                                    id: sw_bubble
+                                    pos_hint: {'center_y': .5}
+                                    on_active: app.toggle_bubble_service(self.active)
                         # --- HƯỚNG DẪN DÙNG TIẾNG VIỆT ---
                         MDBoxLayout:
                             orientation: "vertical"
@@ -545,10 +561,12 @@ MDScreen:
                                 size_hint_y: None
                                 height: "50dp"
                                 spacing: "10dp"
-                                MDTextField:
+                                TextInput:
                                     id: inp_nhan
                                     hint_text: "Từ khóa NHẬN"
                                     multiline: True
+                                    background_color: 0.95, 0.95, 0.95, 1
+                                    foreground_color: 0, 0, 0, 1
                                 MDIconButton:
                                     icon: "content-paste"
                                     pos_hint: {"center_y": .5}
@@ -559,10 +577,12 @@ MDScreen:
                                 size_hint_y: None
                                 height: "50dp"
                                 spacing: "10dp"
-                                MDTextField:
+                                TextInput:
                                     id: inp_loai
                                     hint_text: "Từ khóa BỎ QUA"
                                     multiline: True
+                                    background_color: 0.95, 0.95, 0.95, 1
+                                    foreground_color: 0, 0, 0, 1
                                 MDIconButton:
                                     icon: "content-paste"
                                     pos_hint: {"center_y": .5}
@@ -573,28 +593,33 @@ MDScreen:
                                 size_hint_y: None
                                 height: "50dp"
                                 spacing: "10dp"
-                                MDTextField:
+                                TextInput:
                                     id: inp_reply
                                     hint_text: "Nội dung trả lời tự động"
                                     multiline: True
+                                    background_color: 0.95, 0.95, 0.95, 1
+                                    foreground_color: 0, 0, 0, 1
                                 MDIconButton:
                                     icon: "content-paste"
                                     pos_hint: {"center_y": .5}
                                     on_release: inp_reply.text = app.Clipboard.paste()
                                 
-                            MDTextField:
+                            TextInput:
                                 id: inp_delay
-                                hint_text: "Thời gian chốt cuốc mới (giây)"
+                                hint_text: "Khoảng cách chốt 2 cuốc (giây)"
                                 text: "30"
                                 input_filter: "int"
-                                helper_text: "Khoảng cách giữa 2 lần chốt"
-                                helper_text_mode: "on_focus"
+                                size_hint_y: None
+                                height: "45dp"
+                                background_color: 0.95, 0.95, 0.95, 1
+                                foreground_color: 0, 0, 0, 1
                         
                         MDRaisedButton:
                             text: "LƯU CẤU HÌNH"
                             size_hint_x: 1
                             size_hint_y: None
                             height: "45dp"
+                            elevation: 0
                             md_bg_color: 0.1, 0.5, 0.8, 1
                             on_release: app.save_config()
 
@@ -629,6 +654,7 @@ MDScreen:
                                 size_hint_y: None
                                 height: "35dp"
                                 pos_hint: {"center_x": .5}
+                                elevation: 0
                                 on_release: app.show_activation_popup_from_settings()
 
                         MDBoxLayout:
@@ -809,8 +835,9 @@ class ZAutoProApp(MDApp):
         self.theme_cls.primary_palette = "Blue"
         self.config_data = {
             'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận', 'gia_km': '12000',
-            'global_delay': '30', 'sw_voice': True, # Thêm sw_voice vào đây
-            'sw_filter': False, 'sw_auto': False, 'is_linked': False
+            'global_delay': '30', 'sw_voice': True,
+            'sw_filter': False, 'sw_auto': False, 'is_linked': False,
+            'sw_bubble': True
         }
         self.last_global_reply_time = 0 # Thêm dòng này để theo dõi thời gian chốt cuối cùng
         self.is_linked = False # Khai báo mặc định là chưa liên kết
@@ -861,7 +888,8 @@ class ZAutoProApp(MDApp):
                 # 2. KÍCH HOẠT LUỒNG TRẢ LỜI TIN NHẮN
                 self.reply_worker_thread = threading.Thread(target=self._reply_worker_loop, daemon=True)
                 self.reply_worker_thread.start()
-
+                self.audio_worker_thread = threading.Thread(target=self._audio_worker_loop, daemon=True)
+                self.audio_worker_thread.start()
                 Clock.schedule_interval(self._system_watchdog, 180)
 
                 # Kích hoạt UI Queue Processor chạy 0.1s/lần
@@ -871,6 +899,24 @@ class ZAutoProApp(MDApp):
                 Clock.schedule_interval(self._poll_java_queue, 0.2)
             except Exception as e:
                 logger.error(f"Lỗi on_start: {traceback.format_exc()}")
+    def _audio_worker_loop(self):
+        while getattr(self, 'app_running', True):
+            try:
+                conv_id, msg_id = self.audio_queue.get(timeout=1.0)
+                if platform == 'android':
+                    try:
+                        # Gọi Java phát ghi âm đích danh ID tin nhắn
+                        autoclass('org.zauto.ZaloWebManager').playSpecificAudio(PythonActivity.mActivity, conv_id, msg_id)
+                    except Exception:
+                        pass
+                
+                # Đợi 7 giây để Zalo phát xong âm thanh rồi mới nhả tin tiếp theo
+                time.sleep(7) 
+                self.audio_queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception:
+                time.sleep(1)           
     def update_group_list_ui(self, groups):
         """Cập nhật danh sách nhóm từ Zalo Web lên giao diện Tab Nhóm"""
         try:
@@ -1232,8 +1278,7 @@ class ZAutoProApp(MDApp):
                                 self.ui_queue.put_nowait(('add_ride', (group, "🔊 CÓ BẢN GHI ÂM MỚI - ĐANG PHÁT...", msg_id, conv_id)))
                                 # 2. Gọi lệnh Java để mở nhóm và phát âm thanh
                                 if platform == 'android':
-                                    try: autoclass('org.zauto.ZaloWebManager').playLastAudio(PythonActivity.mActivity, conv_id)
-                                    except: pass
+                                    self.audio_queue.put((conv_id, msg_id))
                                 # 3. Đọc giọng nói cảnh báo
                                 if self.config_data.get('sw_voice', True):
                                     self.ui_queue.put_nowait(('speak', f"Chú ý, có ghi âm mới từ {group}"))
@@ -1244,16 +1289,7 @@ class ZAutoProApp(MDApp):
                                 try:
                                     self.msg_queue.put(('WEB_NEW_MSG', payload), timeout=0.3)
                                 except queue.Full: pass
-                            payload = {
-                                'group': group,
-                                'msg': msg,
-                                'msg_id': msg_id,
-                                'conversation_id': conv_id
-                            }
-                            try:
-                                self.msg_queue.put(('WEB_NEW_MSG', payload), timeout=0.3)
-                            except queue.Full:
-                                logger.warning("msg_queue full bỏ qua")
+                            
             except Exception as e:
                 pass # Bỏ qua lỗi jnius khi khởi động
 
@@ -1267,11 +1303,24 @@ class ZAutoProApp(MDApp):
                 old_card.clear_widgets()
                 del old_card
             card = RideCard(group_text=group, msg_text=msg, time_text=time.strftime("%H:%M"))
+            
             # Gán ẩn data vào Widget để KHÔNG PHẢI SỬA GIAO DIỆN KV
             card.msg_id = msg_id
             card.conversation_id = conversation_id
             self.root.ids.ride_list.add_widget(card, index=0)
-        except Exception: logger.error(traceback.format_exc())
+            
+            # TỰ XÓA CUỐC SAU 2 PHÚT (120 GIÂY) NẾU KHÔNG BẤM GÌ
+            Clock.schedule_once(lambda dt: self.auto_remove_card(card), 120)
+        except Exception: 
+            logger.error(traceback.format_exc())
+
+    def auto_remove_card(self, card_widget):
+        """Hàm âm thầm xóa thẻ canh me sau 2 phút để dọn dẹp màn hình"""
+        try:
+            if card_widget in self.root.ids.ride_list.children:
+                self.remove_ride(card_widget)
+        except Exception:
+            pass
 
     def manual_accept_ride(self, card_widget):
         # Băm nhỏ các câu chốt theo dấu phẩy và bốc ngẫu nhiên 1 câu
@@ -1365,10 +1414,8 @@ class ZAutoProApp(MDApp):
             if ids.get('inp_reply'): ids.inp_reply.text = self.config_data.get('reply_msg', 'Ok nhận')
             if ids.get('inp_delay'): ids.inp_delay.text = self.config_data.get('global_delay', '30')
             if ids.get('sw_filter'): ids.sw_filter.active = self.config_data.get('sw_filter', False)
-            
-            # --- THÊM DÒNG LOAD TRẠNG THÁI NÚT GIỌNG NÓI ---
             if ids.get('sw_voice'): ids.sw_voice.active = self.config_data.get('sw_voice', True)
-            
+            if ids.get('sw_bubble'): ids.sw_bubble.active = self.config_data.get('sw_bubble', True)
             is_auto = self.config_data.get('sw_auto', False)
             if ids.get('sw_auto_settings'): ids.sw_auto_settings.active = is_auto
 
@@ -1415,6 +1462,7 @@ class ZAutoProApp(MDApp):
             if ids.get('inp_reply'): self.config_data['reply_msg'] = ids.inp_reply.text
             if ids.get('inp_delay'): self.config_data['global_delay'] = ids.inp_delay.text
             if ids.get('sw_filter'): self.config_data['sw_filter'] = ids.sw_filter.active
+            if ids.get('sw_bubble'): self.config_data['sw_bubble'] = ids.sw_bubble.active
             if ids.get('sw_auto_main'): self.config_data['sw_auto'] = ids.sw_auto_main.active
             
             # --- THÊM DÒNG LƯU TRẠNG THÁI NÚT GIỌNG NÓI ---
@@ -1517,6 +1565,7 @@ class ZAutoProApp(MDApp):
         # QUEUE ĐA LUỒNG
         self.msg_queue = queue.Queue(maxsize=500)
         self.reply_queue = queue.Queue(maxsize=50)
+        self.audio_queue = queue.Queue(maxsize=50)
         self.ui_queue = queue.Queue(maxsize=100) # Queue chuyên đẩy UI update chống Freeze Kivy
         
         # LOCK SYSTEM CHUẨN
@@ -1653,7 +1702,27 @@ class ZAutoProApp(MDApp):
             if not pm.isIgnoringBatteryOptimizations(activity.getPackageName()):
                 intent = Intent(autoclass('android.provider.Settings').ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                 intent.setData(Uri.parse("package:" + activity.getPackageName()))
-                activity.startActivity(intent)        
+                activity.startActivity(intent) 
+    def on_pause(self):
+        """KHI ẨN APP RA MÀN HÌNH CHÍNH -> TỰ ĐỘNG HIỆN BONG BÓNG LÊN"""
+        if self.config_data.get('sw_bubble', True):
+            if platform == 'android':
+                try:
+                    from jnius import autoclass
+                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                    autoclass('org.zauto.ZaloWebManager').showFloatingBubble(PythonActivity.mActivity)
+                except Exception: pass
+        return True
+
+    def on_resume(self):
+        """KHI MỞ LẠI APP ZAUTO LÊN MÀN HÌNH -> TỰ ĐỘNG GIẤU BONG BÓNG ĐI"""
+        if self.config_data.get('sw_bubble', True):
+            if platform == 'android':
+                try:
+                    from jnius import autoclass
+                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                    autoclass('org.zauto.ZaloWebManager').hideFloatingBubble(PythonActivity.mActivity)
+                except Exception: pass            
     def on_stop(self):
         self.app_running = False 
         
@@ -1690,6 +1759,22 @@ class ZAutoProApp(MDApp):
 
             except Exception as e:
                 logger.error(f"Lỗi dọn dẹp on_stop: {e}")
-
+    def toggle_bubble_service(self, active_state):
+        try:
+            self.config_data['sw_bubble'] = active_state
+            self.save_config_silent()
+            if platform == 'android':
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
+                if active_state:
+                    # Vì đang mở App nên gọi hàm ẨN bong bóng để đỡ vướng màn hình
+                    # (Bong bóng sẽ tự hiện khi vuốt thoát app)
+                    ZaloWebManager.hideFloatingBubble(PythonActivity.mActivity)
+                    self.safe_toast("Đã BẬT. Bong bóng sẽ nổi lên khi bạn ẩn App!")
+                else:
+                    ZaloWebManager.hideFloatingBubble(PythonActivity.mActivity)
+        except Exception as e:
+            logger.error(f"Loi toggle_bubble_service: {e}")
 if __name__ == '__main__':
     ZAutoProApp().run()
