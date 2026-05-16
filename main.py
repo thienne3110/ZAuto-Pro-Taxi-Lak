@@ -1161,15 +1161,15 @@ class ZAutoProApp(MDApp):
         if not getattr(self, 'is_radar_running', False): return
         if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
 
-        # BƯỚC CHẶN 2: BĂM NỘI DUNG VÀ ID (ĐÃ FIX TỰ QUÊN SAU 60 GIÂY ĐỂ KHÔNG BỊ LIỆT NHÓM)
+        # BƯỚC CHẶN 2: BĂM NỘI DUNG VÀ ID (TỐI ƯU HÓA XUỐNG 12 GIÂY)
         msg_hash = hashlib.md5(msg.encode('utf-8')).hexdigest()[:8]
         real_msg_id = msg_id if msg_id else msg_hash
         cache_key = f"{group}_{real_msg_id}_{msg_hash}"
         
         current_time = time.time()
         if cache_key in self.processed_msg_hashes:
-            if current_time - self.processed_msg_hashes[cache_key] < 60:
-                return # Chỉ chặn tin nhắn trùng lặp trong vòng 60 giây
+            if current_time - self.processed_msg_hashes[cache_key] < 12:
+                return # Chỉ chặn dội tin kép do lác mạng trong 12 giây
         
         self.processed_msg_hashes[cache_key] = current_time
         msg_id = real_msg_id
@@ -1371,6 +1371,11 @@ class ZAutoProApp(MDApp):
         
         try:
             self.last_global_reply_time = now 
+            
+            # GIẢI PHÁP TỐI THƯỢNG: Xóa sạch bộ nhớ đệm chặn trùng lặp ngay khi chốt!
+            # Để nhóm Zalo lập tức sẵn sàng nhận cuốc mới mà không bị nghẽn.
+            self.processed_msg_hashes.clear()
+            
             self.reply_queue.put({
                 'group': group, 'conversation_id': conversation_id, 'msg_id': msg_id, 'reply_text': reply_text
             }, timeout=0.3)
