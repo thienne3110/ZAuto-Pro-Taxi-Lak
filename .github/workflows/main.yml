@@ -53,9 +53,9 @@ jobs:
 
       - name: 📦 Install Python Packages
         run: |
-          python -m pip install --upgrade pip
+          python -m pip install --upgrade pip==23.2.1
           pip install setuptools wheel
-          pip install "Cython>=3.0.0" buildozer
+          pip install Cython==0.29.36 buildozer==1.5.0
 
       # ĐÃ THÊM FILE manifest_services.xml VÀO DANH SÁCH KIỂM TRA BẮT BUỘC
       - name: 🛡️ Fail-Fast (Kiểm dịch cấu trúc)
