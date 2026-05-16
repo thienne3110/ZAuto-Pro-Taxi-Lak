@@ -21,112 +21,50 @@ public class ZaloNotificationService extends NotificationListenerService {
 
     @Override
     public void onNotificationPosted(StatusBarNotification sbn) {
-
         try {
-
-            // =====================================================
-            // NULL CHECK CHỐNG CRASH
-            // =====================================================
-            if (sbn == null) return;
-
-            String packageName = sbn.getPackageName();
-
-            if (packageName == null) return;
-
-            // =====================================================
-            // CHỈ NHẬN THÔNG BÁO ZALO
-            // =====================================================
-            if (!ZALO_PACKAGE.equals(packageName)) {
-                return;
-            }
+            // NULL CHECK CHỐNG CRASH VÀ CHỈ NHẬN THÔNG BÁO ZALO
+            if (sbn == null || sbn.getPackageName() == null) return;
+            if (!ZALO_PACKAGE.equals(sbn.getPackageName())) return;
 
             Notification notif = sbn.getNotification();
-
             if (notif == null) return;
 
-            // =====================================================
-            // BỎ QUA GROUP SUMMARY
-            // TRÁNH ĐỌC TRÙNG THÔNG BÁO
-            // =====================================================
-            if ((notif.flags & Notification.FLAG_GROUP_SUMMARY) != 0) {
-                return;
-            }
+            // BỎ QUA GROUP SUMMARY TRÁNH ĐỌC TRÙNG THÔNG BÁO
+            if ((notif.flags & Notification.FLAG_GROUP_SUMMARY) != 0) return;
 
-            // =====================================================
-            // LẤY EXTRAS
-            // =====================================================
             Bundle extras = notif.extras;
+            if (extras == null) return;
 
-            if (extras == null) {
-                return;
-            }
+            // LẤY TIÊU ĐỀ (TÊN NHÓM) & NỘI DUNG CUỐC
+            CharSequence titleSeq = extras.getCharSequence(Notification.EXTRA_TITLE);
+            CharSequence textSeq = extras.getCharSequence(Notification.EXTRA_TEXT);
 
-            // =====================================================
-            // LẤY TIÊU ĐỀ & NỘI DUNG
-            // =====================================================
-            CharSequence titleSeq =
-                    extras.getCharSequence(Notification.EXTRA_TITLE);
+            String group = titleSeq != null ? titleSeq.toString().trim() : "";
+            String message = textSeq != null ? textSeq.toString().trim() : "";
 
-            CharSequence textSeq =
-                    extras.getCharSequence(Notification.EXTRA_TEXT);
+            // CHỐNG MESSAGE RỖNG VÀ LOOP THÔNG BÁO HỆ THỐNG
+            if (TextUtils.isEmpty(group) || TextUtils.isEmpty(message)) return;
+            if (message.contains("tin nhắn mới")) return;
 
-            String group =
-                    titleSeq != null ? titleSeq.toString().trim() : "";
-
-            String message =
-                    textSeq != null ? textSeq.toString().trim() : "";
-
-            // =====================================================
-            // CHỐNG MESSAGE RỖNG
-            // =====================================================
-            if (TextUtils.isEmpty(group)) return;
-
-            if (TextUtils.isEmpty(message)) return;
-
-            // =====================================================
-            // CHỐNG LOOP THÔNG BÁO HỆ THỐNG
-            // =====================================================
-            if (message.contains("tin nhắn mới")) {
-                return;
-            }
-
-            // =====================================================
-            // CHỐNG DUPLICATE
-            // =====================================================
+            // CHỐNG DUPLICATE (Tạo khóa nhận diện ID duy nhất)
             String notifKey;
-
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
                 notifKey = sbn.getKey();
             } else {
                 notifKey = String.valueOf(System.currentTimeMillis());
             }
 
-            // =====================================================
-            // PUSH VÀO HÀNG ĐỢI RAM
-            // =====================================================
-            String payload =
-                    "WEB_NEW_MSG|||"
-                    + group
-                    + "|||"
-                    + message
-                    + "|||"
-                    + notifKey
-                    + "|||NOTIFICATION";
+            // PUSH VÀO HÀNG ĐỢI RAM ĐỂ PYTHON XỬ LÝ (Kèm khóa an toàn chống tràn)
+            String payload = "WEB_NEW_MSG|||" + group + "|||" + message + "|||" + notifKey + "|||NOTIFICATION";
+            
+            if (ZaloWebManager.pythonMsgQueue.size() < 100) {
+                ZaloWebManager.pythonMsgQueue.add(payload);
+            }
 
-            ZaloWebManager.pythonMsgQueue.add(payload);
-
-            Log.d(TAG,
-                    "NEW ZALO MSG => "
-                    + group
-                    + " | "
-                    + message);
+            Log.d(TAG, "NEW ZALO MSG => " + group + " | " + message);
 
         } catch (Exception e) {
-
-            Log.e(TAG,
-                    "Notification Error: "
-                    + e.getMessage());
-
+            Log.e(TAG, "Notification Error: " + e.getMessage());
         }
     }
 
