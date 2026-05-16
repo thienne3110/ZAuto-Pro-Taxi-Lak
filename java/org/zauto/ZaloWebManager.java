@@ -113,17 +113,92 @@ public class ZaloWebManager {
             final String conversationId,
             final String msgId,
             final String text,
-            final String groupName) {
+            final String msgTextToFind,
+            final String sentTime) { // ĐÃ THÊM: Nhận tham số nội dung gốc và giờ gửi từ Python
 
         Activity safeActivity = activityRef != null ? activityRef.get() : activity;
         if (safeActivity == null || hiddenWebView == null) return;
 
         replyQueue.add(() -> safeActivity.runOnUiThread(() -> {
             try {
-                String js = "if(typeof window.zautoSendReply === 'function') { " +
-                        "window.zautoSendReply('" + escapeJs(conversationId) + "', '" +
-                        escapeJs(msgId) + "', '" + escapeJs(text) + "', '" + escapeJs(groupName) + "'); }";
-                safeEvaluateJs(js);
+                // Khử trùng ký tự đặc biệt an toàn cho Javascript
+                String safeReply = text.replace("'", "\\'").replace("\n", "\\n").replace("\"", "\\\"");
+                String safeSearchText = msgTextToFind.replace("'", "\\'").replace("\n", " ").replace("\"", "\\\"");
+                String safeMsgId = (msgId != null) ? msgId.replace("'", "\\'") : "";
+                String safeTime = (sentTime != null) ? sentTime.replace("'", "\\'") : "";
+
+                // Bơm lõi Javascript chiến thuật xử lý 3 lớp
+                String jsCode = "(function() {" +
+                    "try {" +
+                        "var safeReply = '" + safeReply + "';" +
+                        "var safeSearchText = '" + safeSearchText + "';" +
+                        "var targetMsgId = '" + safeMsgId + "';" +
+                        "var targetTime = '" + safeTime + "';" +
+                        "var textLower = safeSearchText.toLowerCase();" +
+                        
+                        "var bubbles = document.querySelectorAll('.message-view__blur, .card--group-message, .chat-message, div[id^=\"msg-\"], .audio-msg, .voice-msg');" +
+                        "var targetNode = null;" +
+                        "var isVoice = textLower.includes('ghi âm') || textLower.includes('thoại') || textLower.includes('audio') || textLower.includes('voice');" +
+                        
+                        // --- LỚP 1 (ƯU TIÊN 1): CLICK ĐÚP THEO CHỮ HOẶC THỜI LƯỢNG TIN THOẠI + GIỜ GỬI ---
+                        "if (isVoice) {" +
+                            "for (var v = bubbles.length - 1; v >= 0; v--) {" +
+                                "var cellText = bubbles[v].innerText ? bubbles[v].innerText : '';" +
+                                "var cellHtml = bubbles[v].innerHTML ? bubbles[v].innerHTML.toLowerCase() : '';" +
+                                "var hasVoiceStructure = cellHtml.includes('audio') || cellHtml.includes('player') || cellHtml.includes('ico-voice') || /\\\\d{2}:\\\\d{2}/.test(cellText);" +
+                                "var hasCorrectTime = cellText.includes(targetTime);" +
+                                "if (hasVoiceStructure && hasCorrectTime) {" +
+                                    "targetNode = bubbles[v];" +
+                                    "break;" +
+                                "}" +
+                            "}" +
+                            "if (!targetNode && bubbles.length > 0) {" +
+                                "targetNode = bubbles[bubbles.length - 1];" +
+                            "}" +
+                        "} else if (safeSearchText.length > 2) {" +
+                            "for (var i = bubbles.length - 1; i >= 0; i--) {" +
+                                "if (bubbles[i].innerText && bubbles[i].innerText.includes(safeSearchText) && bubbles[i].innerText.includes(targetTime)) {" +
+                                    "targetNode = bubbles[i];" +
+                                    "break;" +
+                                "}" +
+                            "}" +
+                        "}" +
+                        
+                        // --- LỚP 2 (DỰ PHÒNG 1): CLICK ĐÚP THEO ID TIN NHẮN ---
+                        "if (!targetNode && targetMsgId && targetMsgId !== 'NOTIFICATION') {" +
+                            "for (var j = bubbles.length - 1; j >= 0; j--) {" +
+                                "if (bubbles[j].id && bubbles[j].id.includes(targetMsgId)) {" +
+                                    "targetNode = bubbles[j];" +
+                                    "break;" +
+                                "}" +
+                            "}" +
+                        "}" +
+
+                        "function typeAndSend() {" +
+                            "var input = document.querySelector('#richInput');" +
+                            "if(input) {" +
+                                "input.innerHTML = safeReply;" +
+                                "input.dispatchEvent(new Event('input', {bubbles: true}));" +
+                                "setTimeout(function() {" +
+                                    "var btn = document.querySelector('.fa-send-2') || document.querySelector('[icon=\"send-2\"]').parentNode;" +
+                                    "if(btn) btn.click();" +
+                                "}, 200);" +
+                            "}" +
+                        "}" +
+
+                        // KÍCH HOẠT HÀNH ĐỘNG COI TRẬN ĐẤU
+                        "if (targetNode) {" +
+                            "var evt = new MouseEvent('dblclick', {bubbles: true, cancelable: true, view: window});" +
+                            "targetNode.dispatchEvent(evt);" +
+                            "setTimeout(typeAndSend, 300);" +
+                        "} else {" +
+                            // --- LỚP 3 (HỘ VỆ CUỐI): BƠM THẲNG KHUNG CHAT GỬI ĐI ---
+                            "typeAndSend();" +
+                        "}" +
+                    "} catch(e) { console.log(e); }" +
+                "})();";
+
+                hiddenWebView.evaluateJavascript(jsCode, null);
             } catch (Exception e) {
                 Log.e(TAG, "Reply Engine Error", e);
             }
@@ -889,9 +964,11 @@ public class ZaloWebManager {
                 btnAccept.setTextColor(android.graphics.Color.WHITE);
                 btnAccept.setBackgroundColor(android.graphics.Color.parseColor("#1A73E8"));
                 btnAccept.setOnClickListener(v -> {
-                    // Gọi luôn hàm bắn lệnh trả lời của ZaloWebManager để chiếm cuốc siêu tốc
-                    sendReplyToSpecificMessage(activity, convId, msgId, "Ok nhận", groupName);
-                    // Nhận xong thu nhỏ lại
+                    // ĐÃ SỬA: Lấy giờ phút thực tế ngay lúc tài xế bấm nút trên bong bóng
+                    String clickTime = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(new java.util.Date());
+                    
+                    // Truyền đủ tham số: nội dung cuốc xe (msgText) và thời gian thực (clickTime) xuống lõi xử lý
+                    sendReplyToSpecificMessage(activity, convId, msgId, "Ok nhận", msgText, clickTime);
                     resetBubbleToIcon(activity);
                 });
                 rowButtons.addView(btnAccept, new android.widget.LinearLayout.LayoutParams(350, 110));
