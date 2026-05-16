@@ -935,7 +935,7 @@ public class ZaloWebManager {
                 tvMsg.setText(msgText);
                 tvMsg.setTextSize(14);
                 tvMsg.setPadding(0, 10, 0, 20);
-                tvMsg.setTextColor(android.graphics.Color.DARKGRAY);
+                tvMsg.setTextColor(android.graphics.Color.DKGRAY);
                 container.addView(tvMsg);
 
                 // Hộp ngang chứa 2 nút Nhận và Bỏ Qua
