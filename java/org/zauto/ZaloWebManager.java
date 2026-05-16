@@ -330,7 +330,7 @@ public class ZaloWebManager {
             "   window.zauto_seen = {};" +
             "   window.zauto_seen_keys = [];" +
 
-            // 1. HÀM GỬI REPLY ĐA TẦNG (CHỈ QUOTE KHI LÀ ID THẬT CỦA ZALO)
+            // 1. HÀM GỬI REPLY 2 LỚP BẢO VỆ (API CHÍNH + DỰ PHÒNG GÕ TAY)
             "   window.zautoSendReply = function(convId, fakeMsgId, text, groupName) {" +
             "       try {" +
             "           let item = document.querySelector('.msg-item[anim-data-id=\"'+convId+'\"] .conv-item');" +
@@ -343,49 +343,61 @@ public class ZaloWebManager {
             "           }" +
             
             "           setTimeout(() => {" +
-            "               let realMsgId = fakeMsgId || '';" +
-            "               if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
-            "                   let req = { toid: convId, msg: text, type: 1 };" +
-                                // CHIẾN THUẬT QUOTE CHUẨN: Chỉ đè tin nhắn nếu ID bắt đầu bằng "msg_"
-            "                   if (realMsgId && realMsgId.startsWith('msg_')) {" +
-            "                       req.quote_msgId = realMsgId;" +
+            "               let realMsgId = String(fakeMsgId || '');" +
+            "               let isSent = false;" +
+                            
+                            // ==========================================
+                            // PHƯƠNG ÁN 1: BẮN API NGẦM (GHIM ĐÚNG TIN)
+                            // ==========================================
+            "               try {" +
+            "                   if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
+            "                       let req = { toid: convId, msg: text, type: 1 };" +
+            // BYPASS VÀO LÕI ZALO: Bơm mọi thuộc tính mà Zalo có thể đòi hỏi để ép nó phải ghim tin
+            "                       if (realMsgId && !realMsgId.startsWith('TIME_') && realMsgId.length > 5) {" +
+            "                           req.quote_msgId = realMsgId;" +
+            "                           req.quote = {" +
+            "                               msgId: realMsgId," +
+            "                               globalMsgId: realMsgId," +
+            "                               cliMsgId: realMsgId" +
+            "                           };" +
+            "                       }" +
+            "                       window.zMessenger.sendMessage(req);" +
+            "                       ZAutoBridge.onLoginSuccess('PA1: Đã chốt API', groupName);" + 
+            "                       isSent = true;" +
             "                   }" +
-            "                   window.zMessenger.sendMessage(req);" +
-            "                   ZAutoBridge.onLoginSuccess('Đã chốt xong:', groupName);" + 
-            "               } else {" +
-            "                   let input = document.getElementById('richInput');" +
-            "                   if(input) {" +
-            "                       input.focus();" +
-            "                       input.innerHTML = '';" +
-            "                       document.execCommand('insertText', false, text);" +
-            "                       input.dispatchEvent(new Event('input', {bubbles:true}));" + 
-            "                       input.blur();" + 
-            "                       let attempts = 0;" +
-            "                       let trySend = setInterval(() => {" +
-            "                           attempts++;" +
-            "                           let btnSend = null;" +
-            "                           let primarySelector = '#chat-input-container-id > div.chat-input-container__right-layout > div.normal-buttons-group > div.send-msg-btn';" +
-            "                           let fallbackSelectors = ['.fa-Sent-msg_24_Line', '[data-translate-title=\"STR_SEND\"]'];" +
-            "                           let el = document.querySelector(primarySelector);" +
-            "                           if (el) { btnSend = el; } else {" +
-            "                               for (let sel of fallbackSelectors) {" +
-            "                                   let fallbackEl = document.querySelector(sel);" +
-            "                                   if (fallbackEl) { btnSend = fallbackEl.closest('.z--btn--v2') || fallbackEl.parentElement || fallbackEl; break; }" +
+            "               } catch(err1) { console.log('ZAuto PA1 Fail', err1); }" +
+
+                            // ==========================================
+                            // PHƯƠNG ÁN 2: DỰ PHÒNG GÕ TAY (NẾU PA1 THẤT BẠI)
+                            // ==========================================
+            "               if (!isSent) {" +
+            "                   try {" +
+            "                       let input = document.getElementById('richInput');" +
+            "                       if(input) {" +
+            "                           input.focus();" +
+            "                           input.innerHTML = '';" +
+            "                           document.execCommand('insertText', false, text);" +
+            "                           input.dispatchEvent(new Event('input', {bubbles:true}));" + 
+            "                           input.blur();" + 
+            "                           let attempts = 0;" +
+            "                           let trySend = setInterval(() => {" +
+            "                               attempts++;" +
+            "                               let btnSend = document.querySelector('#chat-input-container-id .send-msg-btn, .fa-Sent-msg_24_Line, [data-translate-title=\"STR_SEND\"]');" +
+            "                               if (btnSend) {" +
+            "                                   let tgt = btnSend.closest('.z--btn--v2') || btnSend.parentElement || btnSend;" +
+            "                                   tgt.click();" +
+            "                                   let key = Object.keys(tgt).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
+            "                                   if(key && tgt[key] && tgt[key].onClick) tgt[key].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
             "                               }" +
-            "                           }" +
-            "                           if (btnSend) {" +
-            "                               btnSend.click();" +
-            "                               let key = Object.keys(btnSend).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
-            "                               if(key && btnSend[key] && btnSend[key].onClick) btnSend[key].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
-            "                           }" +
-            "                           let enterEvent = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });" +
-            "                           input.dispatchEvent(enterEvent);" +
-            "                           if (input.innerHTML === '' || input.innerHTML === '<br>') {" +
-            "                               clearInterval(trySend);" +
-            "                               ZAutoBridge.onLoginSuccess('Đã chốt xong:', groupName);" +
-            "                           } else if (attempts > 12) { clearInterval(trySend); }" +
-            "                       }, 250);" + 
-            "                   }" +
+            "                               let enterEvent = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });" +
+            "                               input.dispatchEvent(enterEvent);" +
+            "                               if (input.innerHTML === '' || input.innerHTML === '<br>') {" +
+            "                                   clearInterval(trySend);" +
+            "                                   ZAutoBridge.onLoginSuccess('PA2: Đã chốt gõ tay', groupName);" +
+            "                               } else if (attempts > 12) { clearInterval(trySend); }" +
+            "                           }, 200);" + 
+            "                       }" +
+            "                   } catch(err2) { console.log('ZAuto PA2 Fail', err2); }" +
             "               }" +
             "           }, 800);" + 
             "       } catch(e) {}" +
@@ -403,24 +415,32 @@ public class ZaloWebManager {
             "           let msgText   = (bodyEl.textContent || bodyEl.innerText || '').trim();" +
             "           let convId = msgItemEl.getAttribute('anim-data-id') || msgItemEl.id || '';" +
             
-            "           let realMsgId = msgItemEl.getAttribute('data-msg-id') || '';" +
-            "           if (!realMsgId && msgItemEl.dataset) { realMsgId = msgItemEl.dataset.msgId || ''; }" +
-            "           var fullTxt = '';" +
-            
+            // DEEP BYPASS: QUÉT VÉT CẠN MỌI TẦNG REACT FIBER ĐỂ LỘT TRẦN ID BỊ GIẤU
+            "           let realMsgId = ''; var fullTxt = '';" +
             "           try {" +
-            "               var rK = null; var keys = Object.keys(msgItemEl);" +
-            "               for (var i = 0; i < keys.length; i++) { if (keys[i].indexOf('__reactFiber') === 0 || keys[i].indexOf('__reactProps') === 0) { rK = keys[i]; break; } }" +
+            "               let id1 = msgItemEl.getAttribute('data-msg-id') || (msgItemEl.dataset ? msgItemEl.dataset.msgId : '');" +
+            "               if (id1 && id1.length > 5) realMsgId = id1;" +
+            
+            "               let keys = Object.keys(msgItemEl);" +
+            "               let rK = keys.find(k => k.startsWith('__reactFiber') || k.startsWith('__reactProps'));" +
             "               if (rK && msgItemEl[rK]) {" +
-            "                   var p = msgItemEl[rK].memoizedProps; if (!p && msgItemEl[rK].return) { p = msgItemEl[rK].return.memoizedProps; }" +
-            "                   if (p) {" +
-            "                       var paths = [p.data && p.data.lastMsg, p.item && p.item.lastMsg, p.lastMsg, p.message, p.msg, p.data, p.item, p];" +
-            "                       for (var j=0; j<paths.length; j++) {" +
-            "                           var o = paths[j];" +
-            "                           if (o && typeof o === 'object') {" +
-            "                               if (!realMsgId && (o.msgId || o.messageId)) { realMsgId = o.msgId || o.messageId; }" +
-            "                               if (!fullTxt && typeof o.content === 'string' && o.content.trim() !== '') { fullTxt = o.content; }" +
+            "                   let node = msgItemEl[rK];" +
+                                // Khoan ngược lên 4 lớp thư mục cha con của React để bới ID
+            "                   for(let step = 0; step < 4; step++) {" +
+            "                       if(!node) break;" +
+            "                       let p = node.memoizedProps || node.pendingProps;" +
+            "                       if (p) {" +
+                                        // Liệt kê mọi bí danh mà Zalo có thể đặt cho tin nhắn
+            "                           let objs = [p.data?.lastMsg, p.item?.lastMsg, p.lastMsg, p.message, p.msg, p.data, p.item, p];" +
+            "                           for (let o of objs) {" +
+            "                               if (o && typeof o === 'object') {" +
+            "                                   let foundId = o.msgId || o.messageId || o.cliMsgId || o.globalMsgId;" +
+            "                                   if (!realMsgId && foundId && String(foundId).length > 5) { realMsgId = String(foundId); }" +
+            "                                   if (!fullTxt && typeof o.content === 'string' && o.content.trim() !== '') { fullTxt = o.content; }" +
+            "                               }" +
             "                           }" +
             "                       }" +
+            "                       node = node.return;" + // Leo lên thế hệ cha
             "                   }" +
             "               }" +
             "           } catch(err) {}" +
