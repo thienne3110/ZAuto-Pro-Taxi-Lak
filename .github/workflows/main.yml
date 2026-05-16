@@ -1,193 +1,189 @@
 name: Build ZAuto VIP Production
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+push:
+branches:
+- main
+workflow_dispatch:
 
 jobs:
-  build:
-    runs-on: ubuntu-22.04
+build:
+runs-on: ubuntu-22.04
 
-    env:
-      PYTHON_VERSION: "3.11"
-      JAVA_VERSION: "17"
+```
+env:
+  PYTHON_VERSION: "3.11"
+  JAVA_VERSION: "17"
 
-    steps:
+steps:
 
-      # =====================================================
-      # CHECKOUT SOURCE
-      # =====================================================
-      - name: 📥 Checkout Code
-        uses: actions/checkout@v4
+  # =====================================================
+  # CHECKOUT
+  # =====================================================
+  - name: 📥 Checkout Source
+    uses: actions/checkout@v4
 
-      # =====================================================
-      # PYTHON 3.11 (ỔN ĐỊNH NHẤT CHO KIVY/P4A)
-      # =====================================================
-      - name: 🐍 Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
+  # =====================================================
+  # PYTHON
+  # =====================================================
+  - name: 🐍 Setup Python
+    uses: actions/setup-python@v5
+    with:
+      python-version: ${{ env.PYTHON_VERSION }}
 
-      # =====================================================
-      # JAVA 17
-      # =====================================================
-      - name: ☕ Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: ${{ env.JAVA_VERSION }}
+  # =====================================================
+  # JAVA 17
+  # =====================================================
+  - name: ☕ Setup Java
+    uses: actions/setup-java@v4
+    with:
+      distribution: temurin
+      java-version: ${{ env.JAVA_VERSION }}
 
-      # =====================================================
-      # CACHE MỚI HOÀN TOÀN
-      # =====================================================
-      - name: ⚡ Cache Gradle & Pip
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-            ~/.cache/pip
-          key: ${{ runner.os }}-zauto-v100-${{ github.run_id }}
-          restore-keys: |
-            ${{ runner.os }}-zauto-v100-
+  # =====================================================
+  # CACHE
+  # =====================================================
+  - name: ⚡ Cache Gradle & Pip
+    uses: actions/cache@v4
+    with:
+      path: |
+        ~/.gradle/caches
+        ~/.gradle/wrapper
+        ~/.cache/pip
+      key: ${{ runner.os }}-zauto-${{ hashFiles('buildozer.spec') }}
+      restore-keys: |
+        ${{ runner.os }}-zauto-
 
-      # =====================================================
-      # SYSTEM DEPENDENCIES
-      # =====================================================
-      - name: ⚙️ Install System Dependencies
-        run: |
-          sudo apt update
+  # =====================================================
+  # SYSTEM DEPENDENCIES
+  # =====================================================
+  - name: ⚙️ Install System Packages
+    run: |
+      sudo apt update
 
-          sudo apt install -y \
-            zip \
-            unzip \
-            git \
-            openjdk-17-jdk \
-            autoconf \
-            automake \
-            libtool \
-            pkg-config \
-            zlib1g-dev \
-            libncurses5-dev \
-            libncursesw5-dev \
-            libtinfo5 \
-            cmake \
-            libffi-dev \
-            libssl-dev \
-            ccache \
-            libjpeg-dev \
-            libpng-dev \
-            ffmpeg \
-            libsdl2-dev \
-            libsdl2-image-dev \
-            libsdl2-mixer-dev \
-            libsdl2-ttf-dev \
-            build-essential \
-            patch
+      sudo apt install -y \
+        zip \
+        unzip \
+        git \
+        openjdk-17-jdk \
+        autoconf \
+        automake \
+        libtool \
+        pkg-config \
+        zlib1g-dev \
+        libncurses5-dev \
+        libncursesw5-dev \
+        libtinfo5 \
+        cmake \
+        libffi-dev \
+        libssl-dev \
+        ccache \
+        build-essential \
+        patch \
+        libjpeg-dev \
+        libpng-dev \
+        ffmpeg \
+        libsdl2-dev \
+        libsdl2-image-dev \
+        libsdl2-mixer-dev \
+        libsdl2-ttf-dev
 
-      # =====================================================
-      # PYTHON PACKAGES
-      # =====================================================
-      - name: 📦 Install Python Packages
-        run: |
-          python -m pip install --upgrade pip==23.2.1
+  # =====================================================
+  # PYTHON PACKAGES
+  # =====================================================
+  - name: 📦 Install Python Packages
+    run: |
+      python -m pip install --upgrade pip==23.2.1
 
-          pip install --upgrade \
-            setuptools==69.5.1 \
-            wheel==0.43.0
+      pip install \
+        setuptools==69.5.1 \
+        wheel==0.43.0 \
+        Cython==0.29.36 \
+        buildozer==1.5.0
 
-          pip install \
-            Cython==0.29.36 \
-            buildozer==1.5.0 \
-            python-for-android==2024.01.21
+  # =====================================================
+  # ANDROID ENV
+  # =====================================================
+  - name: 🤖 Prepare Android Environment
+    run: |
+      mkdir -p ~/.android
+      touch ~/.android/repositories.cfg
 
-      # =====================================================
-      # ANDROID SDK FIX
-      # =====================================================
-      - name: 🤖 Prepare Android Environment
-        run: |
-          mkdir -p ~/.android
-          touch ~/.android/repositories.cfg
+  # =====================================================
+  # CLEAN CACHE
+  # =====================================================
+  - name: 🧹 Clean Old Cache
+    run: |
+      rm -rf .buildozer
+      rm -rf ~/.buildozer
+      rm -rf ~/.gradle/caches
+      rm -rf ~/.cache/pip
+      rm -rf bin
 
-      # =====================================================
-      # FAIL FAST CHECK
-      # =====================================================
-      - name: 🛡️ Fail-Fast Check
-        run: |
+  # =====================================================
+  # FAIL FAST
+  # =====================================================
+  - name: 🛡️ Validate Project
+    run: |
 
-          echo "================ PYTHON COMPILE CHECK ================"
+      echo "========== PYTHON CHECK =========="
 
-          find . -type f -name "*.py" \
-            -not -path "*/\.buildozer/*" \
-            -not -path "*/bin/*" \
-            -print \
-            -exec python -m py_compile {} \;
+      find . -type f -name "*.py" \
+        -not -path "*/\.buildozer/*" \
+        -not -path "*/bin/*" \
+        -exec python -m py_compile {} \;
 
-          echo "================ REQUIRED FILE CHECK ================"
+      echo "========== REQUIRED FILES =========="
 
-          FILES_TO_CHECK=(
-            "main.py"
-            "buildozer.spec"
-            "java/org/zauto/ZaloForegroundService.java"
-            "java/org/zauto/ZaloWebManager.java"
-            "res/xml/accessibility_config.xml"
-            "manifest_services.xml"
-          )
+      FILES=(
+        "main.py"
+        "buildozer.spec"
+        "manifest_services.xml"
+        "java/org/zauto/ZaloForegroundService.java"
+        "java/org/zauto/ZaloWebManager.java"
+      )
 
-          for FILE in "${FILES_TO_CHECK[@]}"; do
-            if [ ! -f "$FILE" ]; then
-              echo "::error::THIẾU FILE: $FILE"
-              exit 1
-            fi
-          done
+      for FILE in "${FILES[@]}"; do
+        if [ ! -f "$FILE" ]; then
+          echo "::error::Missing file: $FILE"
+          exit 1
+        fi
+      done
 
-      # =====================================================
-      # CLEAN BUILD 100%
-      # =====================================================
-      - name: 🧹 Clean Old Build Cache
-        run: |
-          rm -rf .buildozer
-          rm -rf ~/.buildozer
-          rm -rf ~/.gradle/caches
-          rm -rf ~/.cache/pip
-          rm -rf bin
+  # =====================================================
+  # BUILD APK
+  # =====================================================
+  - name: 🔨 Build APK
+    run: |
 
-      # =====================================================
-      # BUILD APK
-      # =====================================================
-      - name: 🔨 Build Debug APK
-        run: |
+      export PATH=$PATH:~/.local/bin
 
-          export PATH=$PATH:~/.local/bin
+      export GRADLE_OPTS="-Xmx4096m -Dorg.gradle.daemon=false"
 
-          export GRADLE_OPTS="-Xmx4096m -Dorg.gradle.daemon=false"
+      buildozer android debug
 
-          buildozer android clean
+  # =====================================================
+  # VERIFY APK
+  # =====================================================
+  - name: ✅ Verify APK
+    run: |
 
-          buildozer -v android debug
+      echo "========== APK OUTPUT =========="
+      ls -lah bin/
 
-      # =====================================================
-      # APK EXISTS CHECK
-      # =====================================================
-      - name: ✅ Verify APK Exists
-        run: |
-          echo "================ APK FILES ================"
-          ls -lah bin/
+      APK_COUNT=$(find bin -name "*.apk" | wc -l)
 
-          APK_COUNT=$(find bin -name "*.apk" | wc -l)
+      if [ "$APK_COUNT" -eq "0" ]; then
+        echo "::error::APK NOT FOUND!"
+        exit 1
+      fi
 
-          if [ "$APK_COUNT" -eq "0" ]; then
-            echo "::error::KHÔNG TÌM THẤY APK!"
-            exit 1
-          fi
-
-      # =====================================================
-      # UPLOAD APK
-      # =====================================================
-      - name: 🚀 Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ZAuto_VIP_Final_APK
-          path: bin/*.apk
+  # =====================================================
+  # UPLOAD APK
+  # =====================================================
+  - name: 🚀 Upload APK
+    uses: actions/upload-artifact@v4
+    with:
+      name: ZAuto_VIP_APK
+      path: bin/*.apk
+```
