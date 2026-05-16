@@ -17,33 +17,21 @@ env:
 
 steps:
 
-  # =====================================================
-  # CHECKOUT
-  # =====================================================
-  - name: 📥 Checkout Source
+  - name: Checkout Source
     uses: actions/checkout@v4
 
-  # =====================================================
-  # PYTHON
-  # =====================================================
-  - name: 🐍 Setup Python
+  - name: Setup Python
     uses: actions/setup-python@v5
     with:
-      python-version: ${{ env.PYTHON_VERSION }}
+      python-version: "3.11"
 
-  # =====================================================
-  # JAVA 17
-  # =====================================================
-  - name: ☕ Setup Java
+  - name: Setup Java
     uses: actions/setup-java@v4
     with:
       distribution: temurin
-      java-version: ${{ env.JAVA_VERSION }}
+      java-version: "17"
 
-  # =====================================================
-  # CACHE
-  # =====================================================
-  - name: ⚡ Cache Gradle & Pip
+  - name: Cache Gradle & Pip
     uses: actions/cache@v4
     with:
       path: |
@@ -54,10 +42,7 @@ steps:
       restore-keys: |
         ${{ runner.os }}-zauto-
 
-  # =====================================================
-  # SYSTEM DEPENDENCIES
-  # =====================================================
-  - name: ⚙️ Install System Packages
+  - name: Install System Packages
     run: |
       sudo apt update
 
@@ -88,10 +73,7 @@ steps:
         libsdl2-mixer-dev \
         libsdl2-ttf-dev
 
-  # =====================================================
-  # PYTHON PACKAGES
-  # =====================================================
-  - name: 📦 Install Python Packages
+  - name: Install Python Packages
     run: |
       python -m pip install --upgrade pip==23.2.1
 
@@ -101,18 +83,12 @@ steps:
         Cython==0.29.36 \
         buildozer==1.5.0
 
-  # =====================================================
-  # ANDROID ENV
-  # =====================================================
-  - name: 🤖 Prepare Android Environment
+  - name: Prepare Android Environment
     run: |
       mkdir -p ~/.android
       touch ~/.android/repositories.cfg
 
-  # =====================================================
-  # CLEAN CACHE
-  # =====================================================
-  - name: 🧹 Clean Old Cache
+  - name: Clean Old Cache
     run: |
       rm -rf .buildozer
       rm -rf ~/.buildozer
@@ -120,10 +96,7 @@ steps:
       rm -rf ~/.cache/pip
       rm -rf bin
 
-  # =====================================================
-  # FAIL FAST
-  # =====================================================
-  - name: 🛡️ Validate Project
+  - name: Validate Project
     run: |
 
       echo "========== PYTHON CHECK =========="
@@ -150,10 +123,7 @@ steps:
         fi
       done
 
-  # =====================================================
-  # BUILD APK
-  # =====================================================
-  - name: 🔨 Build APK
+  - name: Build APK
     run: |
 
       export PATH=$PATH:~/.local/bin
@@ -162,13 +132,11 @@ steps:
 
       buildozer android debug
 
-  # =====================================================
-  # VERIFY APK
-  # =====================================================
-  - name: ✅ Verify APK
+  - name: Verify APK
     run: |
 
       echo "========== APK OUTPUT =========="
+
       ls -lah bin/
 
       APK_COUNT=$(find bin -name "*.apk" | wc -l)
@@ -178,10 +146,7 @@ steps:
         exit 1
       fi
 
-  # =====================================================
-  # UPLOAD APK
-  # =====================================================
-  - name: 🚀 Upload APK
+  - name: Upload APK
     uses: actions/upload-artifact@v4
     with:
       name: ZAuto_VIP_APK
