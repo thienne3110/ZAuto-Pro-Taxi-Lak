@@ -1129,20 +1129,36 @@ class ZAutoProApp(MDApp):
                 logger.error(f"Reply Worker Crash: {traceback.format_exc()}")
                 time.sleep(1)
     def _audio_worker_loop(self):
-        """Worker chuyên lấy tin nhắn thoại ra phát, ép tin sau phải đợi tin trước 12 giây"""
+        """Worker lấy tin nhắn thoại ra phát, ưu tiên giây thật, nếu lỗi tự động nhảy về cơ chế dự phòng 7s"""
         while getattr(self, 'app_running', True):
             try:
-                # Lấy tin nhắn thoại từ hàng đợi (chặn 1s)
-                conv_id, msg_id, cache_key = self.audio_queue.get(timeout=1.0)
+                # Nhận thêm biến duration từ hàng đợi
+                conv_id, msg_id, cache_key, duration = self.audio_queue.get(timeout=1.0)
                 
                 if platform == 'android' and getattr(self, 'is_linked', False):
                     from jnius import autoclass
                     PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                    # Gọi lệnh Java để Play tin nhắn
+                    
+                    # Chọt nút Play phát âm thanh ngay lập tức
                     autoclass('org.zauto.ZaloWebManager').playSpecificAudio(PythonActivity.mActivity, conv_id, msg_id)
                     
-                    # BẮT BUỘC: Đợi 12 giây cho tin nhắn phát xong rồi mới xử lý tin tiếp theo
-                    time.sleep(12.0)
+                    # LOGIC KIỂM TRA THÔNG MINH THEO YÊU CẦU:
+                    if duration > 0:
+                        # Cơ chế 1 (Ưu tiên): Lấy giây thật của tin nhắn + 2 giây bù trừ độ trễ
+                        sleep_time = duration + 2.0
+                        logger.info(f"Cơ chế 1 hoạt động: Tin thoại dài {duration}s -> Đợi {sleep_time}s")
+                    else:
+                        # Cơ chế 2 (Dự phòng): Nếu duration <= 0 (tức là bằng -1 do Java quét lỗi), tự nhảy về 7 giây
+                        sleep_time = 7.0
+                        logger.info(f"Cơ chế 2 (Dự phòng) hoạt động: Không quét được giây thật -> Tự động chờ 7s")
+                    
+                    # Thực hiện chờ
+                    time.sleep(sleep_time)
+                    
+                # Giải phóng bộ đệm ngay sau khi phát xong tin
+                if cache_key in self.processed_msg_hashes:
+                    try: del self.processed_msg_hashes[cache_key]
+                    except: pass
                     
                 self.audio_queue.task_done()
             except queue.Empty:
@@ -1184,27 +1200,32 @@ class ZAutoProApp(MDApp):
         current_time = time.time()
         
         # ==============================================================
-        # FIX 2: CHỐNG TRÙNG LẶP TIN NHẮN (DÙNG ID THỰC TẾ CỦA ZALO)
-        # Bỏ hash nội dung và khoảng hở 15s. Nhận bằng ID chuẩn!
+        # FIX 2: BỘ ĐỆM THÔNG MINH CHO TỪNG LOẠI TIN NHẮN
+        # Tin chữ: Khóa cứng vĩnh viễn theo ID chống lặp tin.
+        # Tin thoại: Chặn trùng dồn dập, giải phóng hoàn toàn theo vòng đời luồng phát.
         # ==============================================================
         if is_voice:
             cache_key = f"VOICE_{conversation_id}_{msg_id}"
             display_msg = "🔊 CÓ BẢN GHI ÂM MỚI"
             
-            # Chống spam voice dồn dập trong 5 giây
+            # Nếu tin thoại này ĐANG TRONG QUÁ TRÌNH PHÁT (chưa bị xóa bởi luồng audio) -> Bỏ qua chống trùng
+            if cache_key in self.processed_msg_hashes:
+                return
+
+            # Chống quét lặp dồn dập cùng 1 nhóm trong vòng 3 giây
             last_v_time = getattr(self, 'last_voice_times', {}).get(group, 0)
-            if current_time - last_v_time < 5.0: return 
+            if current_time - last_v_time < 3.0: return 
             if not hasattr(self, 'last_voice_times'): self.last_voice_times = {}
             self.last_voice_times[group] = current_time
         else:
             cache_key = f"TEXT_{conversation_id}_{msg_id}"
             display_msg = msg
-
-        # NẾU CACHE ĐÃ TỪNG THẤY ID TIN NÀY -> CHẶN ĐỨNG LUÔN KHÔNG CHO NỔ LẦN 2
-        if cache_key in self.processed_msg_hashes:
-            return 
             
-        # Ghi nhớ ID này vào bộ não để lần sau gặp lại là bỏ qua
+            # Kiểm tra trùng lặp cho tin chữ (Khóa cứng vĩnh viễn)
+            if cache_key in self.processed_msg_hashes:
+                return
+
+        # Ghi lại mốc thời gian nhận tin vào bộ đệm
         self.processed_msg_hashes[cache_key] = current_time
 
         # ==============================================================
@@ -1223,15 +1244,25 @@ class ZAutoProApp(MDApp):
         # XỬ LÝ ĐỘC LẬP CHO TIN NHẮN THOẠI (BỎ QUA NÚT AUTO)
         # ==============================================================
         if is_voice:
-            # --- Bóc tách tên người gửi để Chị Google đọc (Có bảo vệ chống lỗi) ---
-            sender_name = ""
-            if ": " in msg:
-                sender_name = msg.split(": ", 1)[0].strip()
+            # --- Bóc tách Số giây và Tên người gửi từ chuỗi cấu trúc mới ---
+            duration = -1 # Mặc định là -1 (Lỗi)
+            clean_msg_text = msg
+            
+            # Tách lấy số giây Java đính kèm ở cuối chuỗi
+            if "|||" in msg:
+                msg_parts = msg.split("|||")
+                clean_msg_text = msg_parts[0]
+                try: duration = int(msg_parts[1])
+                except: duration = -1
 
-            # 1. Đẩy vào hàng đợi để phát âm thanh tự động (xếp hàng chờ nhau)
+            sender_name = ""
+            if ": " in clean_msg_text:
+                sender_name = clean_msg_text.split(": ", 1)[0].strip()
+
+            # 1. Đẩy vào hàng đợi để phát âm thanh tự động (Truyền thêm duration xuống luồng phát)
             if platform == 'android':
                 try:
-                    self.audio_queue.put_nowait((conversation_id, msg_id, cache_key))
+                    self.audio_queue.put_nowait((conversation_id, msg_id, cache_key, duration))
                 except queue.Full: pass
             
             # 2. LUÔN LUÔN đẩy ra Tab Canh Me để bấm tay
@@ -1241,20 +1272,16 @@ class ZAutoProApp(MDApp):
                 
                 if self.config_data.get('sw_voice', True):
                     clean_group = re.sub(r'[^\w\s]', '', group)
-                    
-                    # --- KIỂM TRA NẾU CÓ TÊN NGƯỜI GỬI THÌ MỚI ĐỌC ---
                     if sender_name:
                         clean_sender = re.sub(r'[^\w\s]', '', sender_name)
-                        if clean_sender: # Đảm bảo tên không bị rỗng sau khi dọn dẹp ký tự lạ
+                        if clean_sender:
                             self.ui_queue.put_nowait(('speak', f"Có tin nhắn thoại của {clean_sender}, từ nhóm {clean_group}"))
                         else:
                             self.ui_queue.put_nowait(('speak', f"Có tin nhắn thoại từ nhóm {clean_group}"))
                     else:
-                        # Trạng thái phòng hờ (Fallback): Không có tên thì chỉ đọc nhóm
                         self.ui_queue.put_nowait(('speak', f"Có tin nhắn thoại từ nhóm {clean_group}"))
             except queue.Full: pass
             
-            # 3. KẾT THÚC HÀM NGAY TẠI ĐÂY - Không cho code chạy xuống dòng chốt Auto
             return
 
         # ==============================================================
