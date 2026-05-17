@@ -544,7 +544,7 @@ public class ZaloWebManager {
             "                   }" +
             "               } catch(err) { seconds = -1; }" +
             "               " +
-            "               msgText = msgText + '|||' + seconds;" + // Ghép số giây vào cuối nội dung để gửi về Python
+            "               msgText = msgText + '%%%' + seconds;" + // Ghép số giây vào cuối nội dung để gửi về Python
             "           }" +
 
             "           if(!groupName || !msgText) return;" +
