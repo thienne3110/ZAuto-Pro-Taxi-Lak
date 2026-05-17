@@ -124,8 +124,7 @@ KV = '''
     size_hint_y: None
     height: self.minimum_height
     adaptive_height: True
-    elevation: 2
-    shadow_radius: 6
+    elevation: 0
     radius: [15, 15, 15, 15]
     md_bg_color: 1, 1, 1, 1
 
@@ -176,11 +175,14 @@ KV = '''
             text_color: 0.6, 0.2, 0.2, 1
             line_color: 0.9, 0.5, 0.5, 1
             on_release: app.remove_ride(root)
-        MDRaisedButton:
+        Button:
             text: "NHẬN CUỐC"
             size_hint_x: 0.6
-            md_bg_color: 0.1, 0.5, 0.8, 1
-            elevation: 2
+            size_hint_y: None
+            height: "45dp"
+            bold: True
+            background_normal: ''
+            background_color: 0.1, 0.5, 0.8, 1
             on_release: app.manual_accept_ride(root)
 
 MDScreen:
@@ -210,7 +212,7 @@ MDScreen:
                     padding: "15dp"
                     spacing: "10dp"
                     md_bg_color: 1, 1, 1, 1
-                    elevation: 2
+                    radius: [0, 0, 15, 15]
                     
                     MDBoxLayout:
                         orientation: "horizontal"
@@ -287,7 +289,7 @@ MDScreen:
                 orientation: 'vertical'
                 MDTopAppBar:
                     title: "Lịch sử chốt"
-                    elevation: 1
+                    elevation: 0
                     md_bg_color: 1, 1, 1, 1
                     specific_text_color: 0.1, 0.1, 0.1, 1
                     right_action_items: [["delete-sweep-outline", lambda x: app.clear_history()]]
@@ -296,30 +298,42 @@ MDScreen:
                     size_hint_y: None
                     height: "60dp"
                     padding: "10dp"
-                    MDRaisedButton:
+                    md_bg_color: 1, 1, 1, 1
+                    Button:
                         text: "MỞ KHUNG CHAT ZALO"
-                        icon: "chat-processing"
                         size_hint_x: 1
-                        md_bg_color: 0.1, 0.6, 0.2, 1
+                        size_hint_y: None
+                        height: "45dp"
+                        bold: True
+                        background_normal: ''
+                        background_color: 0.1, 0.6, 0.2, 1
                         on_release: app.root.ids.bottom_nav.switch_tab('tab_zalo')
 
                 ScrollView:
                     MDList:
                         id: msg_history_list
+                        md_bg_color: 0.95, 0.96, 0.98, 1
 
         # ================= TAB NHÓM =================
         MDBottomNavigationItem:
             name: 'tab_nhom'
             text: 'Nhóm'
             icon: 'account-group'
+            
             MDBoxLayout:
                 orientation: 'vertical'
+                
                 MDTopAppBar:
                     title: "Danh sách nhóm"
-                    elevation: 1
+                    elevation: 0
+                    md_bg_color: 0.1, 0.6, 0.2, 1
+                    specific_text_color: 1, 1, 1, 1
+                    pos_hint: {"top": 1}
+                    
                 ScrollView:
                     MDList:
                         id: group_filter_list
+                        md_bg_color: 0.95, 0.96, 0.98, 1
 
         # ================= TAB TÀI KHOẢN ZALO =================
         MDBottomNavigationItem:
@@ -349,9 +363,11 @@ MDScreen:
                         radius: [20, ]
                         pos_hint: {"center_y": .5}
 
+                    # ---> ĐÃ LÙI LỀ VÀO TRONG NẰM CÙNG HÀNG VỚI FitImage <---
                     MDBoxLayout:
                         orientation: "vertical"
                         pos_hint: {"center_y": .5}
+                        md_bg_color: 0.1, 0.5, 0.8, 1
                         MDLabel:
                             id: zalo_name_view
                             text: "Chưa kết nối Zalo"
@@ -365,6 +381,7 @@ MDScreen:
                             text_color: 0.9, 0.9, 0.9, 1
                             font_style: "Caption"
 
+                    # ---> NÚT NÀY CŨNG ĐÃ LÙI LỀ VÀO TRONG <---
                     MDRaisedButton:
                         id: btn_zalo_action
                         text: "TẢI LẠI"
@@ -372,11 +389,14 @@ MDScreen:
                         height: "36dp"
                         md_bg_color: 1, 1, 1, 0.25
                         pos_hint: {"center_y": .5}
+                        elevation: 0
                         on_release: app.reload_zalo_web()
 
-                BoxLayout:
+                # ---> HỘP CHỨA WEBVIEW PHẢI NẰM NGOÀI ĐỂ XẾP DƯỚI THANH STATUS <---
+                MDBoxLayout:
                     id: webview_container
                     size_hint_y: 1
+                    md_bg_color: 1, 1, 1, 1
 
         # ================= TAB CÀI ĐẶT =================
         MDBottomNavigationItem:
@@ -387,7 +407,7 @@ MDScreen:
                 orientation: 'vertical'
                 MDTopAppBar:
                     title: "Thiết lập hệ thống"
-                    elevation: 1
+                    elevation: 0
                     md_bg_color: 1, 1, 1, 1
                     specific_text_color: 0.1, 0.1, 0.1, 1
                 
@@ -399,6 +419,7 @@ MDScreen:
                         adaptive_height: True
                         padding: "10dp"
                         spacing: "15dp"
+                        md_bg_color: 0.95, 0.96, 0.98, 1
                         
                         MDBoxLayout: # Thông tin tài khoản
                             orientation: "horizontal"
@@ -432,18 +453,24 @@ MDScreen:
                             adaptive_height: True
                             spacing: "10dp"
 
-                            MDRaisedButton:
+                            Button:
                                 text: "CẤP QUYỀN APP"
-                                icon: "shield-check"
                                 size_hint_x: 1
-                                md_bg_color: 0.8, 0.4, 0.1, 1
+                                size_hint_y: None
+                                height: "45dp"
+                                bold: True
+                                background_normal: ''
+                                background_color: 0.8, 0.4, 0.1, 1
                                 on_release: app.check_permissions_and_guide()
                                 
-                            MDRaisedButton:
+                            Button:
                                 text: "CHỐNG NGỦ ĐÔNG (QUAN TRỌNG)"
-                                icon: "battery-alert"
                                 size_hint_x: 1
-                                md_bg_color: 0.6, 0.1, 0.1, 1
+                                size_hint_y: None
+                                height: "45dp"
+                                bold: True
+                                background_normal: ''
+                                background_color: 0.6, 0.1, 0.1, 1
                                 on_release: app.request_ignore_battery()
 
                         # --- KHỐI CÔNG TẮC (GIỌNG NÓI / AUTO / FILTER) ---
@@ -490,14 +517,14 @@ MDScreen:
                                 MDSwitch:
                                     id: sw_filter
                                     pos_hint: {'center_y': .5}
-
-                        # --- HƯỚNG DẪN DÙNG TIẾNG VIỆT (ĐÃ SỬA LỖI ĐÈ CHỮ) ---
+                            
+                        # --- HƯỚNG DẪN DÙNG TIẾNG VIỆT ---
                         MDBoxLayout:
                             orientation: "vertical"
                             size_hint_y: None
-                            height: self.minimum_height # Ép khung phải cao bằng nội dung bên trong
+                            height: self.minimum_height 
                             padding: "12dp"
-                            spacing: "5dp" # Khoảng cách giữa tiêu đề và nội dung
+                            spacing: "5dp" 
                             md_bg_color: 0.9, 0.95, 1, 1
                             radius: [10, ]
                             
@@ -507,14 +534,14 @@ MDScreen:
                                 bold: True
                                 theme_text_color: "Primary"
                                 size_hint_y: None
-                                height: self.texture_size[1] # Ép dòng này tự tính độ cao chữ
+                                height: self.texture_size[1]
                                 
                             MDLabel:
                                 text: "Soạn chữ ở Zalo rồi Copy,bấm biểu tượng DÁN ở bên cạnh mỗi ô."
                                 font_style: "Caption"
                                 theme_text_color: "Secondary"
                                 size_hint_y: None
-                                height: self.texture_size[1] # Ép dòng này tự tính độ cao chữ
+                                height: self.texture_size[1]
 
                         # --- CÁC Ô NHẬP LIỆU CÓ NÚT DÁN NHANH ---
                         MDBoxLayout: 
@@ -527,76 +554,82 @@ MDScreen:
                             md_bg_color: 1, 1, 1, 1
                             radius: [10, ]
                             
-                            # Nhập Từ Khóa Nhận
                             MDBoxLayout:
                                 orientation: "horizontal"
                                 size_hint_y: None
                                 height: "50dp"
                                 spacing: "10dp"
-                                MDTextField:
+                                TextInput:
                                     id: inp_nhan
                                     hint_text: "Từ khóa NHẬN"
                                     multiline: True
+                                    background_color: 0.95, 0.95, 0.95, 1
+                                    foreground_color: 0, 0, 0, 1
                                 MDIconButton:
                                     icon: "content-paste"
                                     pos_hint: {"center_y": .5}
                                     on_release: inp_nhan.text = app.Clipboard.paste()
 
-                            # Nhập Từ Khóa Loại
                             MDBoxLayout:
                                 orientation: "horizontal"
                                 size_hint_y: None
                                 height: "50dp"
                                 spacing: "10dp"
-                                MDTextField:
+                                TextInput:
                                     id: inp_loai
                                     hint_text: "Từ khóa BỎ QUA"
                                     multiline: True
+                                    background_color: 0.95, 0.95, 0.95, 1
+                                    foreground_color: 0, 0, 0, 1
                                 MDIconButton:
                                     icon: "content-paste"
                                     pos_hint: {"center_y": .5}
                                     on_release: inp_loai.text = app.Clipboard.paste()
 
-                            # Nhập Câu Trả Lời
                             MDBoxLayout:
                                 orientation: "horizontal"
                                 size_hint_y: None
                                 height: "50dp"
                                 spacing: "10dp"
-                                MDTextField:
+                                TextInput:
                                     id: inp_reply
                                     hint_text: "Nội dung trả lời tự động"
                                     multiline: True
+                                    background_color: 0.95, 0.95, 0.95, 1
+                                    foreground_color: 0, 0, 0, 1
                                 MDIconButton:
                                     icon: "content-paste"
                                     pos_hint: {"center_y": .5}
                                     on_release: inp_reply.text = app.Clipboard.paste()
                                 
-                            # Ô Thời Gian Chờ
-                            MDTextField:
+                            TextInput:
                                 id: inp_delay
-                                hint_text: "Thời gian chốt cuốc mới (giây)"
+                                hint_text: "Khoảng cách chốt 2 cuốc (giây)"
                                 text: "30"
                                 input_filter: "int"
-                                helper_text: "Khoảng cách giữa 2 lần chốt"
-                                helper_text_mode: "on_focus"
+                                size_hint_y: None
+                                height: "45dp"
+                                background_color: 0.95, 0.95, 0.95, 1
+                                foreground_color: 0, 0, 0, 1
                         
-                        MDRaisedButton:
+                        Button:
                             text: "LƯU CẤU HÌNH"
                             size_hint_x: 1
                             size_hint_y: None
                             height: "45dp"
-                            md_bg_color: 0.1, 0.5, 0.8, 1
-                            elevation: 2
+                            bold: True
+                            background_normal: ''
+                            background_color: 0.1, 0.5, 0.8, 1
                             on_release: app.save_config()
 
-                        MDBoxLayout: # Thay MDCard bằng MDBoxLayout
+                        MDBoxLayout:
                             orientation: "vertical"
                             size_hint_y: None
                             height: "180dp"
                             padding: "15dp"
                             spacing: "5dp"
                             md_bg_color: 1, 1, 1, 1
+                            radius: [10, ]
                             MDLabel:
                                 text: "BẢN QUYỀN"
                                 bold: True
@@ -615,16 +648,20 @@ MDScreen:
                                 theme_text_color: "Custom"
                                 text_color: 0.1, 0.5, 0.8, 1
                                 font_style: "Caption"
-                            MDRaisedButton:
+                            Button:
                                 text: "MUA THÊM HẠN"
                                 size_hint_y: None
                                 height: "35dp"
                                 pos_hint: {"center_x": .5}
+                                bold: True
+                                background_normal: ''
+                                background_color: 0.1, 0.6, 0.2, 1
                                 on_release: app.show_activation_popup_from_settings()
 
                         MDBoxLayout:
                             size_hint_y: None
                             height: "20dp"
+                            md_bg_color: 0.95, 0.96, 0.98, 1
 '''
 
 class ActivationPopup(Popup):
@@ -844,6 +881,10 @@ class ZAutoProApp(MDApp):
                 # 2. KÍCH HOẠT LUỒNG TRẢ LỜI TIN NHẮN
                 self.reply_worker_thread = threading.Thread(target=self._reply_worker_loop, daemon=True)
                 self.reply_worker_thread.start()
+
+                # 3. KÍCH HOẠT LUỒNG XẾP HÀNG PHÁT TIN THOẠI
+                self.audio_worker_thread = threading.Thread(target=self._audio_worker_loop, daemon=True)
+                self.audio_worker_thread.start()
 
                 Clock.schedule_interval(self._system_watchdog, 180)
 
@@ -1087,7 +1128,28 @@ class ZAutoProApp(MDApp):
             except Exception as e:
                 logger.error(f"Reply Worker Crash: {traceback.format_exc()}")
                 time.sleep(1)
-
+    def _audio_worker_loop(self):
+        """Worker chuyên lấy tin nhắn thoại ra phát, ép tin sau phải đợi tin trước 12 giây"""
+        while getattr(self, 'app_running', True):
+            try:
+                # Lấy tin nhắn thoại từ hàng đợi (chặn 1s)
+                conv_id, msg_id, cache_key = self.audio_queue.get(timeout=1.0)
+                
+                if platform == 'android' and getattr(self, 'is_linked', False):
+                    from jnius import autoclass
+                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                    # Gọi lệnh Java để Play tin nhắn
+                    autoclass('org.zauto.ZaloWebManager').playSpecificAudio(PythonActivity.mActivity, conv_id, msg_id)
+                    
+                    # BẮT BUỘC: Đợi 12 giây cho tin nhắn phát xong rồi mới xử lý tin tiếp theo
+                    time.sleep(12.0)
+                    
+                self.audio_queue.task_done()
+            except queue.Empty:
+                continue
+            except Exception as e:
+                logger.error(f"Audio Worker Crash: {traceback.format_exc()}")
+                time.sleep(1)
     def _process_heavy_message(self, data):
         group = data.get('group', '')
         msg = data.get('msg', '')
@@ -1095,42 +1157,123 @@ class ZAutoProApp(MDApp):
         conversation_id = data.get('conversation_id', '')
 
         if not getattr(self, 'is_radar_running', False): return
-        if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
+        # BẮT BUỘC: Nếu nhóm không được BẬT (hoặc không tồn tại), chặn đứng luôn!
+        if not getattr(self, 'enabled_groups', {}).get(group, False): 
+            return
 
-        # FIX LỖI TỊT NGÒI: Tạo ID giả từ nội dung tin nhắn vì Sidebar không có msg_id
-        fake_msg_id = hashlib.md5(msg.encode('utf-8')).hexdigest()[:8]
-        cache_key = f"{group}_{fake_msg_id}"
+        msg_clean = msg.strip()
+        msg_low = msg_clean.lower()
         
-        if cache_key in self.processed_msg_hashes: return
-        self.processed_msg_hashes[cache_key] = True
+        # ==============================================================
+        # FIX 1: TÁCH TÊN NGƯỜI GỬI ĐỂ TRÁNH BẮT NHẦM TỪ KHÓA
+        # Biến "Team Holak: bmt2" thành "bmt2" (Chỉ lấy nội dung thực)
+        # ==============================================================
+        msg_content_only = msg_low
+        if ": " in msg_content_only:
+            # Cắt bỏ phần Tên Người Gửi ở trước dấu ": "
+            msg_content_only = msg_content_only.split(": ", 1)[1]
 
-        # TUYỆT ĐỐI KHÔNG ĐỌC UI
+        raw_reply = self.config_data.get('reply_msg', 'Ok nhận')
+        replies = [r.strip().lower() for r in raw_reply.split(',') if r.strip()]
+        
+        # Nếu là tin do app tự trả lời (chứa "Ok nhận") thì bỏ qua luôn
+        if msg_content_only in replies or any(r in msg_content_only for r in replies):
+            return 
+
+        is_voice = "tin nhắn thoại" in msg_low or "audio" in msg_low or "giọng nói" in msg_low or "âm thanh" in msg_low or "voice" in msg_low or "[tin nhắn thoại]" in msg_low
+        current_time = time.time()
+        
+        # ==============================================================
+        # FIX 2: CHỐNG TRÙNG LẶP TIN NHẮN (DÙNG ID THỰC TẾ CỦA ZALO)
+        # Bỏ hash nội dung và khoảng hở 15s. Nhận bằng ID chuẩn!
+        # ==============================================================
+        if is_voice:
+            cache_key = f"VOICE_{conversation_id}_{msg_id}"
+            display_msg = "🔊 CÓ BẢN GHI ÂM MỚI"
+            
+            # Chống spam voice dồn dập trong 5 giây
+            last_v_time = getattr(self, 'last_voice_times', {}).get(group, 0)
+            if current_time - last_v_time < 5.0: return 
+            if not hasattr(self, 'last_voice_times'): self.last_voice_times = {}
+            self.last_voice_times[group] = current_time
+        else:
+            cache_key = f"TEXT_{conversation_id}_{msg_id}"
+            display_msg = msg
+
+        # NẾU CACHE ĐÃ TỪNG THẤY ID TIN NÀY -> CHẶN ĐỨNG LUÔN KHÔNG CHO NỔ LẦN 2
+        if cache_key in self.processed_msg_hashes:
+            return 
+            
+        # Ghi nhớ ID này vào bộ não để lần sau gặp lại là bỏ qua
+        self.processed_msg_hashes[cache_key] = current_time
+
+        # ==============================================================
+        # BỘ LỌC TỪ KHÓA ĐÃ ĐƯỢC NÂNG CẤP (CHỈ QUÉT TRÊN NỘI DUNG THỰC TẾ)
+        # ==============================================================
         sw_filter_active = self.config_data.get('sw_filter', False)
-        if sw_filter_active:
-            msg_low = msg.lower()
+        if sw_filter_active and not is_voice:
             loai_keys = [k.strip() for k in self.config_data.get('loai', '').lower().split(',') if k.strip()]
-            if loai_keys and any(lk in msg_low for lk in loai_keys): return
+            # Dùng msg_content_only để quét, tránh dính chữ trong tên người gửi
+            if loai_keys and any(lk in msg_content_only for lk in loai_keys): return
+            
             nhan_keys = [k.strip() for k in self.config_data.get('nhan', '').lower().split(',') if k.strip()]
-            if nhan_keys and not any(nk in msg_low for nk in nhan_keys): return
+            if nhan_keys and not any(nk in msg_content_only for nk in nhan_keys): return
 
+        # ==============================================================
+        # XỬ LÝ ĐỘC LẬP CHO TIN NHẮN THOẠI (BỎ QUA NÚT AUTO)
+        # ==============================================================
+        if is_voice:
+            # --- Bóc tách tên người gửi để Chị Google đọc (Có bảo vệ chống lỗi) ---
+            sender_name = ""
+            if ": " in msg:
+                sender_name = msg.split(": ", 1)[0].strip()
+
+            # 1. Đẩy vào hàng đợi để phát âm thanh tự động (xếp hàng chờ nhau)
+            if platform == 'android':
+                try:
+                    self.audio_queue.put_nowait((conversation_id, msg_id, cache_key))
+                except queue.Full: pass
+            
+            # 2. LUÔN LUÔN đẩy ra Tab Canh Me để bấm tay
+            try:
+                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
+                self.ui_queue.put_nowait(('log', (group, display_msg)))
+                
+                if self.config_data.get('sw_voice', True):
+                    clean_group = re.sub(r'[^\w\s]', '', group)
+                    
+                    # --- KIỂM TRA NẾU CÓ TÊN NGƯỜI GỬI THÌ MỚI ĐỌC ---
+                    if sender_name:
+                        clean_sender = re.sub(r'[^\w\s]', '', sender_name)
+                        if clean_sender: # Đảm bảo tên không bị rỗng sau khi dọn dẹp ký tự lạ
+                            self.ui_queue.put_nowait(('speak', f"Có tin nhắn thoại của {clean_sender}, từ nhóm {clean_group}"))
+                        else:
+                            self.ui_queue.put_nowait(('speak', f"Có tin nhắn thoại từ nhóm {clean_group}"))
+                    else:
+                        # Trạng thái phòng hờ (Fallback): Không có tên thì chỉ đọc nhóm
+                        self.ui_queue.put_nowait(('speak', f"Có tin nhắn thoại từ nhóm {clean_group}"))
+            except queue.Full: pass
+            
+            # 3. KẾT THÚC HÀM NGAY TẠI ĐÂY - Không cho code chạy xuống dòng chốt Auto
+            return
+
+        # ==============================================================
+        # XỬ LÝ CHO TIN NHẮN CHỮ (CHỊU ẢNH HƯỞNG BỞI NÚT AUTO)
+        # ==============================================================
         sw_auto_active = self.config_data.get('sw_auto', False)
-
-        # 1. Bật Auto thì CHỐT LUÔN, không thèm đưa ra màn hình Canh me nữa
         if sw_auto_active:
-            reply_text = self.config_data.get('reply_msg', 'Ok nhận')
-            self.queue_reply(group, conversation_id, msg_id, reply_text)
+            final_reply = random.choice(replies) if replies else "Ok nhận"
+            self.queue_reply(group, conversation_id, msg_id, final_reply, display_msg)
         else:
             try:
-                self.ui_queue.put_nowait(('add_ride', (group, msg, msg_id, conversation_id)))
-                # THÊM ĐỌC GIỌNG NÓI:
+                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
+                self.ui_queue.put_nowait(('log', (group, display_msg)))
+                if self.config_data.get('sw_bubble', True):
+                    self.ui_queue.put_nowait(('bubble', (group, display_msg, conversation_id, msg_id)))
                 if self.config_data.get('sw_voice', True):
-                    self.ui_queue.put_nowait(('speak', f"Chú ý có cuốc xe mới, {group}"))
+                    clean_group = re.sub(r'[^\w\s]', '', group)
+                    self.ui_queue.put_nowait(('speak', f"Chú ý có cuốc xe mới từ nhóm {clean_group}"))
             except queue.Full: pass
-
-        # 2. Luôn luôn ghi vào Lịch sử chốt (cho cả Auto và Nhận tay)
-        try:
-            self.ui_queue.put_nowait(('log', (group, msg)))
-        except queue.Full: pass
 
     def _system_watchdog(self, dt):
         """Khôi phục Worker, Tối ưu RAM và chặn nhân bản Thread"""
@@ -1210,38 +1353,15 @@ class ZAutoProApp(MDApp):
                         conv_id = parts[4] if len(parts) > 4 else ""
                         
                         if group and msg:
-                            # KIỂM TRA NẾU LÀ TIN NHẮN THOẠI
-                            if "[Tin nhắn thoại]" in msg or "[Audio]" in msg:
-                                # 1. Ép đẩy ra màn hình Canh me (Bất kể có bật Auto hay không)
-                                self.ui_queue.put_nowait(('add_ride', (group, "🔊 CÓ BẢN GHI ÂM MỚI - ĐANG PHÁT...", msg_id, conv_id)))
-                                # 2. Gọi lệnh Java để mở nhóm và phát âm thanh
-                                if platform == 'android':
-                                    try: autoclass('org.zauto.ZaloWebManager').playLastAudio(PythonActivity.mActivity, conv_id)
-                                    except: pass
-                                # 3. Đọc giọng nói cảnh báo
-                                if self.config_data.get('sw_voice', True):
-                                    self.ui_queue.put_nowait(('speak', f"Chú ý, có ghi âm mới từ {group}"))
-                            
-                            # Xử lý tin nhắn văn bản bình thường như cũ
-                            else:
-                                payload = {'group': group, 'msg': msg, 'msg_id': msg_id, 'conversation_id': conv_id}
-                                try:
-                                    self.msg_queue.put(('WEB_NEW_MSG', payload), timeout=0.3)
-                                except queue.Full: pass
-                            payload = {
-                                'group': group,
-                                'msg': msg,
-                                'msg_id': msg_id,
-                                'conversation_id': conv_id
-                            }
+                            # ĐÃ FIX: Chỉ đẩy duy nhất 1 lần vào máy quét, dọn sạch code thừa gây nhân đôi tin nhắn
+                            payload = {'group': group, 'msg': msg, 'msg_id': msg_id, 'conversation_id': conv_id}
                             try:
                                 self.msg_queue.put(('WEB_NEW_MSG', payload), timeout=0.3)
-                            except queue.Full:
-                                logger.warning("msg_queue full bỏ qua")
+                            except queue.Full: pass
             except Exception as e:
                 pass # Bỏ qua lỗi jnius khi khởi động
 
-    def add_ride_card(self, group, msg, msg_id="", conversation_id=""):
+    def add_ride_card(self, group, msg, msg_id="", conversation_id="", cache_key=""):
         try:
             max_rides = 30
             ride_list = self.root.ids.ride_list
@@ -1251,37 +1371,44 @@ class ZAutoProApp(MDApp):
                 old_card.clear_widgets()
                 del old_card
             card = RideCard(group_text=group, msg_text=msg, time_text=time.strftime("%H:%M"))
-            # Gán ẩn data vào Widget để KHÔNG PHẢI SỬA GIAO DIỆN KV
             card.msg_id = msg_id
             card.conversation_id = conversation_id
+            card.cache_key = cache_key # ĐÃ FIX: Nhận tham số cache_key để sau này xóa bộ đệm
             self.root.ids.ride_list.add_widget(card, index=0)
+            
+            # TỰ XÓA CUỐC SAU 2 PHÚT (120 GIÂY) ĐỂ MÀN HÌNH CANH ME SẠCH SẼ
+            Clock.schedule_once(lambda dt: self.auto_remove_card(card), 120)
         except Exception: logger.error(traceback.format_exc())
 
+    def auto_remove_card(self, card_widget):
+        try:
+            if card_widget in self.root.ids.ride_list.children:
+                self.remove_ride(card_widget)
+        except Exception: pass
+
     def manual_accept_ride(self, card_widget):
-        # Lấy data ẩn ra và ném vào Hàng đợi Reply
-        self.queue_reply(card_widget.group_text, getattr(card_widget, 'conversation_id', ''), getattr(card_widget, 'msg_id', ''), self.root.ids.inp_reply.text)
+        raw_reply = self.root.ids.inp_reply.text
+        replies = [r.strip() for r in raw_reply.split(',') if r.strip()]
+        final_reply = random.choice(replies) if replies else "Ok nhận"
+
+        # ĐÃ FIX: Chuyền đầy đủ nội dung tin nhắn xuống để Java Click Đúp đè tin
+        self.queue_reply(card_widget.group_text, getattr(card_widget, 'conversation_id', ''), getattr(card_widget, 'msg_id', ''), final_reply, card_widget.msg_text)
         toast(f"Đang chốt: {card_widget.group_text}")
         self.remove_ride(card_widget)
 
-    def queue_reply(self, group, conversation_id, msg_id, reply_text):
+    def queue_reply(self, group, conversation_id, msg_id, reply_text, msg_content=""):
         now = time.time()
-        
-        # 1. Lấy thời gian chờ từ cấu hình người dùng (mặc định 30s)
         try:
             user_delay = float(self.config_data.get('global_delay', '30'))
         except:
             user_delay = 30.0
 
-        # 2. KIỂM TRA TOÀN CỤC: Nếu vừa chốt xong 1 cuốc bất kỳ, thì phải đợi đủ thời gian
-        # Đây chính là cơ chế "nhận 1 nhóm rồi thì nhóm sau bỏ chờ"
         time_passed = now - getattr(self, 'last_global_reply_time', 0)
         if time_passed < user_delay:
-            logger.info(f"Đang trong thời gian chờ chốt cuốc mới. Còn {int(user_delay - time_passed)} giây.")
             return 
 
-        # 3. Lọc trùng chính xác tin nhắn cũ (giữ nguyên)
-        cache_key = f"{conversation_id}_{msg_id}"
-        if now - self.last_reply_time.get(cache_key, 0) < 30: return 
+        cache_key = f"{conversation_id}_{msg_id}_{hashlib.md5(reply_text.encode('utf-8')).hexdigest()[:6]}"
+        if now - self.last_reply_time.get(cache_key, 0) < 10: return 
         self.last_reply_time[cache_key] = now
 
         if self.reply_queue.qsize() > 40: return
@@ -1289,12 +1416,10 @@ class ZAutoProApp(MDApp):
         try:
             self.last_global_reply_time = now 
             self.reply_queue.put({
-                'group': group, 'conversation_id': conversation_id, 'msg_id': msg_id, 'reply_text': reply_text
+                'group': group, 'conversation_id': conversation_id, 'msg_id': msg_id, 'reply_text': reply_text, 'msg_content': msg_content
             }, timeout=0.3)
 
             self.safe_toast(f"Đã chốt {group}. Tạm dừng quét {int(user_delay)}s.")
-
-            # THÊM ĐỌC GIỌNG NÓI:
             if self.config_data.get('sw_voice', True):
                 self.ui_queue.put_nowait(('speak', f"Chốt cuốc xe thành công, {group}"))
         except queue.Full: pass
@@ -1304,14 +1429,18 @@ class ZAutoProApp(MDApp):
         """HÀM GỌI XUỐNG JAVA PHẢI CHẠY TRÊN UI THREAD CỦA ANDROID"""
         try:
             if platform == 'android' and getattr(self, 'is_linked', False):
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                current_time_str = time.strftime('%H:%M')
                 autoclass('org.zauto.ZaloWebManager').sendReplyToSpecificMessage(
                     PythonActivity.mActivity, 
-                    payload['conversation_id'], 
-                    payload['msg_id'], 
-                    payload['reply_text'],
-                    payload['group']
+                    payload.get('conversation_id', ''), 
+                    payload.get('msg_id', ''), 
+                    payload.get('reply_text', ''),
+                    payload.get('msg_content', ''),
+                    current_time_str
                 )
-                logger.info(f"Đã gửi lệnh chốt: msg_id={payload['msg_id']}")
+                logger.info("Đã gửi lệnh chốt Zalo (Gửi đủ 6 tham số Click đúp)")
         except Exception as e:
             logger.error(f"Lỗi _execute_reply_safe: {traceback.format_exc()}")
     
@@ -1496,6 +1625,7 @@ class ZAutoProApp(MDApp):
         self.msg_queue = queue.Queue(maxsize=500)
         self.reply_queue = queue.Queue(maxsize=50)
         self.ui_queue = queue.Queue(maxsize=100) # Queue chuyên đẩy UI update chống Freeze Kivy
+        self.audio_queue = queue.Queue(maxsize=50) # THÊM: Hàng đợi riêng cho tin nhắn thoại
         
         # LOCK SYSTEM CHUẨN
         self.reply_time_lock = threading.Lock()
