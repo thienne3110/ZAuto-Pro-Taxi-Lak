@@ -1161,13 +1161,33 @@ class ZAutoProApp(MDApp):
         if not getattr(self, 'is_radar_running', False): return
         if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
 
-        # THUẬT TOÁN HỢP THỂ TIN NHẮN (CHỐNG TRÙNG VÀ ĐẮP ID XỊN)
-        msg_hash = hashlib.md5(msg.encode('utf-8')).hexdigest()[:8]
-        cache_key = f"{group}_{msg_hash}"
-        
+        # --- LỚP BẢO VỆ 1: CHẶN TUYỆT ĐỐI TIN NHẮN DO CHÍNH MÌNH GỬI (BẠN/YOU) ---
+        msg_clean = msg.strip()
+        if msg_clean.startswith("Bạn:") or msg_clean.startswith("You:") or msg_clean.startswith("bạn:") or msg_clean.startswith("you:"):
+            return # Bỏ qua ngay lập tức, không cho xử lý tiếp
+
+        # --- LỚP BẢO VỆ 2: CHẶN CÁC CÂU TRÙNG VỚI NỘI DUNG CHỐT TRONG CÀI ĐẶT ---
+        raw_reply = self.config_data.get('reply_msg', 'Ok nhận')
+        replies = [r.strip().lower() for r in raw_reply.split(',') if r.strip()]
+        if msg_clean.lower() in replies or any(r in msg_clean.lower() for r in replies):
+            return # Chặn câu chốt trùng lặp bay ngược lại (tránh loop bong bóng)
+
+        msg_low = msg.lower()
+        # Xác định xem có phải tin thoại không
+        is_voice = "tin nhắn thoại" in msg_low or "audio" in msg_low or "giọng nói" in msg_low or "âm thanh" in msg_low or "voice" in msg_low or "[tin nhắn thoại]" in msg_low
+
         current_time = time.time()
         
-        # KIỂM TRA TIN TRÙNG TRONG 15 GIÂY (Chống 1 tin đẻ làm 2 dòng)
+        # ĐÃ SỬA LỖI 3: TIN THOẠI LẤY ID ĐỂ PHÂN BIỆT, KHÔNG BỊ CHẶN TRÙNG LẶP NỮA
+        if is_voice:
+            cache_key = f"{group}_VOICE_{msg_id}"
+            display_msg = "🔊 CÓ BẢN GHI ÂM MỚI"
+        else:
+            msg_hash = hashlib.md5(msg.encode('utf-8')).hexdigest()[:8]
+            cache_key = f"{group}_{msg_hash}"
+            display_msg = msg
+        
+        # THUẬT TOÁN HỢP THỂ TIN NHẮN (CHỐNG TRÙNG VÀ ĐẮP ID XỊN)
         if cache_key in self.processed_msg_hashes:
             cached_data = self.processed_msg_hashes[cache_key]
             if isinstance(cached_data, dict) and current_time - cached_data['time'] < 15:
@@ -1182,34 +1202,44 @@ class ZAutoProApp(MDApp):
         # LƯU TIN MỚI VÀO BỘ NHỚ RAM
         self.processed_msg_hashes[cache_key] = {'time': current_time, 'conv_id': conversation_id, 'msg_id': msg_id}
 
-        # BỘ LỌC TỪ KHÓA
+        # BỘ LỌC TỪ KHÓA (Bỏ qua lọc nếu là tin thoại)
         sw_filter_active = self.config_data.get('sw_filter', False)
-        if sw_filter_active:
-            msg_low = msg.lower()
+        if sw_filter_active and not is_voice:
             loai_keys = [k.strip() for k in self.config_data.get('loai', '').lower().split(',') if k.strip()]
             if loai_keys and any(lk in msg_low for lk in loai_keys): return
             nhan_keys = [k.strip() for k in self.config_data.get('nhan', '').lower().split(',') if k.strip()]
             if nhan_keys and not any(nk in msg_low for nk in nhan_keys): return
 
+        # NẾU LÀ TIN THOẠI, TỰ ĐỘNG GỌI JAVA ĐỂ PHÁT ÂM THANH
+        if is_voice and platform == 'android':
+            self.audio_queue.put((conversation_id, msg_id))
+
         sw_auto_active = self.config_data.get('sw_auto', False)
 
         if sw_auto_active:
-            raw_reply = self.config_data.get('reply_msg', 'Ok nhận')
-            replies = [r.strip() for r in raw_reply.split(',') if r.strip()]
-            final_reply = random.choice(replies) if replies else "Ok nhận"
-            
-            # ĐÃ ĐỔI: Thêm tham số 'msg' vào cuối để chuyển nội dung gốc đi xử lý
-            self.queue_reply(group, conversation_id, msg_id, final_reply, msg)
+            # CHẾ ĐỘ TỰ ĐỘNG CHỐT: Không hiện thẻ Canh me, Không hiện Bong bóng
+            raw_reply_msg = self.config_data.get('reply_msg', 'Ok nhận')
+            replies_list = [r.strip() for r in raw_reply_msg.split(',') if r.strip()]
+            final_reply = random.choice(replies_list) if replies_list else "Ok nhận"
+            self.queue_reply(group, conversation_id, msg_id, final_reply, display_msg)
         else:
+            # CHẾ ĐỘ NHẬN TAY: Hiện thẻ Canh me và Gọi Bong Bóng
             try:
-                # In thẻ ra màn hình, NÉM KÈM THEO MÃ cache_key ĐỂ CẬP NHẬT
-                self.ui_queue.put_nowait(('add_ride', (group, msg, msg_id, conversation_id, cache_key)))
+                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
+                
+                # CHỈ KÍCH HOẠT BONG BÓNG KHI ĐANG NHẬN TAY (AUTO ĐANG TẮT)
+                if self.config_data.get('sw_bubble', True):
+                    self.ui_queue.put_nowait(('bubble', (group, display_msg, conversation_id, msg_id)))
+
                 if self.config_data.get('sw_voice', True):
-                    self.ui_queue.put_nowait(('speak', f"Chú ý có cuốc xe mới, {group}"))
+                    # Lọc bỏ emoji để máy đọc trơn tru tên Nhóm Zalo
+                    clean_group = re.sub(r'[^\w\s]', '', group)
+                    msg_type = "tin nhắn thoại" if is_voice else "cuốc xe mới"
+                    self.ui_queue.put_nowait(('speak', f"Chú ý có {msg_type} từ nhóm {clean_group}"))
             except queue.Full: pass
 
         try:
-            self.ui_queue.put_nowait(('log', (group, msg)))
+            self.ui_queue.put_nowait(('log', (group, display_msg)))
         except queue.Full: pass
 
     def _system_watchdog(self, dt):
@@ -1312,7 +1342,8 @@ class ZAutoProApp(MDApp):
             except Exception as e:
                 pass # Bỏ qua lỗi jnius khi khởi động
 
-    def add_ride_card(self, group, msg, msg_id="", conversation_id=""):
+    # ĐÃ SỬA LỖI VĂNG APP: Bổ sung cache_key="" vào tham số của hàm
+    def add_ride_card(self, group, msg, msg_id="", conversation_id="", cache_key=""):
         try:
             max_rides = 30
             ride_list = self.root.ids.ride_list
@@ -1323,7 +1354,6 @@ class ZAutoProApp(MDApp):
                 del old_card
             card = RideCard(group_text=group, msg_text=msg, time_text=time.strftime("%H:%M"))
             
-            # Gán ẩn data vào Widget để KHÔNG PHẢI SỬA GIAO DIỆN KV
             card.msg_id = msg_id
             card.conversation_id = conversation_id
             card.cache_key = cache_key
@@ -1672,11 +1702,10 @@ class ZAutoProApp(MDApp):
                     if platform == 'android':
                         try:
                             from jnius import autoclass
-                            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                            autoclass('org.zauto.ZaloWebManager').speak(PythonActivity.mActivity, args)
+                            # ĐÃ FIX LỖI IM LẶNG: Chỉ truyền đúng 1 tham số 'args' (văn bản) xuống Java
+                            autoclass('org.zauto.ZaloWebManager').speak(args)
                         except Exception as e:
                             logger.error(f"Lỗi TTS: {e}")
-                # THÊM ĐOẠN NÀY ĐỂ ÂM THẦM ĐẮP ID XỊN VÀO THẺ:
                 elif task == 'update_card':
                     cache_key, new_msg_id, new_conv_id = args
                     for card in self.root.ids.ride_list.children:
@@ -1684,6 +1713,15 @@ class ZAutoProApp(MDApp):
                             card.msg_id = new_msg_id
                             card.conversation_id = new_conv_id
                             break
+                # BỔ SUNG CỔNG NHẬN LỆNH BONG BÓNG NỔI TẠI ĐÂY
+                elif task == 'bubble':
+                    if platform == 'android':
+                        try:
+                            from jnius import autoclass
+                            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                            autoclass('org.zauto.ZaloWebManager').showNewRideOnBubble(PythonActivity.mActivity, args[0], args[1], args[2], args[3])
+                        except Exception as e:
+                            pass
                 self.ui_queue.task_done()
         except queue.Empty:
             pass
