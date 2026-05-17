@@ -348,11 +348,11 @@ public class ZaloWebManager {
                 );
                 webLayout.addView(hiddenWebView, webParams);
 
-                // KHỞI TẠO KHỔNG LỒ (ĐÁNH LỪA REACT VIRTUALIZED) VÀ ĐẨY RA KHỎI MÀN HÌNH
+                // ĐÁNH LỪA ANDROID CŨ (Tránh View Clipping / Ngủ đông GPU)
                 FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(1080, 2400);
-                rootParams.leftMargin = -10000;
-                rootParams.topMargin = -10000;
-                webLayout.setAlpha(0.0f);
+                rootParams.leftMargin = -2000; 
+                rootParams.topMargin = -2000;
+                webLayout.setAlpha(0.01f); // QUAN TRỌNG: 0.01f giúp Web chạy ngầm 100% công suất
 
                 if (webLayout.getParent() != null) {
                     ((ViewGroup) webLayout.getParent()).removeView(webLayout);
@@ -477,28 +477,73 @@ public class ZaloWebManager {
             "           }, 800);" + // Đợi 0.8 giây để Zalo load màn hình chat
             "       } catch(e) {}" +
             "   };" +
-            // HÀM QUÉT SIDEBAR
+            // HÀM QUÉT SIDEBAR (ĐÃ FIX ZALO ĐỔI GIAO DIỆN & TÌM ĐÚNG ID TIN)
             "   function scanConvItem(msgItemEl) {" +
             "       try {" +
-            "           let convItem = msgItemEl.querySelector('.gridv2.conv-item');" +
+            "           let convItem = msgItemEl.querySelector('.conv-item') || msgItemEl;" + // Đã gỡ bỏ .gridv2
             "           if(!convItem) return;" +
             "           let nameEl = convItem.querySelector('.conv-item-title__name');" +
-            "           let bodyEl = msgItemEl.querySelector('.conv-item-body');" +
+            "           let bodyEl = convItem.querySelector('.conv-item-body');" +
             "           if(!nameEl || !bodyEl) return;" +
-            "           let groupName = (nameEl.innerText || nameEl.textContent || '').trim();" +
-            "           let msgText   = (bodyEl.innerText || bodyEl.textContent || '').trim();" +
+            "           let groupName = (nameEl.textContent || nameEl.innerText || '').trim();" +
+            "           let msgText   = (bodyEl.textContent || bodyEl.innerText || '').trim();" +
+            "           let convId = msgItemEl.getAttribute('anim-data-id') || msgItemEl.id || '';" +
+            
+            // DEEP BYPASS: QUÉT VÉT CẠN MỌI TẦNG REACT FIBER ĐỂ LỘT TRẦN ID BỊ GIẤU
+            "           let realMsgId = ''; var fullTxt = '';" +
+            "           try {" +
+            "               let id1 = msgItemEl.getAttribute('data-msg-id') || (msgItemEl.dataset ? msgItemEl.dataset.msgId : '');" +
+            "               if (id1 && id1.length > 5) realMsgId = id1;" +
+            
+            "               let keys = Object.keys(msgItemEl);" +
+            "               let rK = keys.find(k => k.startsWith('__reactFiber') || k.startsWith('__reactProps'));" +
+            "               if (rK && msgItemEl[rK]) {" +
+            "                   let node = msgItemEl[rK];" +
+            "                   for(let step = 0; step < 4; step++) {" +
+            "                       if(!node) break;" +
+            "                       let p = node.memoizedProps || node.pendingProps;" +
+            "                       if (p) {" +
+            "                           let objs = [p.data?.lastMsg, p.item?.lastMsg, p.lastMsg, p.message, p.msg, p.data, p.item, p];" +
+            "                           for (let o of objs) {" +
+            "                               if (o && typeof o === 'object') {" +
+            "                                   let foundId = o.msgId || o.messageId || o.cliMsgId || o.globalMsgId;" +
+            "                                   if (!realMsgId && foundId && String(foundId).length > 5) { realMsgId = String(foundId); }" +
+            "                                   if (!fullTxt && typeof o.content === 'string' && o.content.trim() !== '') { fullTxt = o.content; }" +
+            "                               }" +
+            "                           }" +
+            "                       }" +
+            "                       node = node.return;" +
+            "                   }" +
+            "               }" +
+            "           } catch(err) {}" +
+            
+            "           if (fullTxt && fullTxt.length > msgText.length && !fullTxt.startsWith('{\"')) {" +
+            "               msgText = fullTxt.trim();" +
+            "           }" +
+            
+            "           let isVoiceNode = bodyEl.querySelector('[class*=\"audio\"], [class*=\"voice\"], [class*=\"Voice\"], svg');" +
+            "           let isTimeOnly = /^[0-9]{1,2}:[0-9]{2}$/.test(msgText) || /^[0-9]{1,2}:[0-9]{2}$/.test(bodyEl.innerText.trim());" + 
+            "           if (isVoiceNode || isTimeOnly) {" +
+            "               msgText = '[Tin nhắn thoại]';" +
+            "           }" +
+
             "           if(!groupName || !msgText) return;" +
-            "           let convId = msgItemEl.getAttribute('anim-data-id') || '';" +
-            "           let fp = convId + '|' + msgText.substring(0, 40);" +
+
+            "           let timeEl = convItem.querySelector('.conv-item-title__time, [class*=\"time\"]');" +
+            "           let timeString = timeEl ? (timeEl.textContent || '').trim() : '';" +
+
+            "           if (!realMsgId || realMsgId === '') {" +
+            "               realMsgId = 'TIME_' + timeString;" +
+            "           }" +
+
+            "           let fp = convId + '|' + realMsgId + '|' + timeString + '|' + msgText.substring(0, 40);" +
             "           if(window.zauto_seen[fp]) return;" +
             "           window.zauto_seen[fp] = true;" +
             "           window.zauto_seen_keys.push(fp);" +
-"           if(window.zauto_seen_keys.length > 800) {" +
-            "               let old = window.zauto_seen_keys.splice(0, 100);" +
-            "               old.forEach(k => delete window.zauto_seen[k]);" +
-            "           }" +
+            "           if(window.zauto_seen_keys.length > 800) { let old = window.zauto_seen_keys.splice(0, 100); old.forEach(k => delete window.zauto_seen[k]); }" +
             "           if (Date.now() - window.zauto_boot_time > 8000) {" +
-            "               ZAutoBridge.onNewWebMsg(groupName, msgText, '', convId);" +
+            // ĐÃ FIX: TRUYỀN ĐẦY ĐỦ THÔNG SỐ VỀ CHO PYTHON ĐỂ XỬ LÝ (Có ID để chống trùng)
+            "               ZAutoBridge.onNewWebMsg(groupName, msgText, realMsgId, convId);" +
             "           }" +
             "       } catch(e) {}" +
             "   }" +
@@ -619,9 +664,9 @@ public class ZaloWebManager {
                 FrameLayout.LayoutParams params =
                         (FrameLayout.LayoutParams) webLayout.getLayoutParams();
                 if (!visible) {
-                    webLayout.setAlpha(0.0f);
-                    params.leftMargin = -10000;
-                    params.topMargin = -10000;
+                    webLayout.setAlpha(0.01f); // QUAN TRỌNG: 0.01f
+                    params.leftMargin = -2000; 
+                    params.topMargin = -2000;
                     params.width = 1080;
                     params.height = 2400;
                 } else {
