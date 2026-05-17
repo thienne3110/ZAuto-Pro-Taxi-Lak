@@ -590,7 +590,7 @@ public class ZaloWebManager {
             // 4. OBSERVE CONTAINER SIDEBAR
             "   function startSidebarObserver() {" +
             "       let container = document.getElementById('conversationListId');" +
-            "       if(!container) { setTimeout(startSidebarObserver, 1500); return; }" +
+            "       if(!container) return;" + // Hủy vòng lặp mù, giao cho Watchdog điều hướng
             "       if(window.zauto_sidebar_observer) window.zauto_sidebar_observer.disconnect();" +
             "       window.zauto_sidebar_observer = new MutationObserver(mutations => {" +
             "           mutations.forEach(m => { try { let targetNode = m.target.nodeType === 3 ? m.target.parentNode : m.target; let msgItem = targetNode.closest('.msg-item'); if(msgItem) scanConvItem(msgItem); } catch(e) {} });" +
@@ -598,12 +598,10 @@ public class ZaloWebManager {
             "       window.zauto_sidebar_observer.observe(container, { childList: true, subtree: true, characterData: true });" +
             "       document.querySelectorAll('.msg-item').forEach(scanConvItem);" +
             "       collectGroups();" +
-            "       ZAutoBridge.onLoginSuccess('Đã kết nối', '');" + 
-                    // RA LỆNH HIỆN BONG BÓNG THU NHỎ
             "       ZAutoBridge.showFloatingBubbleAction();" + 
             "   }" +
 
-            // 5. WATCHDOG TỰ ĐỘNG BẤM ĐỒNG BỘ VÀ BÁO KẾT NỐI
+            // 5. WATCHDOG TỰ ĐỘNG BẤM ĐỒNG BỘ VÀ BÁO KẾT NỐI (ĐÃ SỬA CHUẨN)
             "   function systemWatchdog() {" +
             "       ZAutoBridge.onHeartbeat(Date.now().toString());" +
             "       if(!navigator.onLine) { setTimeout(systemWatchdog, 10000); return; }" +
@@ -615,24 +613,34 @@ public class ZaloWebManager {
             "           }" +
             "           if(syncBtn) syncBtn.click();" +
             "       } catch(e) {}" +
-            "       let isLoginScreen = document.querySelector('.qrcode') || document.querySelector('.login-container');" +
-            "       if(isLoginScreen) {" +
+            
+            // ĐÃ SỬA: Lấy danh sách chat làm mốc chuẩn xác nhận đã đăng nhập (Không phụ thuộc class QR nữa)
+            "       let chatList = document.getElementById('conversationListId');" +
+            "       if(!chatList) {" +
+            // TRƯỜNG HỢP 1: CHƯA ĐĂNG NHẬP (Đang ở màn hình chờ quét QR)
+            "           window.zauto_logged_in_flag = false;" +
             "           if(!window.login_start_time) window.login_start_time = Date.now();" +
-            "           if(Date.now() - window.login_start_time > 300000) { window.login_start_time = Date.now(); location.reload(); }" +
+            // ĐÃ SỬA: Đúng 3 phút (180000 mili-giây) không quét QR thì mới tải lại trang 1 lần
+            "           if(Date.now() - window.login_start_time > 180000) { window.login_start_time = Date.now(); location.reload(); }" +
             "       } else {" +
-            "           window.login_start_time = null;" +
-            "           if (!window.zauto_logged_in_flag) { window.zauto_logged_in_flag = true; ZAutoBridge.onLoginSuccess('Đã kết nối', ''); }" +
-            "           let container = document.getElementById('conversationListId');" +
-            "           if(!container || !window.zauto_sidebar_observer) { window.zauto_sidebar_observer = null; startSidebarObserver(); }" +
+            // TRƯỜNG HỢP 2: ĐÃ ĐĂNG NHẬP VÀO TRONG ZALO (Khung chat đã hiện) -> KHÔNG BAO GIỜ TẢI LẠI
+            "           window.login_start_time = null;" + // Xóa trắng cờ thời gian tải lại
+            "           if (!window.zauto_logged_in_flag) {" +
+            "               window.zauto_logged_in_flag = true;" +
+            // LÚC NÀY MỚI BÁO VỀ PYTHON LÀ ĐÃ LIÊN KẾT ZALO THÀNH CÔNG!
+            "               ZAutoBridge.onLoginSuccess('Đã kết nối', '');" + 
+            "               startSidebarObserver();" + // Khởi động máy quét tin nhắn
+            "           }" +
+            "           if(!window.zauto_sidebar_observer) { startSidebarObserver(); }" +
             "           window.zauto_group_tick = (window.zauto_group_tick || 0) + 1;" +
             "           if(window.zauto_group_tick % 5 === 0) collectGroups();" +
             "       }" +
+            
             "       let nextTick = document.hidden ? 15000 : 3000;" +
             "       setTimeout(systemWatchdog, nextTick);" +
             "   }" +
             "   setInterval(() => { let container = document.getElementById('conversationListId'); if(container) document.querySelectorAll('.msg-item').forEach(scanConvItem); }, 2000);" +
-            "   setTimeout(startSidebarObserver, 1000);" +
-            "   setTimeout(systemWatchdog, 3000);" +
+            "   setTimeout(systemWatchdog, 3000);" + // Chạy Watchdog sau 3 giây khởi động
             "})();";
 
         safeEvaluateJs(js);
