@@ -1129,10 +1129,10 @@ class ZAutoProApp(MDApp):
                 logger.error(f"Reply Worker Crash: {traceback.format_exc()}")
                 time.sleep(1)
     def _audio_worker_loop(self):
-        """Worker lấy tin nhắn thoại ra phát, ưu tiên giây thật, nếu lỗi tự động nhảy về cơ chế dự phòng 7s"""
+        """Worker lấy tin nhắn thoại ra phát. ĐÃ FIX LỖI LẶP TIN BẰNG CÁCH GIỮ NGUYÊN CACHE VĨNH VIỄN"""
         while getattr(self, 'app_running', True):
             try:
-                # Nhận thêm biến duration từ hàng đợi
+                # Nhận biến duration từ hàng đợi
                 conv_id, msg_id, cache_key, duration = self.audio_queue.get(timeout=1.0)
                 
                 if platform == 'android' and getattr(self, 'is_linked', False):
@@ -1144,21 +1144,17 @@ class ZAutoProApp(MDApp):
                     
                     # LOGIC KIỂM TRA THÔNG MINH THEO YÊU CẦU:
                     if duration > 0:
-                        # Cơ chế 1 (Ưu tiên): Lấy giây thật của tin nhắn + 2 giây bù trừ độ trễ
                         sleep_time = duration + 2.0
-                        logger.info(f"Cơ chế 1 hoạt động: Tin thoại dài {duration}s -> Đợi {sleep_time}s")
+                        logger.info(f"Cơ chế 1: Tin thoại dài {duration}s -> Đợi {sleep_time}s")
                     else:
-                        # Cơ chế 2 (Dự phòng): Nếu duration <= 0 (tức là bằng -1 do Java quét lỗi), tự nhảy về 7 giây
                         sleep_time = 7.0
-                        logger.info(f"Cơ chế 2 (Dự phòng) hoạt động: Không quét được giây thật -> Tự động chờ 7s")
+                        logger.info(f"Cơ chế 2 (Dự phòng): Lỗi giây thật -> Tự động chờ 7s")
                     
                     # Thực hiện chờ
                     time.sleep(sleep_time)
                     
-                # Giải phóng bộ đệm ngay sau khi phát xong tin
-                if cache_key in self.processed_msg_hashes:
-                    try: del self.processed_msg_hashes[cache_key]
-                    except: pass
+                # KHÔNG BAO GIỜ XÓA CACHE Ở ĐÂY NỮA. 
+                # Nhờ vậy, Zalo quét lại lần 2, lần 3 sẽ bị chặn đứng, dứt điểm lỗi lặp tin!
                     
                 self.audio_queue.task_done()
             except queue.Empty:
@@ -1244,13 +1240,13 @@ class ZAutoProApp(MDApp):
         # XỬ LÝ ĐỘC LẬP CHO TIN NHẮN THOẠI (BỎ QUA NÚT AUTO)
         # ==============================================================
         if is_voice:
-            # --- Bóc tách Số giây và Tên người gửi từ chuỗi cấu trúc mới ---
+            # --- 1. Bóc tách Số giây và Tên người gửi từ chuỗi cấu trúc mới ---
             duration = -1 # Mặc định là -1 (Lỗi)
             clean_msg_text = msg
             
             # Tách lấy số giây Java đính kèm ở cuối chuỗi
-            if "|||" in msg:
-                msg_parts = msg.split("|||")
+            if "%%%" in msg:
+                msg_parts = msg.split("%%%")
                 clean_msg_text = msg_parts[0]
                 try: duration = int(msg_parts[1])
                 except: duration = -1
@@ -1259,13 +1255,30 @@ class ZAutoProApp(MDApp):
             if ": " in clean_msg_text:
                 sender_name = clean_msg_text.split(": ", 1)[0].strip()
 
-            # 1. Đẩy vào hàng đợi để phát âm thanh tự động (Truyền thêm duration xuống luồng phát)
+            # --- 2. TẠO CHÌA KHÓA THÔNG MINH (Ghép thêm số giây vào ID) ---
+            cache_key = f"VOICE_{conversation_id}_{msg_id}_{duration}"
+            display_msg = "🔊 CÓ BẢN GHI ÂM MỚI"
+
+            # KHÓA CỨNG: Nếu đã từng phát tin có ID và độ dài y hệt thế này rồi -> Chặn lại
+            if cache_key in self.processed_msg_hashes:
+                return
+
+            # Ghi nhớ mốc thời gian nhận tin vào bộ não
+            self.processed_msg_hashes[cache_key] = current_time
+
+            # Chống spam: Nếu cùng 1 nhóm mà nhảy liên tục dưới 3 giây -> Chặn
+            last_v_time = getattr(self, 'last_voice_times', {}).get(group, 0)
+            if current_time - last_v_time < 3.0: return 
+            if not hasattr(self, 'last_voice_times'): self.last_voice_times = {}
+            self.last_voice_times[group] = current_time
+
+            # --- 3. Đẩy vào hàng đợi để phát âm thanh tự động ---
             if platform == 'android':
                 try:
                     self.audio_queue.put_nowait((conversation_id, msg_id, cache_key, duration))
                 except queue.Full: pass
             
-            # 2. LUÔN LUÔN đẩy ra Tab Canh Me để bấm tay
+            # --- 4. Đẩy ra UI Tab Canh Me ---
             try:
                 self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
                 self.ui_queue.put_nowait(('log', (group, display_msg)))
@@ -1285,22 +1298,25 @@ class ZAutoProApp(MDApp):
             return
 
         # ==============================================================
-        # XỬ LÝ CHO TIN NHẮN CHỮ (CHỊU ẢNH HƯỞNG BỞI NÚT AUTO)
+        # XỬ LÝ CHO TIN NHẮN CHỮ (TEXT) - LUÔN BÁO TRƯỚC, CHỐT SAU
         # ==============================================================
+        # 1. BÁO CÁO NGAY LẬP TỨC LÊN UI VÀ ĐỌC ÂM THANH (Dù bật hay tắt Auto đều báo)
+        try:
+            self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
+            self.ui_queue.put_nowait(('log', (group, display_msg)))
+            if self.config_data.get('sw_bubble', True):
+                self.ui_queue.put_nowait(('bubble', (group, display_msg, conversation_id, msg_id)))
+            if self.config_data.get('sw_voice', True):
+                clean_group = re.sub(r'[^\w\s]', '', group)
+                self.ui_queue.put_nowait(('speak', f"Chú ý có cuốc xe mới từ nhóm {clean_group}"))
+        except queue.Full: pass
+
+        # 2. KIỂM TRA NÚT AUTO -> NẾU BẬT THÌ ĐƯA VÀO HÀNG ĐỢI CHỐT
         sw_auto_active = self.config_data.get('sw_auto', False)
         if sw_auto_active:
             final_reply = random.choice(replies) if replies else "Ok nhận"
+            # Đẩy lệnh vào hàng đợi, hệ thống sẽ tự động chờ hết thời gian delay rồi mới gửi "Ok nhận"
             self.queue_reply(group, conversation_id, msg_id, final_reply, display_msg)
-        else:
-            try:
-                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
-                self.ui_queue.put_nowait(('log', (group, display_msg)))
-                if self.config_data.get('sw_bubble', True):
-                    self.ui_queue.put_nowait(('bubble', (group, display_msg, conversation_id, msg_id)))
-                if self.config_data.get('sw_voice', True):
-                    clean_group = re.sub(r'[^\w\s]', '', group)
-                    self.ui_queue.put_nowait(('speak', f"Chú ý có cuốc xe mới từ nhóm {clean_group}"))
-            except queue.Full: pass
 
     def _system_watchdog(self, dt):
         """Khôi phục Worker, Tối ưu RAM và chặn nhân bản Thread"""
