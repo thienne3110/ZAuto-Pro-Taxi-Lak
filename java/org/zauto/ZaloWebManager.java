@@ -482,11 +482,12 @@ public class ZaloWebManager {
             "       try {" +
             "           let convItem = msgItemEl.querySelector('.conv-item') || msgItemEl;" + // Đã gỡ bỏ .gridv2
             "           if(!convItem) return;" +
-            "           let nameEl = convItem.querySelector('.conv-item-title__name');" +
-            "           let bodyEl = convItem.querySelector('.conv-item-body');" +
-            "           if(!nameEl || !bodyEl) return;" +
-            "           let groupName = (nameEl.textContent || nameEl.innerText || '').trim();" +
-            "           let msgText   = (bodyEl.textContent || bodyEl.innerText || '').trim();" +
+            // ĐOẠN MỚI:
+			"           let nameEl = convItem.querySelector('.conv-item-title__name, [class*=\"name\"]');" +
+			"           let bodyEl = convItem.querySelector('.conv-item-body, [class*=\"snippet\"], [class*=\"message-text\"]');" +
+			"           if(!nameEl) return;" + // Chỉ bắt buộc tìm thấy Tên nhóm
+			"           let groupName = (nameEl.textContent || nameEl.innerText || '').trim();" +
+			"           let msgText = bodyEl ? (bodyEl.textContent || bodyEl.innerText || '').trim() : '';" +
             "           let convId = msgItemEl.getAttribute('anim-data-id') || msgItemEl.id || '';" +
             
             // DEEP BYPASS: QUÉT VÉT CẠN MỌI TẦNG REACT FIBER ĐỂ LỘT TRẦN ID BỊ GIẤU
