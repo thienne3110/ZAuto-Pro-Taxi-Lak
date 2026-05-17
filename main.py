@@ -914,7 +914,14 @@ class ZAutoProApp(MDApp):
     def _audio_worker_loop(self):
         while getattr(self, 'app_running', True):
             try:
-                conv_id, msg_id = self.audio_queue.get(timeout=1.0)
+                # ĐÃ SỬA: Nhận đủ 3 thông tin (id_nhóm, id_tin, cache_key)
+                item = self.audio_queue.get(timeout=1.0)
+                if len(item) == 3:
+                    conv_id, msg_id, cache_key = item
+                else:
+                    conv_id, msg_id = item
+                    cache_key = ""
+                    
                 if platform == 'android':
                     try:
                         # Gọi Java phát ghi âm đích danh ID tin nhắn
@@ -922,13 +929,19 @@ class ZAutoProApp(MDApp):
                     except Exception:
                         pass
                 
-                # Đợi 7 giây để Zalo phát xong âm thanh rồi mới nhả tin tiếp theo
+                # Đợi 7 giây để Zalo phát xong âm thanh
                 time.sleep(7) 
+                
+                # ĐÃ THÊM: PHÁT XONG THÌ XOÁ LUÔN BỘ NHỚ ĐỆM CỦA TIN THOẠI ĐÓ!
+                # Điều này giúp nếu khách gửi tiếp tin thoại số 2, số 3, hệ thống sẽ vẫn tiếp tục bốc vào.
+                if cache_key and cache_key in self.processed_msg_hashes:
+                    del self.processed_msg_hashes[cache_key]
+                    
                 self.audio_queue.task_done()
             except queue.Empty:
                 continue
             except Exception:
-                time.sleep(1)           
+                time.sleep(1)        
     def update_group_list_ui(self, groups):
         """Cập nhật danh sách nhóm từ Zalo Web lên giao diện Tab Nhóm"""
         try:
@@ -1164,21 +1177,19 @@ class ZAutoProApp(MDApp):
         # --- LỚP BẢO VỆ 1: CHẶN TUYỆT ĐỐI TIN NHẮN DO CHÍNH MÌNH GỬI (BẠN/YOU) ---
         msg_clean = msg.strip()
         if msg_clean.startswith("Bạn:") or msg_clean.startswith("You:") or msg_clean.startswith("bạn:") or msg_clean.startswith("you:"):
-            return # Bỏ qua ngay lập tức, không cho xử lý tiếp
+            return 
 
         # --- LỚP BẢO VỆ 2: CHẶN CÁC CÂU TRÙNG VỚI NỘI DUNG CHỐT TRONG CÀI ĐẶT ---
         raw_reply = self.config_data.get('reply_msg', 'Ok nhận')
         replies = [r.strip().lower() for r in raw_reply.split(',') if r.strip()]
         if msg_clean.lower() in replies or any(r in msg_clean.lower() for r in replies):
-            return # Chặn câu chốt trùng lặp bay ngược lại (tránh loop bong bóng)
+            return 
 
         msg_low = msg.lower()
-        # Xác định xem có phải tin thoại không
         is_voice = "tin nhắn thoại" in msg_low or "audio" in msg_low or "giọng nói" in msg_low or "âm thanh" in msg_low or "voice" in msg_low or "[tin nhắn thoại]" in msg_low
 
         current_time = time.time()
         
-        # ĐÃ SỬA LỖI 3: TIN THOẠI LẤY ID ĐỂ PHÂN BIỆT, KHÔNG BỊ CHẶN TRÙNG LẶP NỮA
         if is_voice:
             cache_key = f"{group}_VOICE_{msg_id}"
             display_msg = "🔊 CÓ BẢN GHI ÂM MỚI"
@@ -1187,22 +1198,19 @@ class ZAutoProApp(MDApp):
             cache_key = f"{group}_{msg_hash}"
             display_msg = msg
         
-        # THUẬT TOÁN HỢP THỂ TIN NHẮN (CHỐNG TRÙNG VÀ ĐẮP ID XỊN)
+        # THUẬT TOÁN HỢP THỂ TIN NHẮN 
         if cache_key in self.processed_msg_hashes:
             cached_data = self.processed_msg_hashes[cache_key]
             if isinstance(cached_data, dict) and current_time - cached_data['time'] < 15:
-                # Nếu tin tới sau là từ Zalo Web (Có ID xịn) -> Đắp ID xịn lên thẻ đang có trên màn hình
                 if conversation_id and conversation_id != "NOTIFICATION":
                     self.processed_msg_hashes[cache_key]['conv_id'] = conversation_id
                     self.processed_msg_hashes[cache_key]['msg_id'] = msg_id
-                    # Gửi lệnh cập nhật ngầm cho Giao diện
                     self.ui_queue.put_nowait(('update_card', (cache_key, msg_id, conversation_id)))
-                return # Bỏ qua, KHÔNG in thêm dòng số 2 ra màn hình
+                return 
         
         # LƯU TIN MỚI VÀO BỘ NHỚ RAM
         self.processed_msg_hashes[cache_key] = {'time': current_time, 'conv_id': conversation_id, 'msg_id': msg_id}
 
-        # BỘ LỌC TỪ KHÓA (Bỏ qua lọc nếu là tin thoại)
         sw_filter_active = self.config_data.get('sw_filter', False)
         if sw_filter_active and not is_voice:
             loai_keys = [k.strip() for k in self.config_data.get('loai', '').lower().split(',') if k.strip()]
@@ -1210,29 +1218,25 @@ class ZAutoProApp(MDApp):
             nhan_keys = [k.strip() for k in self.config_data.get('nhan', '').lower().split(',') if k.strip()]
             if nhan_keys and not any(nk in msg_low for nk in nhan_keys): return
 
-        # NẾU LÀ TIN THOẠI, TỰ ĐỘNG GỌI JAVA ĐỂ PHÁT ÂM THANH
+        # ĐÃ SỬA: NẾU LÀ TIN THOẠI, TRUYỀN THÊM cache_key VÀO HÀNG ĐỢI ĐỂ XÓA KHI PHÁT XONG
         if is_voice and platform == 'android':
-            self.audio_queue.put((conversation_id, msg_id))
+            self.audio_queue.put((conversation_id, msg_id, cache_key))
 
         sw_auto_active = self.config_data.get('sw_auto', False)
 
         if sw_auto_active:
-            # CHẾ ĐỘ TỰ ĐỘNG CHỐT: Không hiện thẻ Canh me, Không hiện Bong bóng
             raw_reply_msg = self.config_data.get('reply_msg', 'Ok nhận')
             replies_list = [r.strip() for r in raw_reply_msg.split(',') if r.strip()]
             final_reply = random.choice(replies_list) if replies_list else "Ok nhận"
             self.queue_reply(group, conversation_id, msg_id, final_reply, display_msg)
         else:
-            # CHẾ ĐỘ NHẬN TAY: Hiện thẻ Canh me và Gọi Bong Bóng
             try:
                 self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
                 
-                # CHỈ KÍCH HOẠT BONG BÓNG KHI ĐANG NHẬN TAY (AUTO ĐANG TẮT)
                 if self.config_data.get('sw_bubble', True):
                     self.ui_queue.put_nowait(('bubble', (group, display_msg, conversation_id, msg_id)))
 
                 if self.config_data.get('sw_voice', True):
-                    # Lọc bỏ emoji để máy đọc trơn tru tên Nhóm Zalo
                     clean_group = re.sub(r'[^\w\s]', '', group)
                     msg_type = "tin nhắn thoại" if is_voice else "cuốc xe mới"
                     self.ui_queue.put_nowait(('speak', f"Chú ý có {msg_type} từ nhóm {clean_group}"))
@@ -1273,6 +1277,11 @@ class ZAutoProApp(MDApp):
 
     def remove_ride(self, card_widget):
         try:
+            # ĐÃ THÊM LỚP BẢO VỆ: XÓA NGAY TRONG BỘ NHỚ RAM KHI TÀI XẾ BẤM NHẬN HOẶC BỎ QUA
+            cache_key = getattr(card_widget, 'cache_key', '')
+            if cache_key and cache_key in self.processed_msg_hashes:
+                del self.processed_msg_hashes[cache_key]
+
             if hasattr(card_widget, 'unbind'): card_widget.unbind()
             card_widget.clear_widgets()
             self.root.ids.ride_list.remove_widget(card_widget)
