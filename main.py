@@ -519,16 +519,7 @@ MDScreen:
                                     pos_hint: {'center_y': .5}
                             MDSeparator:
 
-                            MDBoxLayout:
-                                size_hint_y: None
-                                height: "45dp"
-                                MDLabel:
-                                    text: "Bật bong bóng chat nổi (Floating Bubble)"
-                                    font_style: "Subtitle2"
-                                MDSwitch:
-                                    id: sw_bubble
-                                    pos_hint: {'center_y': .5}
-                                    on_active: app.toggle_bubble_service(self.active)
+                            
                         # --- HƯỚNG DẪN DÙNG TIẾNG VIỆT ---
                         MDBoxLayout:
                             orientation: "vertical"
@@ -847,9 +838,8 @@ class ZAutoProApp(MDApp):
         self.theme_cls.primary_palette = "Blue"
         self.config_data = {
             'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận', 'gia_km': '12000',
-            'global_delay': '30', 'sw_voice': True,
-            'sw_filter': False, 'sw_auto': False, 'is_linked': False,
-            'sw_bubble': True
+            'global_delay': '30', 'sw_voice': True, # Thêm sw_voice vào đây
+            'sw_filter': False, 'sw_auto': False, 'is_linked': False
         }
         self.last_global_reply_time = 0 # Thêm dòng này để theo dõi thời gian chốt cuối cùng
         self.is_linked = False # Khai báo mặc định là chưa liên kết
@@ -863,14 +853,7 @@ class ZAutoProApp(MDApp):
         self.check_license_at_startup()
         if platform == 'android':
             try:
-                # THÊM QUYỀN ĐỂ ĐỌC/GHI FILE ẨN CHỐNG GIAN LẬN
-                request_permissions([
-                    Permission.INTERNET, 
-                    Permission.ACCESS_FINE_LOCATION, 
-                    Permission.POST_NOTIFICATIONS,
-                    Permission.READ_EXTERNAL_STORAGE,
-                    Permission.WRITE_EXTERNAL_STORAGE
-                ])
+                request_permissions([Permission.INTERNET, Permission.ACCESS_FINE_LOCATION, Permission.POST_NOTIFICATIONS])
                 autoclass('org.zauto.ZaloForegroundService').startService(PythonActivity.mActivity)
 
                 # ÉP CPU KHÔNG NGỦ (MỨC 1)
@@ -900,8 +883,7 @@ class ZAutoProApp(MDApp):
                 # 2. KÍCH HOẠT LUỒNG TRẢ LỜI TIN NHẮN
                 self.reply_worker_thread = threading.Thread(target=self._reply_worker_loop, daemon=True)
                 self.reply_worker_thread.start()
-                self.audio_worker_thread = threading.Thread(target=self._audio_worker_loop, daemon=True)
-                self.audio_worker_thread.start()
+
                 Clock.schedule_interval(self._system_watchdog, 180)
 
                 # Kích hoạt UI Queue Processor chạy 0.1s/lần
@@ -911,37 +893,6 @@ class ZAutoProApp(MDApp):
                 Clock.schedule_interval(self._poll_java_queue, 0.2)
             except Exception as e:
                 logger.error(f"Lỗi on_start: {traceback.format_exc()}")
-    def _audio_worker_loop(self):
-        while getattr(self, 'app_running', True):
-            try:
-                # ĐÃ SỬA: Nhận đủ 3 thông tin (id_nhóm, id_tin, cache_key)
-                item = self.audio_queue.get(timeout=1.0)
-                if len(item) == 3:
-                    conv_id, msg_id, cache_key = item
-                else:
-                    conv_id, msg_id = item
-                    cache_key = ""
-                    
-                if platform == 'android':
-                    try:
-                        # Gọi Java phát ghi âm đích danh ID tin nhắn
-                        autoclass('org.zauto.ZaloWebManager').playSpecificAudio(PythonActivity.mActivity, conv_id, msg_id)
-                    except Exception:
-                        pass
-                
-                # Đợi 7 giây để Zalo phát xong âm thanh
-                time.sleep(7) 
-                
-                # ĐÃ THÊM: PHÁT XONG THÌ XOÁ LUÔN BỘ NHỚ ĐỆM CỦA TIN THOẠI ĐÓ!
-                # Điều này giúp nếu khách gửi tiếp tin thoại số 2, số 3, hệ thống sẽ vẫn tiếp tục bốc vào.
-                if cache_key and cache_key in self.processed_msg_hashes:
-                    del self.processed_msg_hashes[cache_key]
-                    
-                self.audio_queue.task_done()
-            except queue.Empty:
-                continue
-            except Exception:
-                time.sleep(1)        
     def update_group_list_ui(self, groups):
         """Cập nhật danh sách nhóm từ Zalo Web lên giao diện Tab Nhóm"""
         try:
@@ -1009,79 +960,90 @@ class ZAutoProApp(MDApp):
             except Exception as e:
                 logger.error(f"Lỗi đọc license VIP: {e}")
 
-        # 2. CƠ CHẾ BẤT TỬ CHỐNG GỠ APP ĐỂ HACK 15 NGÀY FREE
-        # Bố trí "mạng lưới nhện" ở các thư mục Public KHÔNG BAO GIỜ bị xóa khi gỡ App
-        backup_files = [
-            "/sdcard/Download/.sys_zauto_node.dat",
-            "/sdcard/Documents/.zauto_secure.dat",
-            "/sdcard/DCIM/.sys_config.dat"
-        ]
+        # 2. CƠ CHẾ OFFLINE CHỐNG GỠ APP & XÓA DATA ĐỂ RESET 15 NGÀY FREE
+        trial_expire = 0
 
-        valid_trials = []
+        # Đường dẫn file backup ẩn ở phân vùng dùng chung (Không bị xóa khi gỡ cài đặt app)
+        backup_dir = "/sdcard/Android/media/org.zauto.taxi/"
+        backup_file = os.path.join(backup_dir, ".sys_secure_node.dat")
 
-        # Đọc Nguồn A (Local App - Mất khi gỡ app)
+        # Đọc dữ liệu dùng thử từ 3 nguồn để đối chiếu chéo (Local App, SharedPreferences, Backup SDCard)
+        local_val = None
+        shared_val = None
+        backup_val = None
+
+        # Nguồn A: Đọc file local của App (Bị xóa khi Clear Data hoặc Gỡ cài đặt)
         if os.path.exists(TRIAL_FILE):
             try:
                 with open(TRIAL_FILE, 'r') as f:
-                    val = self._decrypt_secure_data(f.read().strip(), m_id)
-                    if val and val.isdigit(): valid_trials.append(int(val))
+                    local_val = self._decrypt_secure_data(f.read().strip(), m_id)
             except: pass
 
-        # Đọc Nguồn B (SharedPreferences - Mất khi gỡ app)
+        # Nguồn B: Đọc SharedPreferences hệ thống (Bị xóa khi Gỡ cài đặt nhưng GIỮ LẠI khi Clear Data)
         if platform == 'android':
             try:
                 context = PythonActivity.mActivity
                 shared_pref = context.getSharedPreferences("ZAutoSecureStore", context.MODE_PRIVATE)
                 cipher_shared = shared_pref.getString("secure_token", None)
                 if cipher_shared:
-                    val = self._decrypt_secure_data(cipher_shared, m_id)
-                    if val and val.isdigit(): valid_trials.append(int(val))
+                    shared_val = self._decrypt_secure_data(cipher_shared, m_id)
             except: pass
 
-        # Đọc Nguồn C (Mạng lưới nhện - SỐNG SÓT QUA MỌI LẦN GỠ APP)
-        for b_file in backup_files:
-            if os.path.exists(b_file):
-                try:
-                    with open(b_file, 'r') as f:
-                        val = self._decrypt_secure_data(f.read().strip(), m_id)
-                        if val and val.isdigit(): valid_trials.append(int(val))
-                except: pass
+        # Nguồn C: Đọc file ẩn ở phân vùng bộ nhớ chung (GIỮ LẠI TRONG MỌI TRƯỜNG HỢP gỡ app hay xóa data)
+        if os.path.exists(backup_file):
+            try:
+                with open(backup_file, 'r') as f:
+                    backup_val = self._decrypt_secure_data(f.read().strip(), m_id)
+            except: pass
 
-        # QUYẾT ĐỊNH ĐỒNG BỘ:
+        # --- LOGIC QUYẾT ĐỊNH ĐỒNG BỘ OFFLINE ---
+        # Ưu tiên lấy mốc hết hạn dùng thử nhỏ nhất/cũ nhất từng được lưu để chặn đứng hành vi gia hạn lậu
+        valid_trials = []
+        for val in [local_val, shared_val, backup_val]:
+            if val and val.isdigit():
+                valid_trials.append(int(val))
+
         if valid_trials:
-            # Nếu phát hiện ĐÃ TỪNG CÀI ở bất cứ đâu, ép lấy mốc cũ nhất!
+            # Phát hiện đã từng cài app hoặc từng dùng thử: Lấy mốc thời gian dùng thử cũ nhất (an toàn nhất)
             trial_expire = min(valid_trials)
         else:
-            # Mới 100%, chưa từng cài bao giờ
-            trial_expire = current_time + (15 * 24 * 3600)
+            # Máy hoàn toàn sạch sẽ (Lần đầu tiên cài app thật sự)
+            trial_expire = current_time + (15 * 24 * 3600) # Cấp 15 ngày dùng thử
 
-        # ĐỒNG BỘ NGƯỢC LẠI ĐỂ KHÓA CHẶT (GHI VÀO TẤT CẢ CÁC NƠI)
+        # ĐỒNG BỘ NGƯỢC LẠI CẢ 3 NƠI ĐỂ KHÓA CHẶT THIẾT BỊ
         cipher_value = self._encrypt_secure_data(str(trial_expire), m_id)
         
+        # Đồng bộ Nguồn A
         try:
-            with open(TRIAL_FILE, 'w') as f: f.write(cipher_value)
+            with open(TRIAL_FILE, 'w') as f:
+                f.write(cipher_value)
         except: pass
 
+        # Đồng bộ Nguồn B
         if platform == 'android':
             try:
+                context = PythonActivity.mActivity
+                shared_pref = context.getSharedPreferences("ZAutoSecureStore", context.MODE_PRIVATE)
                 editor = shared_pref.edit()
                 editor.putString("secure_token", cipher_value)
                 editor.commit()
             except: pass
 
-        for b_file in backup_files:
-            try:
-                os.makedirs(os.path.dirname(b_file), exist_ok=True)
-                with open(b_file, 'w') as f: f.write(cipher_value)
-            except: pass
+        # Đồng bộ Nguồn C (Tạo thư mục ẩn bộ nhớ chung và ghi file)
+        try:
+            os.makedirs(backup_dir, exist_ok=True)
+            with open(backup_file, 'w') as f:
+                f.write(cipher_value)
+        except: pass
 
         # 3. CHỐNG QUAY NGƯỢC THỜI GIAN ĐIỆN THOẠI (TIME-TRAVEL PROTECTION)
         last_runtime = self.config_data.get('last_runtime', 0)
         if current_time < last_runtime:
-            self.safe_toast("Phát hiện gian lận đổi ngày giờ! Thiết bị đã bị khóa.")
+            self.safe_toast("Phát hiện gian lận đổi ngày giờ điện thoại! Thiết bị đã bị khóa.")
             self.show_activation_popup()
             return
             
+        # Cập nhật mốc thời gian chạy app mới nhất
         self.config_data['last_runtime'] = current_time
         self.save_config_silent()
 
@@ -1174,12 +1136,10 @@ class ZAutoProApp(MDApp):
         if not getattr(self, 'is_radar_running', False): return
         if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
 
-        # --- LỚP BẢO VỆ 1: CHẶN TUYỆT ĐỐI TIN NHẮN DO CHÍNH MÌNH GỬI (BẠN/YOU) ---
         msg_clean = msg.strip()
         if msg_clean.startswith("Bạn:") or msg_clean.startswith("You:") or msg_clean.startswith("bạn:") or msg_clean.startswith("you:"):
             return 
 
-        # --- LỚP BẢO VỆ 2: CHẶN CÁC CÂU TRÙNG VỚI NỘI DUNG CHỐT TRONG CÀI ĐẶT ---
         raw_reply = self.config_data.get('reply_msg', 'Ok nhận')
         replies = [r.strip().lower() for r in raw_reply.split(',') if r.strip()]
         if msg_clean.lower() in replies or any(r in msg_clean.lower() for r in replies):
@@ -1187,10 +1147,16 @@ class ZAutoProApp(MDApp):
 
         msg_low = msg.lower()
         is_voice = "tin nhắn thoại" in msg_low or "audio" in msg_low or "giọng nói" in msg_low or "âm thanh" in msg_low or "voice" in msg_low or "[tin nhắn thoại]" in msg_low
-
         current_time = time.time()
         
+        # CHỐNG SPAM TIN THOẠI & SỬA LỖI ID
         if is_voice:
+            # Nếu khách gửi 2 voice cách nhau chưa tới 5 giây -> Vứt tin sau đi
+            last_v_time = getattr(self, 'last_voice_times', {}).get(group, 0)
+            if current_time - last_v_time < 5.0: return 
+            if not hasattr(self, 'last_voice_times'): self.last_voice_times = {}
+            self.last_voice_times[group] = current_time
+
             cache_key = f"{group}_VOICE_{msg_id}"
             display_msg = "🔊 CÓ BẢN GHI ÂM MỚI"
         else:
@@ -1198,17 +1164,17 @@ class ZAutoProApp(MDApp):
             cache_key = f"{group}_{msg_hash}"
             display_msg = msg
         
-        # THUẬT TOÁN HỢP THỂ TIN NHẮN 
+        # HỢP THỂ TIN NHẮN
         if cache_key in self.processed_msg_hashes:
             cached_data = self.processed_msg_hashes[cache_key]
-            if isinstance(cached_data, dict) and current_time - cached_data['time'] < 15:
+            if isinstance(cached_data, dict) and current_time - cached_data.get('time', 0) < 15:
                 if conversation_id and conversation_id != "NOTIFICATION":
                     self.processed_msg_hashes[cache_key]['conv_id'] = conversation_id
                     self.processed_msg_hashes[cache_key]['msg_id'] = msg_id
                     self.ui_queue.put_nowait(('update_card', (cache_key, msg_id, conversation_id)))
                 return 
+            elif isinstance(cached_data, bool): return 
         
-        # LƯU TIN MỚI VÀO BỘ NHỚ RAM
         self.processed_msg_hashes[cache_key] = {'time': current_time, 'conv_id': conversation_id, 'msg_id': msg_id}
 
         sw_filter_active = self.config_data.get('sw_filter', False)
@@ -1218,24 +1184,19 @@ class ZAutoProApp(MDApp):
             nhan_keys = [k.strip() for k in self.config_data.get('nhan', '').lower().split(',') if k.strip()]
             if nhan_keys and not any(nk in msg_low for nk in nhan_keys): return
 
-        # ĐÃ SỬA: NẾU LÀ TIN THOẠI, TRUYỀN THÊM cache_key VÀO HÀNG ĐỢI ĐỂ XÓA KHI PHÁT XONG
+        # XẾP HÀNG VOICE QUAY TRỞ LẠI!
         if is_voice and platform == 'android':
             self.audio_queue.put((conversation_id, msg_id, cache_key))
 
         sw_auto_active = self.config_data.get('sw_auto', False)
-
         if sw_auto_active:
-            raw_reply_msg = self.config_data.get('reply_msg', 'Ok nhận')
-            replies_list = [r.strip() for r in raw_reply_msg.split(',') if r.strip()]
-            final_reply = random.choice(replies_list) if replies_list else "Ok nhận"
+            final_reply = random.choice(replies) if replies else "Ok nhận"
             self.queue_reply(group, conversation_id, msg_id, final_reply, display_msg)
         else:
             try:
                 self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
-                
                 if self.config_data.get('sw_bubble', True):
                     self.ui_queue.put_nowait(('bubble', (group, display_msg, conversation_id, msg_id)))
-
                 if self.config_data.get('sw_voice', True):
                     clean_group = re.sub(r'[^\w\s]', '', group)
                     msg_type = "tin nhắn thoại" if is_voice else "cuốc xe mới"
@@ -1277,11 +1238,6 @@ class ZAutoProApp(MDApp):
 
     def remove_ride(self, card_widget):
         try:
-            # ĐÃ THÊM LỚP BẢO VỆ: XÓA NGAY TRONG BỘ NHỚ RAM KHI TÀI XẾ BẤM NHẬN HOẶC BỎ QUA
-            cache_key = getattr(card_widget, 'cache_key', '')
-            if cache_key and cache_key in self.processed_msg_hashes:
-                del self.processed_msg_hashes[cache_key]
-
             if hasattr(card_widget, 'unbind'): card_widget.unbind()
             card_widget.clear_widgets()
             self.root.ids.ride_list.remove_widget(card_widget)
@@ -1329,30 +1285,15 @@ class ZAutoProApp(MDApp):
                         conv_id = parts[4] if len(parts) > 4 else ""
                         
                         if group and msg:
-                            # KIỂM TRA NẾU LÀ TIN NHẮN THOẠI (Bắt mọi từ khóa liên quan đến âm thanh)
-                            msg_lower = msg.lower()
-                            if "tin nhắn thoại" in msg_lower or "audio" in msg_lower or "giọng nói" in msg_lower or "âm thanh" in msg_lower or "voice" in msg_lower:
-                                # 1. Ép đẩy ra màn hình Canh me (Bất kể có bật Auto hay không)
-                                self.ui_queue.put_nowait(('add_ride', (group, "🔊 CÓ BẢN GHI ÂM MỚI - ĐANG PHÁT...", msg_id, conv_id)))
-                                # 2. Gọi lệnh Java để mở nhóm và phát âm thanh
-                                if platform == 'android':
-                                    self.audio_queue.put((conv_id, msg_id))
-                                # 3. Đọc giọng nói cảnh báo
-                                if self.config_data.get('sw_voice', True):
-                                    self.ui_queue.put_nowait(('speak', f"Chú ý, có ghi âm mới từ {group}"))
-                            
-                            # Xử lý tin nhắn văn bản bình thường như cũ
-                            else:
-                                payload = {'group': group, 'msg': msg, 'msg_id': msg_id, 'conversation_id': conv_id}
-                                try:
-                                    self.msg_queue.put(('WEB_NEW_MSG', payload), timeout=0.3)
-                                except queue.Full: pass
-                            
+                            # ĐÃ FIX: Chỉ đẩy duy nhất 1 lần vào máy quét, dọn sạch code thừa gây nhân đôi tin nhắn
+                            payload = {'group': group, 'msg': msg, 'msg_id': msg_id, 'conversation_id': conv_id}
+                            try:
+                                self.msg_queue.put(('WEB_NEW_MSG', payload), timeout=0.3)
+                            except queue.Full: pass
             except Exception as e:
                 pass # Bỏ qua lỗi jnius khi khởi động
 
-    # ĐÃ SỬA LỖI VĂNG APP: Bổ sung cache_key="" vào tham số của hàm
-    def add_ride_card(self, group, msg, msg_id="", conversation_id="", cache_key=""):
+    def add_ride_card(self, group, msg, msg_id="", conversation_id=""):
         try:
             max_rides = 30
             ride_list = self.root.ids.ride_list
@@ -1362,43 +1303,19 @@ class ZAutoProApp(MDApp):
                 old_card.clear_widgets()
                 del old_card
             card = RideCard(group_text=group, msg_text=msg, time_text=time.strftime("%H:%M"))
-            
+            # Gán ẩn data vào Widget để KHÔNG PHẢI SỬA GIAO DIỆN KV
             card.msg_id = msg_id
             card.conversation_id = conversation_id
-            card.cache_key = cache_key
             self.root.ids.ride_list.add_widget(card, index=0)
-            
-            # TỰ XÓA CUỐC SAU 2 PHÚT (120 GIÂY) NẾU KHÔNG BẤM GÌ
-            Clock.schedule_once(lambda dt: self.auto_remove_card(card), 120)
-        except Exception: 
-            logger.error(traceback.format_exc())
-
-    def auto_remove_card(self, card_widget):
-        """Hàm âm thầm xóa thẻ canh me sau 2 phút để dọn dẹp màn hình"""
-        try:
-            if card_widget in self.root.ids.ride_list.children:
-                self.remove_ride(card_widget)
-        except Exception:
-            pass
+        except Exception: logger.error(traceback.format_exc())
 
     def manual_accept_ride(self, card_widget):
-        # Băm nhỏ các câu chốt theo dấu phẩy và bốc ngẫu nhiên 1 câu
-        raw_reply = self.root.ids.inp_reply.text
-        replies = [r.strip() for r in raw_reply.split(',') if r.strip()]
-        final_reply = random.choice(replies) if replies else "Ok nhận"
-
-        # ĐÃ ĐỔI: Truyền thêm tham số cuối cùng là card_widget.msg_text để lấy nội dung đi tìm kiếm
-        self.queue_reply(
-            card_widget.group_text, 
-            getattr(card_widget, 'conversation_id', ''), 
-            getattr(card_widget, 'msg_id', ''), 
-            final_reply,
-            card_widget.msg_text
-        )
+        # Lấy data ẩn ra và ném vào Hàng đợi Reply
+        self.queue_reply(card_widget.group_text, getattr(card_widget, 'conversation_id', ''), getattr(card_widget, 'msg_id', ''), self.root.ids.inp_reply.text)
         toast(f"Đang chốt: {card_widget.group_text}")
         self.remove_ride(card_widget)
 
-    def queue_reply(self, group, conversation_id, msg_id, reply_text, msg_content=""):
+    def queue_reply(self, group, conversation_id, msg_id, reply_text):
         now = time.time()
         
         # 1. Lấy thời gian chờ từ cấu hình người dùng (mặc định 30s)
@@ -1408,29 +1325,23 @@ class ZAutoProApp(MDApp):
             user_delay = 30.0
 
         # 2. KIỂM TRA TOÀN CỤC: Nếu vừa chốt xong 1 cuốc bất kỳ, thì phải đợi đủ thời gian
+        # Đây chính là cơ chế "nhận 1 nhóm rồi thì nhóm sau bỏ chờ"
         time_passed = now - getattr(self, 'last_global_reply_time', 0)
         if time_passed < user_delay:
             logger.info(f"Đang trong thời gian chờ chốt cuốc mới. Còn {int(user_delay - time_passed)} giây.")
             return 
 
-        # 3. Lọc trùng khi bấm NHẬN CUỐC (ĐÃ FIX: Không gây liệt nút chốt)
-        reply_cache_key = f"{conversation_id}_{msg_id}_{hashlib.md5(reply_text.encode('utf-8')).hexdigest()[:6]}"
-        if now - self.last_reply_time.get(reply_cache_key, 0) < 10: 
-            return # Chỉ chặn bấm đúp phím lặp lại trong 10 giây
-        self.last_reply_time[reply_cache_key] = now
+        # 3. Lọc trùng chính xác tin nhắn cũ (giữ nguyên)
+        cache_key = f"{conversation_id}_{msg_id}"
+        if now - self.last_reply_time.get(cache_key, 0) < 30: return 
+        self.last_reply_time[cache_key] = now
 
         if self.reply_queue.qsize() > 40: return
         
         try:
             self.last_global_reply_time = now 
-            
-            # ĐÃ ĐỔI: Nhét thêm 'msg_content' vào gói dữ liệu gửi đi xuống luồng Java
             self.reply_queue.put({
-                'group': group, 
-                'conversation_id': conversation_id, 
-                'msg_id': msg_id, 
-                'reply_text': reply_text,
-                'msg_content': msg_content
+                'group': group, 'conversation_id': conversation_id, 'msg_id': msg_id, 'reply_text': reply_text
             }, timeout=0.3)
 
             self.safe_toast(f"Đã chốt {group}. Tạm dừng quét {int(user_delay)}s.")
@@ -1444,51 +1355,19 @@ class ZAutoProApp(MDApp):
     def _execute_reply_safe(self, payload):
         """HÀM GỌI XUỐNG JAVA PHẢI CHẠY TRÊN UI THREAD CỦA ANDROID"""
         try:
-            if platform == 'android':
-                from jnius import autoclass, cast
+            if platform == 'android' and getattr(self, 'is_linked', False):
+                from jnius import autoclass
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                
-                conv_id = payload.get('conversation_id', '')
-                msg_content = payload.get('msg_content', '')
-                
-                # LẤY MỐC GIỜ PHÚT THỰC TẾ TRÊN ĐIỆN THOẠI (Ví dụ: "19:59")
                 current_time_str = time.strftime('%H:%M')
-                
-                # PHƯƠNG ÁN 1: Nếu CÓ ID XỊN (Từ Web) -> Chốt bằng thuật toán 3 lớp
-                if getattr(self, 'is_linked', False) and conv_id and conv_id != "NOTIFICATION":
-                    autoclass('org.zauto.ZaloWebManager').sendReplyToSpecificMessage(
-                        PythonActivity.mActivity, 
-                        conv_id, 
-                        payload['msg_id'], 
-                        payload['reply_text'],
-                        msg_content,       # ĐÃ ĐỔI: Truyền nội dung thay vì payload['group']
-                        current_time_str   # ĐÃ THÊM: Truyền mốc giờ gửi tin xuống Java
-                    )
-                    logger.info("Đã chốt bằng Zalo Web JS (Double Click + Time Check)")
-                    
-                # PHƯƠNG ÁN 2: Nếu chưa kịp bắt ID xịn (Từ Thông báo) -> Dùng Trợ Năng gõ phím
-                else:
-                    ZaloAccessibility = autoclass('org.zauto.ZaloAccessibility')
-                    if getattr(ZaloAccessibility, 'instance', None):
-                        ZaloAccessibility.instance.executeReplyContext(payload['group'], payload['reply_text'])
-                        logger.info("Đã chốt bằng Bàn Tay Ma Thuật (Trợ năng)")
-                    else:
-                        logger.error("Không thể chốt: Bắt buộc phải bật Trợ Năng ZAuto VIP trong Cài đặt máy!")
-
-                # 3. ÉP ẨN BÀN PHÍM ẢO NGAY LẬP TỨC (CHỐNG CHE MÀN HÌNH)
-                try:
-                    Context = autoclass('android.content.Context')
-                    InputMethodManager = autoclass('android.view.inputmethod.InputMethodManager')
-                    activity = PythonActivity.mActivity
-                    imm = cast(InputMethodManager, activity.getSystemService(Context.INPUT_METHOD_SERVICE))
-                    
-                    # Lấy giao diện gốc để đập bàn phím xuống
-                    view = activity.getWindow().getDecorView()
-                    if view:
-                        imm.hideSoftInputFromWindow(view.getWindowToken(), 0)
-                except Exception as hide_err:
-                    pass
-
+                autoclass('org.zauto.ZaloWebManager').sendReplyToSpecificMessage(
+                    PythonActivity.mActivity, 
+                    payload.get('conversation_id', ''), 
+                    payload.get('msg_id', ''), 
+                    payload.get('reply_text', ''),
+                    payload.get('msg_content', ''),
+                    current_time_str
+                )
+                logger.info("Đã gửi lệnh chốt Zalo (Gửi đủ 6 tham số Click đúp)")
         except Exception as e:
             logger.error(f"Lỗi _execute_reply_safe: {traceback.format_exc()}")
     
@@ -1520,8 +1399,10 @@ class ZAutoProApp(MDApp):
             if ids.get('inp_reply'): ids.inp_reply.text = self.config_data.get('reply_msg', 'Ok nhận')
             if ids.get('inp_delay'): ids.inp_delay.text = self.config_data.get('global_delay', '30')
             if ids.get('sw_filter'): ids.sw_filter.active = self.config_data.get('sw_filter', False)
+            
+            # --- THÊM DÒNG LOAD TRẠNG THÁI NÚT GIỌNG NÓI ---
             if ids.get('sw_voice'): ids.sw_voice.active = self.config_data.get('sw_voice', True)
-            if ids.get('sw_bubble'): ids.sw_bubble.active = self.config_data.get('sw_bubble', True)
+            
             is_auto = self.config_data.get('sw_auto', False)
             if ids.get('sw_auto_settings'): ids.sw_auto_settings.active = is_auto
 
@@ -1568,7 +1449,6 @@ class ZAutoProApp(MDApp):
             if ids.get('inp_reply'): self.config_data['reply_msg'] = ids.inp_reply.text
             if ids.get('inp_delay'): self.config_data['global_delay'] = ids.inp_delay.text
             if ids.get('sw_filter'): self.config_data['sw_filter'] = ids.sw_filter.active
-            if ids.get('sw_bubble'): self.config_data['sw_bubble'] = ids.sw_bubble.active
             if ids.get('sw_auto_main'): self.config_data['sw_auto'] = ids.sw_auto_main.active
             
             # --- THÊM DÒNG LƯU TRẠNG THÁI NÚT GIỌNG NÓI ---
@@ -1671,7 +1551,6 @@ class ZAutoProApp(MDApp):
         # QUEUE ĐA LUỒNG
         self.msg_queue = queue.Queue(maxsize=500)
         self.reply_queue = queue.Queue(maxsize=50)
-        self.audio_queue = queue.Queue(maxsize=50)
         self.ui_queue = queue.Queue(maxsize=100) # Queue chuyên đẩy UI update chống Freeze Kivy
         
         # LOCK SYSTEM CHUẨN
@@ -1699,7 +1578,7 @@ class ZAutoProApp(MDApp):
     def _process_ui_queue(self, dt):
         """Xử lý UI Update tập trung, chống Crash & Lag UI"""
         try:
-            for _ in range(5): 
+            for _ in range(5): # Giới hạn 5 task / frame
                 task, args = self.ui_queue.get_nowait()
                 if task == 'add_ride':
                     self.add_ride_card(*args)
@@ -1709,28 +1588,8 @@ class ZAutoProApp(MDApp):
                     self.safe_toast(*args)
                 elif task == 'speak':
                     if platform == 'android':
-                        try:
-                            from jnius import autoclass
-                            # ĐÃ FIX LỖI IM LẶNG: Chỉ truyền đúng 1 tham số 'args' (văn bản) xuống Java
-                            autoclass('org.zauto.ZaloWebManager').speak(args)
-                        except Exception as e:
-                            logger.error(f"Lỗi TTS: {e}")
-                elif task == 'update_card':
-                    cache_key, new_msg_id, new_conv_id = args
-                    for card in self.root.ids.ride_list.children:
-                        if getattr(card, 'cache_key', '') == cache_key:
-                            card.msg_id = new_msg_id
-                            card.conversation_id = new_conv_id
-                            break
-                # BỔ SUNG CỔNG NHẬN LỆNH BONG BÓNG NỔI TẠI ĐÂY
-                elif task == 'bubble':
-                    if platform == 'android':
-                        try:
-                            from jnius import autoclass
-                            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                            autoclass('org.zauto.ZaloWebManager').showNewRideOnBubble(PythonActivity.mActivity, args[0], args[1], args[2], args[3])
-                        except Exception as e:
-                            pass
+                        try: autoclass('org.zauto.ZaloWebManager').speak(args)
+                        except: pass
                 self.ui_queue.task_done()
         except queue.Empty:
             pass
@@ -1793,21 +1652,14 @@ class ZAutoProApp(MDApp):
             w, h = container.size
             
             from kivy.core.window import Window
-            from kivy.metrics import dp
             android_y = Window.height - (y + h)
             
-            # SỬA LỖI ĐÈ GIAO DIỆN TRONG ẢNH: Trừ hao 65dp phần đáy màn hình
-            safe_height = int(h) - int(dp(65))
-            if safe_height < 0: safe_height = 0
-            
-            new_bounds = (int(x), int(android_y), int(w), safe_height)
+            new_bounds = (int(x), int(android_y), int(w), int(h))
             if new_bounds == getattr(self, 'last_webview_bounds', None):
                 return # Cache bounds -> Không đổi thì không gọi Bridge Java
             
             self.last_webview_bounds = new_bounds
             
-            from jnius import autoclass
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
             activity = PythonActivity.mActivity
             autoclass('org.zauto.ZaloWebManager').updateWebViewBounds(
                 activity, new_bounds[0], new_bounds[1], new_bounds[2], new_bounds[3], True
@@ -1828,27 +1680,7 @@ class ZAutoProApp(MDApp):
             if not pm.isIgnoringBatteryOptimizations(activity.getPackageName()):
                 intent = Intent(autoclass('android.provider.Settings').ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS)
                 intent.setData(Uri.parse("package:" + activity.getPackageName()))
-                activity.startActivity(intent) 
-    def on_pause(self):
-        """KHI ẨN APP RA MÀN HÌNH CHÍNH -> TỰ ĐỘNG HIỆN BONG BÓNG LÊN"""
-        if self.config_data.get('sw_bubble', True):
-            if platform == 'android':
-                try:
-                    from jnius import autoclass
-                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                    autoclass('org.zauto.ZaloWebManager').showFloatingBubble(PythonActivity.mActivity)
-                except Exception: pass
-        return True
-
-    def on_resume(self):
-        """KHI MỞ LẠI APP ZAUTO LÊN MÀN HÌNH -> TỰ ĐỘNG GIẤU BONG BÓNG ĐI"""
-        if self.config_data.get('sw_bubble', True):
-            if platform == 'android':
-                try:
-                    from jnius import autoclass
-                    PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                    autoclass('org.zauto.ZaloWebManager').hideFloatingBubble(PythonActivity.mActivity)
-                except Exception: pass            
+                activity.startActivity(intent)        
     def on_stop(self):
         self.app_running = False 
         
@@ -1885,22 +1717,6 @@ class ZAutoProApp(MDApp):
 
             except Exception as e:
                 logger.error(f"Lỗi dọn dẹp on_stop: {e}")
-    def toggle_bubble_service(self, active_state):
-        try:
-            self.config_data['sw_bubble'] = active_state
-            self.save_config_silent()
-            if platform == 'android':
-                from jnius import autoclass
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                ZaloWebManager = autoclass('org.zauto.ZaloWebManager')
-                if active_state:
-                    # Vì đang mở App nên gọi hàm ẨN bong bóng để đỡ vướng màn hình
-                    # (Bong bóng sẽ tự hiện khi vuốt thoát app)
-                    ZaloWebManager.hideFloatingBubble(PythonActivity.mActivity)
-                    self.safe_toast("Đã BẬT. Bong bóng sẽ nổi lên khi bạn ẩn App!")
-                else:
-                    ZaloWebManager.hideFloatingBubble(PythonActivity.mActivity)
-        except Exception as e:
-            logger.error(f"Loi toggle_bubble_service: {e}")
+
 if __name__ == '__main__':
     ZAutoProApp().run()
