@@ -127,74 +127,100 @@ public class ZaloWebManager {
                 String safeMsgId = (msgId != null) ? msgId.replace("'", "\\'") : "";
                 String safeTime = (sentTime != null) ? sentTime.replace("'", "\\'") : "";
 
-                // Bơm lõi Javascript chiến thuật xử lý 3 lớp
                 String jsCode = "(function() {" +
                     "try {" +
                         "var safeReply = '" + safeReply + "';" +
                         "var safeSearchText = '" + safeSearchText + "';" +
                         "var targetMsgId = '" + safeMsgId + "';" +
                         "var targetTime = '" + safeTime + "';" +
-                        "var textLower = safeSearchText.toLowerCase();" +
-                        
-                        "var bubbles = document.querySelectorAll('.message-view__blur, .card--group-message, .chat-message, div[id^=\"msg-\"], .audio-msg, .voice-msg');" +
-                        "var targetNode = null;" +
-                        "var isVoice = textLower.includes('ghi âm') || textLower.includes('thoại') || textLower.includes('audio') || textLower.includes('voice');" +
-                        
-                        // --- LỚP 1 (ƯU TIÊN 1): CLICK ĐÚP THEO CHỮ HOẶC THỜI LƯỢNG TIN THOẠI + GIỜ GỬI ---
-                        "if (isVoice) {" +
-                            "for (var v = bubbles.length - 1; v >= 0; v--) {" +
-                                "var cellText = bubbles[v].innerText ? bubbles[v].innerText : '';" +
-                                "var cellHtml = bubbles[v].innerHTML ? bubbles[v].innerHTML.toLowerCase() : '';" +
-                                "var hasVoiceStructure = cellHtml.includes('audio') || cellHtml.includes('player') || cellHtml.includes('ico-voice') || /\\\\d{2}:\\\\d{2}/.test(cellText);" +
-                                "var hasCorrectTime = cellText.includes(targetTime);" +
-                                "if (hasVoiceStructure && hasCorrectTime) {" +
-                                    "targetNode = bubbles[v];" +
-                                    "break;" +
-                                "}" +
-                            "}" +
-                            "if (!targetNode && bubbles.length > 0) {" +
-                                "targetNode = bubbles[bubbles.length - 1];" +
-                            "}" +
-                        "} else if (safeSearchText.length > 2) {" +
-                            "for (var i = bubbles.length - 1; i >= 0; i--) {" +
-                                "if (bubbles[i].innerText && bubbles[i].innerText.includes(safeSearchText) && bubbles[i].innerText.includes(targetTime)) {" +
-                                    "targetNode = bubbles[i];" +
-                                    "break;" +
-                                "}" +
-                            "}" +
-                        "}" +
-                        
-                        // --- LỚP 2 (DỰ PHÒNG 1): CLICK ĐÚP THEO ID TIN NHẮN ---
-                        "if (!targetNode && targetMsgId && targetMsgId !== 'NOTIFICATION') {" +
-                            "for (var j = bubbles.length - 1; j >= 0; j--) {" +
-                                "if (bubbles[j].id && bubbles[j].id.includes(targetMsgId)) {" +
-                                    "targetNode = bubbles[j];" +
-                                    "break;" +
-                                "}" +
-                            "}" +
+
+                        // 1. ÉP MỞ ĐÚNG NHÓM BẰNG MỌI GIÁ (SCROLL TỚI NHÓM RỒI CLICK REACT)
+                        "var groupItem = document.querySelector('.msg-item[anim-data-id=\"' + '" + conversationId + "' + '\"] .conv-item') || document.querySelector('.msg-item[anim-data-id=\"' + '" + conversationId + "' + '\"]');" +
+                        "if(groupItem) {" +
+                        "    groupItem.scrollIntoView({block: 'center'});" + // Kéo màn hình tới đúng nhóm
+                        "    groupItem.click();" + 
+                        "    var key = Object.keys(groupItem).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
+                        "    if (key && groupItem[key]) {" +
+                        "        if (groupItem[key].onClick) groupItem[key].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
+                        "        else if (groupItem[key].return && groupItem[key].return.memoizedProps.onClick) groupItem[key].return.memoizedProps.onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
+                        "    }" +
                         "}" +
 
-                        "function typeAndSend() {" +
-                            "var input = document.querySelector('#richInput');" +
-                            "if(input) {" +
-                                "input.innerHTML = safeReply;" +
-                                "input.dispatchEvent(new Event('input', {bubbles: true}));" +
-                                "setTimeout(function() {" +
-                                    "var btn = document.querySelector('.fa-send-2') || document.querySelector('[icon=\"send-2\"]').parentNode;" +
-                                    "if(btn) btn.click();" +
-                                "}, 200);" +
+                        // 2. CHỜ 1 GIÂY (1000ms) ĐỂ MẠNG TẢI KHUNG CHAT LÊN RỒI MỚI QUÉT TIN
+                        "setTimeout(function() {" +
+                            "var textLower = safeSearchText.toLowerCase();" +
+                            "var bubbles = document.querySelectorAll('.message-view__blur, .card--group-message, .chat-message, div[id^=\"msg-\"], .audio-msg, .voice-msg');" +
+                            "var targetNode = null;" +
+                            "var isVoice = textLower.includes('ghi âm') || textLower.includes('thoại') || textLower.includes('audio') || textLower.includes('voice');" +
+                            
+                            // TÌM THEO THỜI GIAN
+                            "if (isVoice) {" +
+                                "for (var v = bubbles.length - 1; v >= 0; v--) {" +
+                                    "var cellText = bubbles[v].innerText ? bubbles[v].innerText : '';" +
+                                    "var cellHtml = bubbles[v].innerHTML ? bubbles[v].innerHTML.toLowerCase() : '';" +
+                                    "var hasVoiceStructure = cellHtml.includes('audio') || cellHtml.includes('player') || cellHtml.includes('ico-voice') || /\\\\d{2}:\\\\d{2}/.test(cellText);" +
+                                    "if (hasVoiceStructure && cellText.includes(targetTime)) { targetNode = bubbles[v]; break; }" +
+                                "}" +
+                                "if (!targetNode && bubbles.length > 0) { targetNode = bubbles[bubbles.length - 1]; }" +
+                            "} else if (safeSearchText.length > 2) {" +
+                                "for (var i = bubbles.length - 1; i >= 0; i--) {" +
+                                    "if (bubbles[i].innerText && bubbles[i].innerText.includes(safeSearchText) && bubbles[i].innerText.includes(targetTime)) {" +
+                                        "targetNode = bubbles[i]; break;" +
+                                    "}" +
+                                "}" +
                             "}" +
-                        "}" +
+                            
+                            // TÌM THEO ID (NẾU MẠNG LỖI)
+                            "if (!targetNode && targetMsgId && targetMsgId !== 'NOTIFICATION') {" +
+                                "for (var j = bubbles.length - 1; j >= 0; j--) {" +
+                                    "if (bubbles[j].id && bubbles[j].id.includes(targetMsgId)) {" +
+                                        "targetNode = bubbles[j]; break;" +
+                                    "}" +
+                                "}" +
+                            "}" +
 
-                        // KÍCH HOẠT HÀNH ĐỘNG COI TRẬN ĐẤU
-                        "if (targetNode) {" +
-                            "var evt = new MouseEvent('dblclick', {bubbles: true, cancelable: true, view: window});" +
-                            "targetNode.dispatchEvent(evt);" +
-                            "setTimeout(typeAndSend, 300);" +
-                        "} else {" +
-                            // --- LỚP 3 (HỘ VỆ CUỐI): BƠM THẲNG KHUNG CHAT GỬI ĐI ---
-                            "typeAndSend();" +
-                        "}" +
+                            // 3. HÀM ÉP NHẬP VÀ ÉP NÚT GỬI & ENTER SONG KIẾM HỢP BÍCH
+                            "function typeAndSend() {" +
+                                "var input = document.querySelector('#richInput') || document.querySelector('.chat-input');" +
+                                "if(input) {" +
+                                    "input.focus();" + // Bắt buộc Focus để Zalo nhận diện đang gõ phím
+                                    "input.innerHTML = safeReply;" +
+                                    "input.dispatchEvent(new Event('input', {bubbles: true}));" +
+                                    
+                                    "setTimeout(function() {" +
+                                        // Phương án 1: Bấm nút Gửi của Zalo bằng React
+                                        "var btn = document.querySelector('.fa-send-2') || document.querySelector('[icon=\"send-2\"]') || document.querySelector('.send-msg-btn');" +
+                                        "if(btn) {" +
+                                            "var tgt = btn.closest('.z--btn--v2') || btn.parentNode || btn;" +
+                                            "tgt.click();" +
+                                            "var bk = Object.keys(tgt).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
+                                            "if(bk && tgt[bk] && tgt[bk].onClick) tgt[bk].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
+                                        "}" +
+                                        
+                                        // Phương án 2: Thả phím Enter ảo thẳng vào bàn phím
+                                        "var enterEvent = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });" +
+                                        "input.dispatchEvent(enterEvent);" +
+                                    "}, 300);" + // Đợi 300ms sau khi nhét chữ mới bấm gửi
+                                "}" +
+                            "}" +
+
+                            // 4. KÍCH HOẠT CLICK ĐÚP XUYÊN LÕI REACT
+                            "if (targetNode) {" +
+                                "var evt = new MouseEvent('dblclick', {bubbles: true, cancelable: true, view: window});" +
+                                "targetNode.dispatchEvent(evt);" +
+                                
+                                "var rKey = Object.keys(targetNode).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
+                                "if(rKey && targetNode[rKey]) {" +
+                                    "if(targetNode[rKey].onDoubleClick) targetNode[rKey].onDoubleClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
+                                    "else if(targetNode[rKey].return && targetNode[rKey].return.memoizedProps.onDoubleClick) targetNode[rKey].return.memoizedProps.onDoubleClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
+                                "}" +
+                                
+                                // Đợi 500ms cho cái bảng Quote bật lên hoàn toàn rồi mới gọi typeAndSend
+                                "setTimeout(typeAndSend, 500);" +
+                            "} else {" +
+                                "typeAndSend();" +
+                            "}" +
+                        "}, 1000);" + // Đợi mạng load khung chat mất 1s
                     "} catch(e) { console.log(e); }" +
                 "})();";
 
@@ -547,8 +573,7 @@ public class ZaloWebManager {
             "           if(window.zauto_seen_keys.length > 800) { let old = window.zauto_seen_keys.splice(0, 100); old.forEach(k => delete window.zauto_seen[k]); }" +
             "           if (Date.now() - window.zauto_boot_time > 8000) {" +
             "               ZAutoBridge.onNewWebMsg(groupName, msgText, realMsgId, convId);" +
-                            // GỌI BONG BÓNG HIỆN CUỐC XE
-            "               ZAutoBridge.showNewRideOnBubble(groupName, msgText, convId, realMsgId);" +
+            "               // ĐÃ XÓA LỆNH BONG BÓNG Ở ĐÂY ĐỂ TRÁNH HIỆN TIN RÁC " +
             "           }" +
             "       } catch(e) {}" +
             "   }" +
