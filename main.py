@@ -517,8 +517,6 @@ MDScreen:
                                 MDSwitch:
                                     id: sw_filter
                                     pos_hint: {'center_y': .5}
-                            MDSeparator:
-
                             
                         # --- HƯỚNG DẪN DÙNG TIẾNG VIỆT ---
                         MDBoxLayout:
@@ -1134,12 +1132,11 @@ class ZAutoProApp(MDApp):
         conversation_id = data.get('conversation_id', '')
 
         if not getattr(self, 'is_radar_running', False): return
-        if group in getattr(self, 'enabled_groups', {}) and not self.enabled_groups[group]: return
+        # BẮT BUỘC: Nếu nhóm không được BẬT (hoặc không tồn tại), chặn đứng luôn!
+        if not getattr(self, 'enabled_groups', {}).get(group, False): 
+            return
 
         msg_clean = msg.strip()
-        if msg_clean.startswith("Bạn:") or msg_clean.startswith("You:") or msg_clean.startswith("bạn:") or msg_clean.startswith("you:"):
-            return 
-
         raw_reply = self.config_data.get('reply_msg', 'Ok nhận')
         replies = [r.strip().lower() for r in raw_reply.split(',') if r.strip()]
         if msg_clean.lower() in replies or any(r in msg_clean.lower() for r in replies):
@@ -1293,7 +1290,7 @@ class ZAutoProApp(MDApp):
             except Exception as e:
                 pass # Bỏ qua lỗi jnius khi khởi động
 
-    def add_ride_card(self, group, msg, msg_id="", conversation_id=""):
+    def add_ride_card(self, group, msg, msg_id="", conversation_id="", cache_key=""):
         try:
             max_rides = 30
             ride_list = self.root.ids.ride_list
@@ -1303,37 +1300,44 @@ class ZAutoProApp(MDApp):
                 old_card.clear_widgets()
                 del old_card
             card = RideCard(group_text=group, msg_text=msg, time_text=time.strftime("%H:%M"))
-            # Gán ẩn data vào Widget để KHÔNG PHẢI SỬA GIAO DIỆN KV
             card.msg_id = msg_id
             card.conversation_id = conversation_id
+            card.cache_key = cache_key # ĐÃ FIX: Nhận tham số cache_key để sau này xóa bộ đệm
             self.root.ids.ride_list.add_widget(card, index=0)
+            
+            # TỰ XÓA CUỐC SAU 2 PHÚT (120 GIÂY) ĐỂ MÀN HÌNH CANH ME SẠCH SẼ
+            Clock.schedule_once(lambda dt: self.auto_remove_card(card), 120)
         except Exception: logger.error(traceback.format_exc())
 
+    def auto_remove_card(self, card_widget):
+        try:
+            if card_widget in self.root.ids.ride_list.children:
+                self.remove_ride(card_widget)
+        except Exception: pass
+
     def manual_accept_ride(self, card_widget):
-        # Lấy data ẩn ra và ném vào Hàng đợi Reply
-        self.queue_reply(card_widget.group_text, getattr(card_widget, 'conversation_id', ''), getattr(card_widget, 'msg_id', ''), self.root.ids.inp_reply.text)
+        raw_reply = self.root.ids.inp_reply.text
+        replies = [r.strip() for r in raw_reply.split(',') if r.strip()]
+        final_reply = random.choice(replies) if replies else "Ok nhận"
+
+        # ĐÃ FIX: Chuyền đầy đủ nội dung tin nhắn xuống để Java Click Đúp đè tin
+        self.queue_reply(card_widget.group_text, getattr(card_widget, 'conversation_id', ''), getattr(card_widget, 'msg_id', ''), final_reply, card_widget.msg_text)
         toast(f"Đang chốt: {card_widget.group_text}")
         self.remove_ride(card_widget)
 
-    def queue_reply(self, group, conversation_id, msg_id, reply_text):
+    def queue_reply(self, group, conversation_id, msg_id, reply_text, msg_content=""):
         now = time.time()
-        
-        # 1. Lấy thời gian chờ từ cấu hình người dùng (mặc định 30s)
         try:
             user_delay = float(self.config_data.get('global_delay', '30'))
         except:
             user_delay = 30.0
 
-        # 2. KIỂM TRA TOÀN CỤC: Nếu vừa chốt xong 1 cuốc bất kỳ, thì phải đợi đủ thời gian
-        # Đây chính là cơ chế "nhận 1 nhóm rồi thì nhóm sau bỏ chờ"
         time_passed = now - getattr(self, 'last_global_reply_time', 0)
         if time_passed < user_delay:
-            logger.info(f"Đang trong thời gian chờ chốt cuốc mới. Còn {int(user_delay - time_passed)} giây.")
             return 
 
-        # 3. Lọc trùng chính xác tin nhắn cũ (giữ nguyên)
-        cache_key = f"{conversation_id}_{msg_id}"
-        if now - self.last_reply_time.get(cache_key, 0) < 30: return 
+        cache_key = f"{conversation_id}_{msg_id}_{hashlib.md5(reply_text.encode('utf-8')).hexdigest()[:6]}"
+        if now - self.last_reply_time.get(cache_key, 0) < 10: return 
         self.last_reply_time[cache_key] = now
 
         if self.reply_queue.qsize() > 40: return
@@ -1341,12 +1345,10 @@ class ZAutoProApp(MDApp):
         try:
             self.last_global_reply_time = now 
             self.reply_queue.put({
-                'group': group, 'conversation_id': conversation_id, 'msg_id': msg_id, 'reply_text': reply_text
+                'group': group, 'conversation_id': conversation_id, 'msg_id': msg_id, 'reply_text': reply_text, 'msg_content': msg_content
             }, timeout=0.3)
 
             self.safe_toast(f"Đã chốt {group}. Tạm dừng quét {int(user_delay)}s.")
-
-            # THÊM ĐỌC GIỌNG NÓI:
             if self.config_data.get('sw_voice', True):
                 self.ui_queue.put_nowait(('speak', f"Chốt cuốc xe thành công, {group}"))
         except queue.Full: pass
