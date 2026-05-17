@@ -531,6 +531,20 @@ public class ZaloWebManager {
             "               } else {" +
             "                   msgText = '[Tin nhắn thoại]';" +
             "               }" +
+            "               " +
+            "               let seconds = -1;" + // Mặc định gán -1 (Báo hiệu quét lỗi/Không tìm thấy)
+            "               try {" +
+            "                   let timeNode = msgItemEl.querySelector('[class*=\"audio-time\"], [class*=\"duration\"], span[class*=\"time\"]');" +
+            "                   if (timeNode) {" +
+            "                       let durationText = timeNode.innerText.trim();" + // Lấy chuỗi dạng "0:04"
+            "                       if (durationText.includes(':')) {" +
+            "                           let parts = durationText.split(':');" +
+            "                           seconds = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);" +
+            "                       }" +
+            "                   }" +
+            "               } catch(err) { seconds = -1; }" +
+            "               " +
+            "               msgText = msgText + '|||' + seconds;" + // Ghép số giây vào cuối nội dung để gửi về Python
             "           }" +
 
             "           if(!groupName || !msgText) return;" +
