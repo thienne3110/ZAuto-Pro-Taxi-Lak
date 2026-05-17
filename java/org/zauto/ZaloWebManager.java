@@ -587,58 +587,65 @@ public class ZaloWebManager {
             "       } catch(e) {}" +
             "   }" +
 
-            // 4. OBSERVE CONTAINER SIDEBAR
+            // 4. OBSERVE CONTAINER SIDEBAR (TRẢ LẠI Y HỆT CODE CŨ CỦA BẠN)
             "   function startSidebarObserver() {" +
             "       let container = document.getElementById('conversationListId');" +
-            "       if(!container) return;" + 
+            "       if(!container) {" +
+            "           setTimeout(startSidebarObserver, 1500);" +
+            "           return;" +
+            "       }" +
             "       if(window.zauto_sidebar_observer) window.zauto_sidebar_observer.disconnect();" +
             "       window.zauto_sidebar_observer = new MutationObserver(mutations => {" +
-            "           mutations.forEach(m => { try { let targetNode = m.target.nodeType === 3 ? m.target.parentNode : m.target; let msgItem = targetNode.closest('.msg-item'); if(msgItem) scanConvItem(msgItem); } catch(e) {} });" +
+            "           mutations.forEach(m => {" +
+            "               try {" +
+            "                   let targetNode = m.target.nodeType === 3 ? m.target.parentNode : m.target;" +
+            "                   let msgItem = targetNode.closest('.msg-item');" +
+            "                   if(msgItem) scanConvItem(msgItem);" +
+            "               } catch(e) {}" +
+            "           });" +
             "       });" +
             "       window.zauto_sidebar_observer.observe(container, { childList: true, subtree: true, characterData: true });" +
             "       document.querySelectorAll('.msg-item').forEach(scanConvItem);" +
             "       collectGroups();" +
-            "       try { ZAutoBridge.showFloatingBubbleAction(); } catch(e){}" + 
+            // Bọc chống Crash để không bị tịt lệnh
+            "       try { ZAutoBridge.onLoginSuccess('Đã kết nối', ''); } catch(e) {}" +
+            "       try { ZAutoBridge.showFloatingBubbleAction(); } catch(e) {}" +
             "   }" +
 
-            // 5. WATCHDOG TỰ ĐỘNG BẤM ĐỒNG BỘ VÀ BÁO KẾT NỐI (ĐÃ FIX LỖI TƯ DUY TÌM LOGIN)
+            // 5. WATCHDOG + NÚT ĐỒNG BỘ (TRẢ LẠI Y HỆT CODE CŨ CỦA BẠN)
             "   function systemWatchdog() {" +
-            "       try { ZAutoBridge.onHeartbeat(Date.now().toString()); } catch(e){}" +
+            "       try { ZAutoBridge.onHeartbeat(Date.now().toString()); } catch(e) {}" +
             "       if(!navigator.onLine) { setTimeout(systemWatchdog, 10000); return; }" +
             "       try {" +
             "           let syncBtn = document.querySelector('.sync-msg-btn');" +
             "           if(!syncBtn) {" +
-            "               let btns = document.querySelectorAll('button, div, span, a');" +
-            "               for(let b of btns) { if(b.innerText && (b.innerText.includes('Đồng bộ') || b.innerText.includes('Khôi phục') || b.innerText.includes('Nhấn để'))) { syncBtn = b; break; } }" +
+            "               let btns = document.querySelectorAll('button, div, span');" +
+            "               for(let b of btns) { if(b.innerText && (b.innerText.includes('Đồng bộ') || b.innerText.includes('Khôi phục'))) { syncBtn = b; break; } }" +
             "           }" +
             "           if(syncBtn) syncBtn.click();" +
             "       } catch(e) {}" +
             
-            // TƯ DUY CHUẨN XÁC: TÌM DANH SÁCH CHAT ĐỂ XÁC NHẬN ĐÃ VÀO BÊN TRONG!
-            "       let chatList = document.getElementById('conversationListId');" +
-            "       if(!chatList) {" +
-            // TRƯỜNG HỢP 1: CHƯA THẤY KHUNG CHAT (Đang ở QR hoặc bị lag mạng)
-            "           window.zauto_logged_in_flag = false;" +
+            // TÌM CLASS THEO ĐÚNG LOGIC CŨ CỦA BẠN:
+            "       let isLoginScreen = document.querySelector('.qrcode') || document.querySelector('.login-container');" +
+            "       if(isLoginScreen) {" +
             "           if(!window.login_start_time) window.login_start_time = Date.now();" +
             "           if(Date.now() - window.login_start_time > 180000) { window.login_start_time = Date.now(); location.reload(); }" +
             "       } else {" +
-            // TRƯỜNG HỢP 2: ĐÃ THẤY DANH SÁCH CHAT -> KHÓA RELOAD, BÁO ĐĂNG NHẬP THÀNH CÔNG!
-            "           window.login_start_time = null;" + 
-            "           if (!window.zauto_logged_in_flag) {" +
-            "               window.zauto_logged_in_flag = true;" +
-            "               try { ZAutoBridge.onLoginSuccess('Đã kết nối', ''); } catch(e) {}" + 
+            "           window.login_start_time = null;" +
+            "           let container = document.getElementById('conversationListId');" +
+            "           if(!container || !window.zauto_sidebar_observer) {" +
+            "               window.zauto_sidebar_observer = null;" +
             "               startSidebarObserver();" +
             "           }" +
-            "           if(!window.zauto_sidebar_observer) { startSidebarObserver(); }" +
             "           window.zauto_group_tick = (window.zauto_group_tick || 0) + 1;" +
             "           if(window.zauto_group_tick % 5 === 0) collectGroups();" +
             "       }" +
-            
             "       let nextTick = document.hidden ? 15000 : 3000;" +
             "       setTimeout(systemWatchdog, nextTick);" +
             "   }" +
             "   setInterval(() => { let container = document.getElementById('conversationListId'); if(container) document.querySelectorAll('.msg-item').forEach(scanConvItem); }, 2000);" +
-            "   setTimeout(systemWatchdog, 3000);" + 
+            "   setTimeout(startSidebarObserver, 1000);" +
+            "   setTimeout(systemWatchdog, 3000);" +
             "})();";
 
         safeEvaluateJs(js);
