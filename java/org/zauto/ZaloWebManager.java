@@ -106,7 +106,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // GỬI TIN NHẮN REPLY VÀO NHÓM CỤ THỂ
+    // GỬI TIN NHẮN REPLY VÀO NHÓM CỤ THỂ (NÂNG CẤP CLICK ĐÚP + ENTER)
     // =========================================================
     public static void sendReplyToSpecificMessage(
             final Activity activity,
@@ -114,16 +114,15 @@ public class ZaloWebManager {
             final String msgId,
             final String text,
             final String msgTextToFind,
-            final String sentTime) { // ĐÃ THÊM: Nhận tham số nội dung gốc và giờ gửi từ Python
+            final String sentTime) {
 
         Activity safeActivity = activityRef != null ? activityRef.get() : activity;
         if (safeActivity == null || hiddenWebView == null) return;
 
         replyQueue.add(() -> safeActivity.runOnUiThread(() -> {
             try {
-                // Khử trùng ký tự đặc biệt an toàn cho Javascript
                 String safeReply = text.replace("'", "\\'").replace("\n", "\\n").replace("\"", "\\\"");
-                String safeSearchText = msgTextToFind.replace("'", "\\'").replace("\n", " ").replace("\"", "\\\"");
+                String safeSearchText = (msgTextToFind != null) ? msgTextToFind.replace("'", "\\'").replace("\n", " ").replace("\"", "\\\"") : "";
                 String safeMsgId = (msgId != null) ? msgId.replace("'", "\\'") : "";
                 String safeTime = (sentTime != null) ? sentTime.replace("'", "\\'") : "";
 
@@ -134,10 +133,9 @@ public class ZaloWebManager {
                         "var targetMsgId = '" + safeMsgId + "';" +
                         "var targetTime = '" + safeTime + "';" +
 
-                        // 1. ÉP MỞ ĐÚNG NHÓM BẰNG MỌI GIÁ (SCROLL TỚI NHÓM RỒI CLICK REACT)
                         "var groupItem = document.querySelector('.msg-item[anim-data-id=\"' + '" + conversationId + "' + '\"] .conv-item') || document.querySelector('.msg-item[anim-data-id=\"' + '" + conversationId + "' + '\"]');" +
                         "if(groupItem) {" +
-                        "    groupItem.scrollIntoView({block: 'center'});" + // Kéo màn hình tới đúng nhóm
+                        "    groupItem.scrollIntoView({block: 'center'});" + 
                         "    groupItem.click();" + 
                         "    var key = Object.keys(groupItem).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
                         "    if (key && groupItem[key]) {" +
@@ -146,14 +144,12 @@ public class ZaloWebManager {
                         "    }" +
                         "}" +
 
-                        // 2. CHỜ 1 GIÂY (1000ms) ĐỂ MẠNG TẢI KHUNG CHAT LÊN RỒI MỚI QUÉT TIN
                         "setTimeout(function() {" +
                             "var textLower = safeSearchText.toLowerCase();" +
-                            "var bubbles = document.querySelectorAll('.message-view__blur, .card--group-message, .chat-message, div[id^=\"msg-\"], .audio-msg, .voice-msg');" +
+                            "var bubbles = document.querySelectorAll('.message-view__blur, .card--group-message, .chat-message, div[id^=\"msg-\"], .audio-msg, .voice-msg, .text-msg');" +
                             "var targetNode = null;" +
                             "var isVoice = textLower.includes('ghi âm') || textLower.includes('thoại') || textLower.includes('audio') || textLower.includes('voice');" +
                             
-                            // TÌM THEO THỜI GIAN
                             "if (isVoice) {" +
                                 "for (var v = bubbles.length - 1; v >= 0; v--) {" +
                                     "var cellText = bubbles[v].innerText ? bubbles[v].innerText : '';" +
@@ -170,7 +166,6 @@ public class ZaloWebManager {
                                 "}" +
                             "}" +
                             
-                            // TÌM THEO ID (NẾU MẠNG LỖI)
                             "if (!targetNode && targetMsgId && targetMsgId !== 'NOTIFICATION') {" +
                                 "for (var j = bubbles.length - 1; j >= 0; j--) {" +
                                     "if (bubbles[j].id && bubbles[j].id.includes(targetMsgId)) {" +
@@ -179,16 +174,14 @@ public class ZaloWebManager {
                                 "}" +
                             "}" +
 
-                            // 3. HÀM ÉP NHẬP VÀ ÉP NÚT GỬI & ENTER SONG KIẾM HỢP BÍCH
                             "function typeAndSend() {" +
                                 "var input = document.querySelector('#richInput') || document.querySelector('.chat-input');" +
                                 "if(input) {" +
-                                    "input.focus();" + // Bắt buộc Focus để Zalo nhận diện đang gõ phím
+                                    "input.focus();" + 
                                     "input.innerHTML = safeReply;" +
                                     "input.dispatchEvent(new Event('input', {bubbles: true}));" +
                                     
                                     "setTimeout(function() {" +
-                                        // Phương án 1: Bấm nút Gửi của Zalo bằng React
                                         "var btn = document.querySelector('.fa-send-2') || document.querySelector('[icon=\"send-2\"]') || document.querySelector('.send-msg-btn');" +
                                         "if(btn) {" +
                                             "var tgt = btn.closest('.z--btn--v2') || btn.parentNode || btn;" +
@@ -197,14 +190,12 @@ public class ZaloWebManager {
                                             "if(bk && tgt[bk] && tgt[bk].onClick) tgt[bk].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
                                         "}" +
                                         
-                                        // Phương án 2: Thả phím Enter ảo thẳng vào bàn phím
                                         "var enterEvent = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });" +
                                         "input.dispatchEvent(enterEvent);" +
-                                    "}, 300);" + // Đợi 300ms sau khi nhét chữ mới bấm gửi
+                                    "}, 300);" + 
                                 "}" +
                             "}" +
 
-                            // 4. KÍCH HOẠT CLICK ĐÚP XUYÊN LÕI REACT
                             "if (targetNode) {" +
                                 "var evt = new MouseEvent('dblclick', {bubbles: true, cancelable: true, view: window});" +
                                 "targetNode.dispatchEvent(evt);" +
@@ -215,12 +206,11 @@ public class ZaloWebManager {
                                     "else if(targetNode[rKey].return && targetNode[rKey].return.memoizedProps.onDoubleClick) targetNode[rKey].return.memoizedProps.onDoubleClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
                                 "}" +
                                 
-                                // Đợi 500ms cho cái bảng Quote bật lên hoàn toàn rồi mới gọi typeAndSend
                                 "setTimeout(typeAndSend, 500);" +
                             "} else {" +
                                 "typeAndSend();" +
                             "}" +
-                        "}, 1000);" + // Đợi mạng load khung chat mất 1s
+                        "}, 1000);" + 
                     "} catch(e) { console.log(e); }" +
                 "})();";
 
@@ -234,7 +224,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // JAVA BRIDGE → GIAO TIẾP GIỮA JAVASCRIPT VÀ ANDROID
+    // JAVA BRIDGE → NÉM VÀO RAM PYTHON THAY VÌ BROADCAST
     // =========================================================
     public static class WebAppInterface {
         Context mContext;
@@ -259,23 +249,10 @@ public class ZaloWebManager {
         public void onGroupListReceived(String jsonGroups) {
             pythonMsgQueue.add("GROUPS_DATA|||" + jsonGroups);
         }
-
-        // ---> THÊM: KÍCH HOẠT BONG BÓNG LÚC KHỞI ĐỘNG
-        @JavascriptInterface
-        public void showFloatingBubbleAction() {
-            Activity act = activityRef != null ? activityRef.get() : null;
-            if (act != null) showFloatingBubble(act);
-        }
-
-        // ---> THÊM: BẮN LÊN BONG BÓNG KHI CÓ CUỐC MỚI
-        @JavascriptInterface
-        public void showNewRideOnBubble(String groupName, String msgText, String convId, String msgId) {
-            ZaloWebManager.showNewRideOnBubble(groupName, msgText, convId, msgId);
-        }
     }
 
     // =========================================================
-    // KHỞI TẠO WEBVIEW (BẢN FIX CHUẨN TƯƠNG THÍCH MỌI ANDROID)
+    // KHỞI TẠO WEBVIEW
     // =========================================================
     public static void initWebView(final Activity activity) {
         if (activity == null) return;
@@ -288,8 +265,7 @@ public class ZaloWebManager {
                 webLayout = new FrameLayout(activity);
                 hiddenWebView = new WebView(activity);
 
-                // FIX 1: Ép phần cứng render, cấm hệ điều hành Android cũ cho WebView ngủ đông
-                hiddenWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
+                hiddenWebView.setLayerType(View.LAYER_TYPE_NONE, null);
 
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     hiddenWebView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true);
@@ -297,32 +273,24 @@ public class ZaloWebManager {
 
                 WebSettings settings = hiddenWebView.getSettings();
                 settings.setJavaScriptEnabled(true);
-                settings.setDomStorageEnabled(true); // BẮT BUỘC: Cho Zalo lưu LocalStorage
+                settings.setDomStorageEnabled(true);
                 settings.setDatabaseEnabled(true);
                 settings.setAllowFileAccess(true);
-                
-                // Bổ sung cởi trói bảo mật truy cập nội bộ cho Android cũ
-                settings.setAllowContentAccess(true);
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN) {
-                    settings.setAllowFileAccessFromFileURLs(true);
-                    settings.setAllowUniversalAccessFromFileURLs(true);
-                }
-                
                 settings.setLoadsImagesAutomatically(true);
                 settings.setMediaPlaybackRequiresUserGesture(false);
-                settings.setOffscreenPreRaster(true); // QUAN TRỌNG: Ép load ngầm
+                settings.setOffscreenPreRaster(true);
                 settings.setCacheMode(WebSettings.LOAD_DEFAULT);
                 settings.setNeedInitialFocus(false);
                 if (android.os.Build.VERSION.SDK_INT >= 29) {
                     settings.setForceDark(WebSettings.FORCE_DARK_OFF);
                 }
-                
-                // BẮT BUỘC: Cho phép HTTP tải tài nguyên bên trong HTTPS (Tránh lỗi Zalo load thiếu ảnh)
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 settings.setUseWideViewPort(true);
                 settings.setLoadWithOverviewMode(true);
                 settings.setUserAgentString(
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
+                    "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                    "Chrome/136.0.0.0 Safari/537.36"
                 );
 
                 CookieManager cookieManager = CookieManager.getInstance();
@@ -333,18 +301,12 @@ public class ZaloWebManager {
                 hiddenWebView.setWebChromeClient(new WebChromeClient());
 
                 hiddenWebView.setWebViewClient(new WebViewClient() {
-                    
-                    // FIX 2: BỎ QUA LỖI CHỨNG CHỈ BẢO MẬT SSL (Cứu sống màn hình trắng do chứng chỉ cũ trên máy cũ)
-                    @Override
-                    public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                        Log.w(TAG, "Bo qua loi SSL tren Android cu: " + error.toString());
-                        handler.proceed(); // BẮT BUỘC PHẢI CÓ LỆNH NÀY!
-                    }
-
+                    // --- ĐOẠN QUAN TRỌNG: TỰ ĐỘNG REFRESH KHI MẤT MẠNG ---
                     @Override
                     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
                         if (request.isForMainFrame()) {
                             Log.e(TAG, "Lỗi kết nối Zalo: " + error.getDescription());
+                            // Nếu tắt màn hình bị mất mạng, khi có mạng lại nó sẽ tự tải lại trang sau 5 giây
                             view.postDelayed(() -> {
                                 if (view != null) view.reload();
                             }, 5000);
@@ -386,13 +348,11 @@ public class ZaloWebManager {
                 );
                 webLayout.addView(hiddenWebView, webParams);
 
-                // FIX 3: ĐÁNH LỪA ANDROID CŨ (Tránh View Clipping)
+                // KHỞI TẠO KHỔNG LỒ (ĐÁNH LỪA REACT VIRTUALIZED) VÀ ĐẨY RA KHỎI MÀN HÌNH
                 FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(1080, 2400);
-                rootParams.leftMargin = -2000; // Không để -10000 nữa, -2000 là đủ che khỏi màn hình rồi
-                rootParams.topMargin = -2000;
-                
-                // QUAN TRỌNG NHẤT: Không để 0.0f, dùng 0.01f ép GPU Android cũ phải xử lý ngầm mã QR
-                webLayout.setAlpha(0.01f); 
+                rootParams.leftMargin = -10000;
+                rootParams.topMargin = -10000;
+                webLayout.setAlpha(0.0f);
 
                 if (webLayout.getParent() != null) {
                     ((ViewGroup) webLayout.getParent()).removeView(webLayout);
@@ -403,6 +363,7 @@ public class ZaloWebManager {
                 hiddenWebView.bringToFront();
                 hiddenWebView.requestFocus();
 
+                // KHỞI TẠO GIỌNG NÓI TIẾNG VIỆT
                 if (tts == null) {
                     tts = new TextToSpeech(activity.getApplicationContext(), status -> {
                         if (status == TextToSpeech.SUCCESS) {
@@ -420,7 +381,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // JS OBSERVER & API INTERNAL (BẢN TỔNG HỢP CUỐI CÙNG - CHUẨN 100%)
+    // JS OBSERVER & API INTERNAL (CHẠY NGẦM 100%)
     // =========================================================
     public static void injectSidebarObserver(WebView view) {
         String js =
@@ -431,9 +392,10 @@ public class ZaloWebManager {
             "   window.zauto_seen = {};" +
             "   window.zauto_seen_keys = [];" +
 
-            // 1. HÀM GỬI REPLY 2 LỚP BẢO VỆ (API CHÍNH + DỰ PHÒNG GÕ TAY)
+            // HÀM GỬI REPLY ĐA TẦNG (DÙNG SELECTOR CHUẨN + ENTER + BÁO CÁO TOAST)
             "   window.zautoSendReply = function(convId, fakeMsgId, text, groupName) {" +
             "       try {" +
+                        // 1. CHUYỂN SANG NHÓM CẦN CHỐT
             "           let item = document.querySelector('.msg-item[anim-data-id=\"'+convId+'\"] .conv-item');" +
             "           if(item) {" +
             "               let key = Object.keys(item).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
@@ -444,150 +406,117 @@ public class ZaloWebManager {
             "           }" +
             
             "           setTimeout(() => {" +
-            "               let realMsgId = String(fakeMsgId || '');" +
-            "               let isSent = false;" +
-                            
-                            // ==========================================
-                            // PHƯƠNG ÁN 1: BẮN API NGẦM (GHIM ĐÚNG TIN)
-                            // ==========================================
+            "               let realMsgId = '';" +
             "               try {" +
-            "                   if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
-            "                       let req = { toid: convId, msg: text, type: 1 };" +
-            // BYPASS VÀO LÕI ZALO: Bơm mọi thuộc tính mà Zalo có thể đòi hỏi để ép nó phải ghim tin
-            "                       if (realMsgId && !realMsgId.startsWith('TIME_') && realMsgId.length > 5) {" +
-            "                           req.quote_msgId = realMsgId;" +
-            "                           req.quote = {" +
-            "                               msgId: realMsgId," +
-            "                               globalMsgId: realMsgId," +
-            "                               cliMsgId: realMsgId" +
-            "                           };" +
-            "                       }" +
-            "                       window.zMessenger.sendMessage(req);" +
-            "                       ZAutoBridge.onLoginSuccess('PA1: Đã chốt API', groupName);" + 
-            "                       isSent = true;" +
+            "                   let msgs = document.querySelectorAll('[id^=\"msg_\"]');" +
+            "                   if (msgs && msgs.length > 0) {" +
+            "                       let lastMsg = msgs[msgs.length - 1];" +
+            "                       realMsgId = lastMsg.getAttribute('id').substring(4);" +
             "                   }" +
-            "               } catch(err1) { console.log('ZAuto PA1 Fail', err1); }" +
-
-                            // ==========================================
-                            // PHƯƠNG ÁN 2: DỰ PHÒNG GÕ TAY (NẾU PA1 THẤT BẠI)
-                            // ==========================================
-            "               if (!isSent) {" +
-            "                   try {" +
-            "                       let input = document.getElementById('richInput');" +
-            "                       if(input) {" +
-            "                           input.focus();" +
-            "                           input.innerHTML = '';" +
-            "                           document.execCommand('insertText', false, text);" +
-            "                           input.dispatchEvent(new Event('input', {bubbles:true}));" + 
-            "                           input.blur();" + 
-            "                           let attempts = 0;" +
-            "                           let trySend = setInterval(() => {" +
-            "                               attempts++;" +
-            "                               let btnSend = document.querySelector('#chat-input-container-id .send-msg-btn, .fa-Sent-msg_24_Line, [data-translate-title=\"STR_SEND\"]');" +
-            "                               if (btnSend) {" +
-            "                                   let tgt = btnSend.closest('.z--btn--v2') || btnSend.parentElement || btnSend;" +
-            "                                   tgt.click();" +
-            "                                   let key = Object.keys(tgt).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
-            "                                   if(key && tgt[key] && tgt[key].onClick) tgt[key].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
-            "                               }" +
-            "                               let enterEvent = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });" +
-            "                               input.dispatchEvent(enterEvent);" +
-            "                               if (input.innerHTML === '' || input.innerHTML === '<br>') {" +
-            "                                   clearInterval(trySend);" +
-            "                                   ZAutoBridge.onLoginSuccess('PA2: Đã chốt gõ tay', groupName);" +
-            "                               } else if (attempts > 12) { clearInterval(trySend); }" +
-            "                           }, 200);" + 
-            "                       }" +
-            "                   } catch(err2) { console.log('ZAuto PA2 Fail', err2); }" +
-            "               }" +
-            "           }, 800);" + 
-            "       } catch(e) {}" +
-            "   };" +
-
-            // 2. HÀM QUÉT SIDEBAR (FULL TEXT + VOICE + ỔN ĐỊNH RAM)
-            "   function scanConvItem(msgItemEl) {" +
-            "       try {" +
-            "           let convItem = msgItemEl.querySelector('.conv-item') || msgItemEl;" +
-            "           if(!convItem) return;" +
-            "           let nameEl = convItem.querySelector('.conv-item-title__name');" +
-            "           let bodyEl = convItem.querySelector('.conv-item-body');" +
-            "           if(!nameEl || !bodyEl) return;" +
-            "           let groupName = (nameEl.textContent || nameEl.innerText || '').trim();" +
-            "           let msgText   = (bodyEl.textContent || bodyEl.innerText || '').trim();" +
-            "           let convId = msgItemEl.getAttribute('anim-data-id') || msgItemEl.id || '';" +
+            "               } catch(err) { realMsgId = ''; }" +
             
-            // DEEP BYPASS: QUÉT VÉT CẠN MỌI TẦNG REACT FIBER ĐỂ LỘT TRẦN ID BỊ GIẤU
-            "           let realMsgId = ''; var fullTxt = '';" +
-            "           try {" +
-            "               let id1 = msgItemEl.getAttribute('data-msg-id') || (msgItemEl.dataset ? msgItemEl.dataset.msgId : '');" +
-            "               if (id1 && id1.length > 5) realMsgId = id1;" +
+                        // 2. THỬ GỬI BẰNG API NGẦM TRƯỚC
+            "               if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
+            "                   let req = { toid: convId, msg: text, type: 1 };" +
+            "                   if (realMsgId && realMsgId !== '') req.quote_msgId = realMsgId;" +
+            "                   window.zMessenger.sendMessage(req);" +
+            "                   ZAutoBridge.onLoginSuccess('Đã chốt xong:', groupName);" + 
+            "               } else {" +
+                        // 3. NẾU BỊ CHẶN API -> DÙNG PHƯƠNG ÁN UI (ĐẬP PHÍM)
+            "                   let input = document.getElementById('richInput');" +
+            "                   if(input) {" +
+            "                       input.focus();" +
+            "                       input.innerHTML = '';" +
+            "                       document.execCommand('insertText', false, text);" +
+            "                       input.dispatchEvent(new Event('input', {bubbles:true}));" + 
+            "                       input.blur();" + // CHẶN BÀN PHÍM: Hủy focus ngay lập tức để Android không kịp nhô bàn phím lên
+            "                       let attempts = 0;" +
             
-            "               let keys = Object.keys(msgItemEl);" +
-            "               let rK = keys.find(k => k.startsWith('__reactFiber') || k.startsWith('__reactProps'));" +
-            "               if (rK && msgItemEl[rK]) {" +
-            "                   let node = msgItemEl[rK];" +
-                                // Khoan ngược lên 4 lớp thư mục cha con của React để bới ID
-            "                   for(let step = 0; step < 4; step++) {" +
-            "                       if(!node) break;" +
-            "                       let p = node.memoizedProps || node.pendingProps;" +
-            "                       if (p) {" +
-                                        // Liệt kê mọi bí danh mà Zalo có thể đặt cho tin nhắn
-            "                           let objs = [p.data?.lastMsg, p.item?.lastMsg, p.lastMsg, p.message, p.msg, p.data, p.item, p];" +
-            "                           for (let o of objs) {" +
-            "                               if (o && typeof o === 'object') {" +
-            "                                   let foundId = o.msgId || o.messageId || o.cliMsgId || o.globalMsgId;" +
-            "                                   if (!realMsgId && foundId && String(foundId).length > 5) { realMsgId = String(foundId); }" +
-            "                                   if (!fullTxt && typeof o.content === 'string' && o.content.trim() !== '') { fullTxt = o.content; }" +
+            "                       let trySend = setInterval(() => {" +
+            "                           attempts++;" +
+            "                           let btnSend = null;" +
+                                        // QUÉT CÁC SELECTOR CHUẨN XÁC TỪ DỮ LIỆU CỦA BẠN
+            "                           let primarySelector = '#chat-input-container-id > div.chat-input-container__right-layout > div.normal-buttons-group > div.send-msg-btn';" +
+            "                           let fallbackSelectors = ['.fa-Sent-msg_24_Line', '[data-translate-title=\"STR_SEND\"]'];" +
+            
+            "                           let el = document.querySelector(primarySelector);" +
+            "                           if (el) {" +
+            "                               btnSend = el;" +
+            "                           } else {" +
+            "                               for (let sel of fallbackSelectors) {" +
+            "                                   let fallbackEl = document.querySelector(sel);" +
+            "                                   if (fallbackEl) {" +
+            "                                       btnSend = fallbackEl.closest('.z--btn--v2') || fallbackEl.parentElement || fallbackEl;" +
+            "                                       break;" +
+            "                                   }" +
             "                               }" +
             "                           }" +
-            "                       }" +
-            "                       node = node.return;" + // Leo lên thế hệ cha
+            
+                                        // THỰC HIỆN CLICK VÀO NÚT
+            "                           if (btnSend) {" +
+            "                               btnSend.click();" +
+            "                               let key = Object.keys(btnSend).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
+            "                               if(key && btnSend[key] && btnSend[key].onClick) btnSend[key].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
+            "                           }" +
+            
+                                        // BỒI THÊM PHÍM ENTER ẢO VÀO KHUNG CHAT
+            "                           let enterEvent = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });" +
+            "                           input.dispatchEvent(enterEvent);" +
+            
+                                        // KIỂM TRA THÀNH CÔNG VÀ DỪNG VÒNG LẶP
+            "                           if (input.innerHTML === '' || input.innerHTML === '<br>') {" +
+            "                               clearInterval(trySend);" +
+            "                               ZAutoBridge.onLoginSuccess('Đã chốt xong:', groupName);" + // Báo cáo Toast về Kivy
+            "                           } else if (attempts > 12) {" +
+                                            // Dừng lại sau 3 giây (12 lần) để chống treo máy
+            "                               clearInterval(trySend);" +
+            "                           }" +
+            "                       }, 250);" + 
             "                   }" +
             "               }" +
-            "           } catch(err) {}" +
-            
-            "           if (fullTxt && fullTxt.length > msgText.length && !fullTxt.startsWith('{\"')) {" +
-            "               msgText = fullTxt.trim();" +
-            "           }" +
-            
-            "           let isVoiceNode = bodyEl.querySelector('[class*=\"audio\"], [class*=\"voice\"], [class*=\"Voice\"], svg');" +
-            "           let isTimeOnly = /^[0-9]{1,2}:[0-9]{2}$/.test(msgText) || /^[0-9]{1,2}:[0-9]{2}$/.test(bodyEl.innerText.trim());" + 
-            "           if (isVoiceNode || isTimeOnly) {" +
-            "               msgText = '[Tin nhắn thoại]';" +
-            "           }" +
-
+            "           }, 800);" + // Đợi 0.8 giây để Zalo load màn hình chat
+            "       } catch(e) {}" +
+            "   };" +
+            // HÀM QUÉT SIDEBAR
+            "   function scanConvItem(msgItemEl) {" +
+            "       try {" +
+            "           let convItem = msgItemEl.querySelector('.gridv2.conv-item');" +
+            "           if(!convItem) return;" +
+            "           let nameEl = convItem.querySelector('.conv-item-title__name');" +
+            "           let bodyEl = msgItemEl.querySelector('.conv-item-body');" +
+            "           if(!nameEl || !bodyEl) return;" +
+            "           let groupName = (nameEl.innerText || nameEl.textContent || '').trim();" +
+            "           let msgText   = (bodyEl.innerText || bodyEl.textContent || '').trim();" +
             "           if(!groupName || !msgText) return;" +
-
-            "           let timeEl = convItem.querySelector('.conv-item-title__time, [class*=\"time\"]');" +
-            "           let timeString = timeEl ? (timeEl.textContent || '').trim() : '';" +
-
-                        // KHÔNG DÙNG MATH.RANDOM ĐỂ CHỐNG SPAM RAM. DÙNG THỜI GIAN LÀM ID GIẢ ỔN ĐỊNH.
-            "           if (!realMsgId || realMsgId === '') {" +
-            "               realMsgId = 'TIME_' + timeString;" +
-            "           }" +
-
-            "           let fp = convId + '|' + realMsgId + '|' + timeString + '|' + msgText.substring(0, 40);" +
+            "           let convId = msgItemEl.getAttribute('anim-data-id') || '';" +
+            "           let fp = convId + '|' + msgText.substring(0, 40);" +
             "           if(window.zauto_seen[fp]) return;" +
             "           window.zauto_seen[fp] = true;" +
             "           window.zauto_seen_keys.push(fp);" +
-            "           if(window.zauto_seen_keys.length > 800) { let old = window.zauto_seen_keys.splice(0, 100); old.forEach(k => delete window.zauto_seen[k]); }" +
+"           if(window.zauto_seen_keys.length > 800) {" +
+            "               let old = window.zauto_seen_keys.splice(0, 100);" +
+            "               old.forEach(k => delete window.zauto_seen[k]);" +
+            "           }" +
             "           if (Date.now() - window.zauto_boot_time > 8000) {" +
-            "               ZAutoBridge.onNewWebMsg(groupName, msgText, realMsgId, convId);" +
-            "               // ĐÃ XÓA LỆNH BONG BÓNG Ở ĐÂY ĐỂ TRÁNH HIỆN TIN RÁC " +
+            "               ZAutoBridge.onNewWebMsg(groupName, msgText, '', convId);" +
             "           }" +
             "       } catch(e) {}" +
             "   }" +
 
-            // 3. HÀM THU THẬP DANH SÁCH NHÓM
+            // HÀM THU THẬP DANH SÁCH NHÓM
             "   function collectGroups() {" +
             "       try {" +
-            "           let groups = []; let nameEls = document.querySelectorAll('.conv-item-title__name');" +
-            "           nameEls.forEach(el => { let n = (el.innerText || el.textContent || '').trim(); if(n && n.length > 1 && n.length < 80 && !groups.includes(n)) groups.push(n); });" +
+            "           let groups = [];" +
+            "           let nameEls = document.querySelectorAll('.conv-item-title__name');" +
+            "           nameEls.forEach(el => {" +
+            "               let n = (el.innerText || el.textContent || '').trim();" +
+            "               if(n && n.length > 1 && n.length < 80 && !groups.includes(n)) groups.push(n);" +
+            "           });" +
             "           if(groups.length > 0) ZAutoBridge.onGroupListReceived(JSON.stringify(groups));" +
             "       } catch(e) {}" +
             "   }" +
 
-            // 4. OBSERVE CONTAINER SIDEBAR (TRẢ LẠI Y HỆT CODE CŨ CỦA BẠN)
+            // OBSERVE CONTAINER SIDEBAR
             "   function startSidebarObserver() {" +
             "       let container = document.getElementById('conversationListId');" +
             "       if(!container) {" +
@@ -607,14 +536,12 @@ public class ZaloWebManager {
             "       window.zauto_sidebar_observer.observe(container, { childList: true, subtree: true, characterData: true });" +
             "       document.querySelectorAll('.msg-item').forEach(scanConvItem);" +
             "       collectGroups();" +
-            // Bọc chống Crash để không bị tịt lệnh
-            "       try { ZAutoBridge.onLoginSuccess('Đã kết nối', ''); } catch(e) {}" +
-            "       try { ZAutoBridge.showFloatingBubbleAction(); } catch(e) {}" +
+            "       ZAutoBridge.onLoginSuccess('Đã kết nối', '');" +
             "   }" +
 
-            // 5. WATCHDOG + NÚT ĐỒNG BỘ (TRẢ LẠI Y HỆT CODE CŨ CỦA BẠN)
+            // WATCHDOG + NÚT ĐỒNG BỘ
             "   function systemWatchdog() {" +
-            "       try { ZAutoBridge.onHeartbeat(Date.now().toString()); } catch(e) {}" +
+            "       ZAutoBridge.onHeartbeat(Date.now().toString());" +
             "       if(!navigator.onLine) { setTimeout(systemWatchdog, 10000); return; }" +
             "       try {" +
             "           let syncBtn = document.querySelector('.sync-msg-btn');" +
@@ -624,8 +551,6 @@ public class ZaloWebManager {
             "           }" +
             "           if(syncBtn) syncBtn.click();" +
             "       } catch(e) {}" +
-            
-            // TÌM CLASS THEO ĐÚNG LOGIC CŨ CỦA BẠN:
             "       let isLoginScreen = document.querySelector('.qrcode') || document.querySelector('.login-container');" +
             "       if(isLoginScreen) {" +
             "           if(!window.login_start_time) window.login_start_time = Date.now();" +
@@ -663,11 +588,10 @@ public class ZaloWebManager {
             public void run() {
                 if (hiddenWebView != null) {
                     long now = System.currentTimeMillis();
-                    // ĐÃ SỬA: ĐỢI ĐÚNG 3 PHÚT (180.000 mili-giây) NẾU MẤT KẾT NỐI MỚI TẢI LẠI TRANG
-                    if (now - lastHeartbeat > 180000) {
+                    if (now - lastHeartbeat > 60000) {
                         Log.e(TAG, "HEARTBEAT LOST. REQUESTING RELOAD...");
                         safeReload();
-                    } else if (now - lastHeartbeat > 60000) {
+                    } else if (now - lastHeartbeat > 20000) {
                         safeEvaluateJs("if(!window.zauto_started) location.reload();");
                     }
                 }
@@ -678,7 +602,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // CÁC HÀM TIỆN ÍCH - CẬP NHẬT TỌA ĐỘ (ĐÃ FIX CHỐNG NGỦ ĐÔNG MÁY CŨ)
+    // CÁC HÀM TIỆN ÍCH - GIỮ NGUYÊN KÍCH THƯỚC KHỔNG LỒ
     // =========================================================
     public static void updateWebViewBounds(
             final Activity activity,
@@ -695,10 +619,9 @@ public class ZaloWebManager {
                 FrameLayout.LayoutParams params =
                         (FrameLayout.LayoutParams) webLayout.getLayoutParams();
                 if (!visible) {
-                    // ÉP CHẠY NGẦM BẰNG CÁCH DÙNG ĐỘ TRONG SUỐT CỰC THẤP
-                    webLayout.setAlpha(0.01f); 
-                    params.leftMargin = -2000; 
-                    params.topMargin = -2000;
+                    webLayout.setAlpha(0.0f);
+                    params.leftMargin = -10000;
+                    params.topMargin = -10000;
                     params.width = 1080;
                     params.height = 2400;
                 } else {
@@ -766,7 +689,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // HỆ THỐNG PHÁT BẢN GHI ÂM (BẢN FIX ĐÍCH DANH ID - KHÔNG BỊ ĐÈ TIN CŨ)
+    // HỆ THỐNG PHÁT BẢN GHI ÂM CHUẨN XÁC THEO ID
     // =========================================================
     public static void playSpecificAudio(final Activity activity, final String conversationId, final String msgId) {
         Activity safeActivity = activityRef != null ? activityRef.get() : activity;
@@ -775,7 +698,6 @@ public class ZaloWebManager {
         safeActivity.runOnUiThread(() -> {
             String js = "(function() {" +
                 "   console.log('ZAuto: Bat dau tim nut Play cho ' + '" + msgId + "');" +
-                // BƯỚC 1: MỞ NHÓM ZALO
                 "   let item = document.querySelector('.msg-item[anim-data-id=\"" + conversationId + "\"] .conv-item');" +
                 "   if(item) {" +
                 "       let key = Object.keys(item).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
@@ -785,7 +707,6 @@ public class ZaloWebManager {
                 "       } else { item.click(); }" +
                 "   }" +
 
-                // BƯỚC 2: TÌM CHÍNH XÁC ID TIN NHẮN ĐỂ BẤM (KHÔNG BẤM BỪA TIN CUỐI CÙNG)
                 "   setTimeout(() => {" +
                 "       let findAndPlay = () => {" +
                 "           let msgNode = document.querySelector('[data-msg-id=\"" + msgId + "\"]');" +
@@ -819,223 +740,5 @@ public class ZaloWebManager {
                 "})();";
             hiddenWebView.evaluateJavascript(js, null);
         });
-    }
-	// =========================================================
-    // HỆ THỐNG BONG BÓNG CHAT NỔI (FLOATING BUBBLE VIP)
-    // =========================================================
-    private static android.view.WindowManager windowManager;
-    private static View bubbleView;
-    private static FrameLayout bubbleLayout;
-    private static boolean isBubbleExpanded = false;
-
-    // Hàm gọi hiển thị Bong bóng từ Python hoặc khi khởi động
-    public static void showFloatingBubble(final Activity activity) {
-        if (activity == null) return;
-        activity.runOnUiThread(() -> {
-            try {
-                // Kiểm tra quyền vẽ trên ứng dụng khác (SYSTEM_ALERT_WINDOW)
-                if (android.os.Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(activity)) {
-                    android.widget.Toast.makeText(activity, "Vui lòng cấp quyền 'Hiển thị trên ứng dụng khác' cho ZAuto!", android.widget.Toast.LENGTH_LONG).show();
-                    Intent intent = new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                            android.net.Uri.parse("package:" + activity.getPackageName()));
-                    activity.startActivity(intent);
-                    return;
-                }
-
-                if (bubbleView != null) return;
-
-                windowManager = (android.view.WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
-                bubbleLayout = new FrameLayout(activity);
-
-                // Tạo giao diện hình tròn cho bong bóng (Dùng tạm text hoặc icon tùy bạn cấu hình nút res)
-                android.widget.ImageView iconView = new android.widget.ImageView(activity);
-                // Thử lấy ảnh profile làm avatar bong bóng cho đẹp
-                try {
-                    String imgPath = activity.getFilesDir().getAbsolutePath() + "/profile.jpg";
-                    android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeFile(imgPath);
-                    if(bmp != null) iconView.setImageBitmap(bmp);
-                    else iconView.setImageResource(android.R.drawable.ic_menu_call);
-                } catch(Exception ignored) {
-                    iconView.setImageResource(android.R.drawable.ic_menu_call);
-                }
-
-                // Cấu hình bo tròn góc cho bong bóng nổi
-                iconView.setBackgroundColor(android.graphics.Color.parseColor("#1A73E8"));
-                iconView.setPadding(20, 20, 20, 20);
-
-                final android.view.WindowManager.LayoutParams params = new android.view.WindowManager.LayoutParams(
-                        android.view.WindowManager.LayoutParams.WRAP_CONTENT,
-                        android.view.WindowManager.LayoutParams.WRAP_CONTENT,
-                        android.os.Build.VERSION.SDK_INT >= 26 ? 
-                                android.view.WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : 
-                                android.view.WindowManager.LayoutParams.TYPE_PHONE,
-                        android.view.WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                        android.graphics.PixelFormat.TRANSLUCENT
-                );
-
-                params.gravity = android.view.Gravity.TOP | android.view.Gravity.LEFT;
-                params.x = 0;
-                params.y = 300; // Chiều cao xuất hiện ban đầu
-
-                bubbleLayout.addView(iconView, new FrameLayout.LayoutParams(150, 150));
-                bubbleView = bubbleLayout;
-
-                // Thêm sự kiện Kéo thả (Drag and Drop) di chuyển bong bóng và Click mở App
-                bubbleView.setOnTouchListener(new android.view.View.OnTouchListener() {
-                    private int lastAction;
-                    private int initialX, initialY;
-                    private float initialTouchX, initialTouchY;
-
-                    @Override
-                    public boolean onTouch(View v, android.view.MotionEvent event) {
-                        switch (event.getAction()) {
-                            case android.view.MotionEvent.ACTION_DOWN:
-                                initialX = params.x; initialY = params.y;
-                                initialTouchX = event.getRawX(); initialTouchY = event.getRawY();
-                                lastAction = event.getAction();
-                                return true;
-                            case android.view.MotionEvent.ACTION_UP:
-                                if (lastAction == android.view.MotionEvent.ACTION_DOWN) {
-                                    // YÊU CẦU: Bấm vào bong bóng để bật lại App lên màn hình chính
-                                    Intent intent = activity.getPackageManager().getLaunchIntentForPackage(activity.getPackageName());
-                                    if (intent != null) {
-                                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                                        activity.startActivity(intent);
-                                    }
-                                }
-                                lastAction = event.getAction();
-                                return true;
-                            case android.view.MotionEvent.ACTION_MOVE:
-                                params.x = initialX + (int) (event.getRawX() - initialTouchX);
-                                params.y = initialY + (int) (event.getRawY() - initialTouchY);
-                                windowManager.updateViewLayout(bubbleView, params);
-                                lastAction = event.getAction();
-                                return true;
-                        }
-                        return false;
-                    }
-                });
-
-                windowManager.addView(bubbleView, params);
-
-            } catch (Exception e) {
-                Log.e(TAG, "Loi showFloatingBubble: ", e);
-            }
-        });
-    }
-
-    // Hàm giấu ẩn bong bóng chat khi tắt trong cài đặt
-    public static void hideFloatingBubble(final Activity activity) {
-        if (activity == null) return;
-        activity.runOnUiThread(() -> {
-            try {
-                if (windowManager != null && bubbleView != null) {
-                    windowManager.removeView(bubbleView);
-                    bubbleView = null;
-                    bubbleLayout = null;
-                }
-            } catch (Exception ignored) {}
-        });
-    }
-
-    // YÊU CẦU NÂNG CẤP: Bung rộng khung nhận cuốc kèm nút bấm trực tiếp khi tắt Auto Chốt
-    public static void showNewRideOnBubble(final String groupName, final String msgText, final String convId, final String msgId) {
-        Activity activity = activityRef != null ? activityRef.get() : null;
-        if (activity == null || bubbleLayout == null) return;
-
-        activity.runOnUiThread(() -> {
-            try {
-                // Xóa bỏ giao diện thu nhỏ cũ
-                bubbleLayout.removeAllViews();
-
-                // Tạo khung bảng thông báo cuốc xe nổi
-                android.widget.LinearLayout container = new android.widget.LinearLayout(activity);
-                container.setOrientation(android.widget.LinearLayout.VERTICAL);
-                container.setBackgroundColor(android.graphics.Color.WHITE);
-                container.setPadding(30, 30, 30, 30);
-                
-                // Set khung viền bo góc sắc nét chuẩn VIP
-                android.graphics.drawable.GradientDrawable shape = new android.graphics.drawable.GradientDrawable();
-                shape.setCornerRadius(25);
-                shape.setColor(android.graphics.Color.WHITE);
-                shape.setStroke(4, android.graphics.Color.parseColor("#1A73E8"));
-                container.setBackground(shape);
-
-                // Thêm chữ tên Nhóm Zalo
-                android.widget.TextView tvGroup = new android.widget.TextView(activity);
-                tvGroup.setText("🚖 " + groupName);
-                tvGroup.setTextSize(16);
-                tvGroup.setTextColor(android.graphics.Color.BLACK);
-                tvGroup.setTypeface(null, android.graphics.Typeface.BOLD);
-                container.addView(tvGroup);
-
-                // Thêm nội dung cuốc xe khách gõ
-                android.widget.TextView tvMsg = new android.widget.TextView(activity);
-                tvMsg.setText(msgText);
-                tvMsg.setTextSize(14);
-                tvMsg.setPadding(0, 10, 0, 20);
-                tvMsg.setTextColor(android.graphics.Color.DKGRAY);
-                container.addView(tvMsg);
-
-                // Hộp ngang chứa 2 nút Nhận và Bỏ Qua
-                android.widget.LinearLayout rowButtons = new android.widget.LinearLayout(activity);
-                rowButtons.setOrientation(android.widget.LinearLayout.HORIZONTAL);
-                rowButtons.setGravity(android.view.Gravity.CENTER);
-
-                // NÚT 1: BỎ QUA CUỐC XE
-                android.widget.Button btnIgnore = new android.widget.Button(activity);
-                btnIgnore.setText("BỎ QUA");
-                btnIgnore.setTextColor(android.graphics.Color.RED);
-                btnIgnore.setBackgroundColor(android.graphics.Color.parseColor("#FFEAEA"));
-                btnIgnore.setOnClickListener(v -> {
-                    // Chạm bỏ qua: Thu nhỏ bong bóng về trạng thái cũ ngay lập tức
-                    resetBubbleToIcon(activity);
-                });
-                rowButtons.addView(btnIgnore, new android.widget.LinearLayout.LayoutParams(250, 110));
-
-                // Khoảng cách giữa 2 nút
-                View space = new View(activity);
-                rowButtons.addView(space, new android.widget.LinearLayout.LayoutParams(40, 1));
-
-                // NÚT 2: NHẬN CUỐC (Bấm trực tiếp ghi đè chuẩn xác cuốc xe)
-                android.widget.Button btnAccept = new android.widget.Button(activity);
-                btnAccept.setText("NHẬN CUỐC");
-                btnAccept.setTextColor(android.graphics.Color.WHITE);
-                btnAccept.setBackgroundColor(android.graphics.Color.parseColor("#1A73E8"));
-                btnAccept.setOnClickListener(v -> {
-                    // ĐÃ SỬA: Lấy giờ phút thực tế ngay lúc tài xế bấm nút trên bong bóng
-                    String clickTime = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(new java.util.Date());
-                    
-                    // Truyền đủ tham số: nội dung cuốc xe (msgText) và thời gian thực (clickTime) xuống lõi xử lý
-                    sendReplyToSpecificMessage(activity, convId, msgId, "Ok nhận", msgText, clickTime);
-                    resetBubbleToIcon(activity);
-                });
-                rowButtons.addView(btnAccept, new android.widget.LinearLayout.LayoutParams(350, 110));
-
-                container.addView(rowButtons);
-                bubbleLayout.addView(container, new FrameLayout.LayoutParams(750, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-            } catch (Exception e) {
-                Log.e(TAG, "Loi showNewRideOnBubble: ", e);
-            }
-        });
-    }
-
-    // Hàm bổ trợ: Đưa bong bóng lớn thu gọn lại thành icon tròn sau khi thao tác xong
-    private static void resetBubbleToIcon(Context context) {
-        if (bubbleLayout == null) return;
-        bubbleLayout.removeAllViews();
-        android.widget.ImageView iconView = new android.widget.ImageView(context);
-        try {
-            String imgPath = context.getFilesDir().getAbsolutePath() + "/profile.jpg";
-            android.graphics.Bitmap bmp = android.graphics.BitmapFactory.decodeFile(imgPath);
-            if(bmp != null) iconView.setImageBitmap(bmp);
-            else iconView.setImageResource(android.R.drawable.ic_menu_call);
-        } catch(Exception ignored) {
-            iconView.setImageResource(android.R.drawable.ic_menu_call);
-        }
-        iconView.setBackgroundColor(android.graphics.Color.parseColor("#1A73E8"));
-        iconView.setPadding(20, 20, 20, 20);
-        bubbleLayout.addView(iconView, new FrameLayout.LayoutParams(150, 150));
     }
 }
