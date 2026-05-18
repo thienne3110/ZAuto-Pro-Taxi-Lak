@@ -891,8 +891,9 @@ class ZAutoProApp(MDApp):
                 # Kích hoạt UI Queue Processor chạy 0.1s/lần
                 Clock.schedule_interval(self._process_ui_queue, 0.1)
 
-                # THAY THẾ BROADCAST BẰNG POLLING HÀNG ĐỢI JAVA TỐC ĐỘ CAO
-                Clock.schedule_interval(self._poll_java_queue, 0.2)
+                # KÍCH HOẠT LUỒNG NGẦM HÚT TIN VÀ NUÔI WATCHDOG TRẮNG ĐÊM (CHỐNG SẬP)
+                self.poll_worker_thread = threading.Thread(target=self._java_poll_worker, daemon=True)
+                self.poll_worker_thread.start()
             except Exception as e:
                 logger.error(f"Lỗi on_start: {traceback.format_exc()}")
     def update_group_list_ui(self, groups):
@@ -1169,82 +1170,43 @@ class ZAutoProApp(MDApp):
         conversation_id = data.get('conversation_id', '')
 
         if not getattr(self, 'is_radar_running', False): return
-        # BẮT BUỘC: Nếu nhóm không được BẬT (hoặc không tồn tại), chặn đứng luôn!
         if not getattr(self, 'enabled_groups', {}).get(group, False): 
             return
 
         msg_clean = msg.strip()
         msg_low = msg_clean.lower()
         
-        # ==============================================================
-        # FIX 1: TÁCH TÊN NGƯỜI GỬI ĐỂ TRÁNH BẮT NHẦM TỪ KHÓA
-        # Biến "Team Holak: bmt2" thành "bmt2" (Chỉ lấy nội dung thực)
-        # ==============================================================
+        # Tách tên người gửi
         msg_content_only = msg_low
         if ": " in msg_content_only:
-            # Cắt bỏ phần Tên Người Gửi ở trước dấu ": "
             msg_content_only = msg_content_only.split(": ", 1)[1]
 
         raw_reply = self.config_data.get('reply_msg', 'Ok nhận')
         replies = [r.strip().lower() for r in raw_reply.split(',') if r.strip()]
         
-        # Nếu là tin do app tự trả lời (chứa "Ok nhận") thì bỏ qua luôn
+        # Bỏ qua tin do app tự trả lời
         if msg_content_only in replies or any(r in msg_content_only for r in replies):
             return 
 
-        is_voice = "tin nhắn thoại" in msg_low or "audio" in msg_low or "giọng nói" in msg_low or "âm thanh" in msg_low or "voice" in msg_low or "[tin nhắn thoại]" in msg_low
+        is_voice = (
+            "tin nhắn thoại" in msg_low or "audio" in msg_low or 
+            "giọng nói" in msg_low or "âm thanh" in msg_low or 
+            "voice" in msg_low or "[tin nhắn thoại]" in msg_low
+        )
         current_time = time.time()
-        
-        # ==============================================================
-        # FIX 2: BỘ ĐỆM THÔNG MINH CHO TỪNG LOẠI TIN NHẮN
-        # Tin chữ: Khóa cứng vĩnh viễn theo ID chống lặp tin.
-        # Tin thoại: Chặn trùng dồn dập, giải phóng hoàn toàn theo vòng đời luồng phát.
-        # ==============================================================
-        if is_voice:
-            cache_key = f"VOICE_{conversation_id}_{msg_id}"
-            display_msg = "🔊 CÓ BẢN GHI ÂM MỚI"
-            
-            # Nếu tin thoại này ĐANG TRONG QUÁ TRÌNH PHÁT (chưa bị xóa bởi luồng audio) -> Bỏ qua chống trùng
-            if cache_key in self.processed_msg_hashes:
-                return
-
-            # Chống quét lặp dồn dập cùng 1 nhóm trong vòng 3 giây
-            last_v_time = getattr(self, 'last_voice_times', {}).get(group, 0)
-            if current_time - last_v_time < 3.0: return 
-            if not hasattr(self, 'last_voice_times'): self.last_voice_times = {}
-            self.last_voice_times[group] = current_time
-        else:
-            cache_key = f"TEXT_{conversation_id}_{msg_id}"
-            display_msg = msg
-            
-            # Kiểm tra trùng lặp cho tin chữ (Khóa cứng vĩnh viễn)
-            if cache_key in self.processed_msg_hashes:
-                return
-
-        # Ghi lại mốc thời gian nhận tin vào bộ đệm
-        self.processed_msg_hashes[cache_key] = current_time
-
-        # ==============================================================
-        # BỘ LỌC TỪ KHÓA ĐÃ ĐƯỢC NÂNG CẤP (CHỈ QUÉT TRÊN NỘI DUNG THỰC TẾ)
-        # ==============================================================
         sw_filter_active = self.config_data.get('sw_filter', False)
-        if sw_filter_active and not is_voice:
-            loai_keys = [k.strip() for k in self.config_data.get('loai', '').lower().split(',') if k.strip()]
-            # Dùng msg_content_only để quét, tránh dính chữ trong tên người gửi
-            if loai_keys and any(lk in msg_content_only for lk in loai_keys): return
-            
-            nhan_keys = [k.strip() for k in self.config_data.get('nhan', '').lower().split(',') if k.strip()]
-            if nhan_keys and not any(nk in msg_content_only for nk in nhan_keys): return
 
         # ==============================================================
-        # XỬ LÝ ĐỘC LẬP CHO TIN NHẮN THOẠI (BỎ QUA NÚT AUTO)
+        # PHÂN LUỒNG NGAY TỪ ĐẦU: VOICE vs TEXT
         # ==============================================================
         if is_voice:
-            # --- 1. Bóc tách Số giây và Tên người gửi từ chuỗi cấu trúc mới ---
-            duration = -1 # Mặc định là -1 (Lỗi)
+            # ============================================================
+            # 🔊 LUỒNG VOICE
+            # Quy tắc: KHÔNG lọc từ khóa, LUÔN hiện, tự play, KHÔNG auto chốt
+            # ============================================================
+            duration = -1 
             clean_msg_text = msg
             
-            # Tách lấy số giây Java đính kèm ở cuối chuỗi
             if "%%%" in msg:
                 msg_parts = msg.split("%%%")
                 clean_msg_text = msg_parts[0]
@@ -1255,32 +1217,40 @@ class ZAutoProApp(MDApp):
             if ": " in clean_msg_text:
                 sender_name = clean_msg_text.split(": ", 1)[0].strip()
 
-            # --- 2. TẠO CHÌA KHÓA THÔNG MINH (Ghép thêm số giây vào ID) ---
-            cache_key = f"VOICE_{conversation_id}_{msg_id}_{duration}"
+            # --- Định danh nội dung tin thoại ---
+            content_key = f"CONTENT_VOICE_{conversation_id}_{sender_name}_{duration}"
+            
+            # 🛡️ TẦNG 1: Chống lặp nội dung trong 8 giây (chống Zalo tráo ID nổ 2 lần)
+            if content_key in self.processed_msg_hashes:
+                last_seen = self.processed_msg_hashes[content_key]
+                if current_time - last_seen < 8.0:
+                    # FIX TỬ HUYỆT: Vẫn cập nhật ID thật vào Két Sắt Vĩnh Viễn trước khi chặn!
+                    if not msg_id.startswith("TIME_"):
+                        self.processed_msg_hashes[f"PERM_VOICE_{conversation_id}_{msg_id}_{duration}"] = current_time
+                    return
+                    
+            self.processed_msg_hashes[content_key] = current_time
+
+            # 🛡️ TẦNG 2: Chống Zombie Reload bằng ID thật (Két Sắt Vĩnh Viễn)
+            if not msg_id.startswith("TIME_"):
+                perm_key = f"PERM_VOICE_{conversation_id}_{msg_id}_{duration}"
+                if perm_key in self.processed_msg_hashes:
+                    return
+                self.processed_msg_hashes[perm_key] = current_time
+            else:
+                perm_key = content_key
+
+            # ✅ Vượt qua 2 tầng -> Xếp hàng Play âm thanh
             display_msg = "🔊 CÓ BẢN GHI ÂM MỚI"
 
-            # KHÓA CỨNG: Nếu đã từng phát tin có ID và độ dài y hệt thế này rồi -> Chặn lại
-            if cache_key in self.processed_msg_hashes:
-                return
-
-            # Ghi nhớ mốc thời gian nhận tin vào bộ não
-            self.processed_msg_hashes[cache_key] = current_time
-
-            # Chống spam: Nếu cùng 1 nhóm mà nhảy liên tục dưới 3 giây -> Chặn
-            last_v_time = getattr(self, 'last_voice_times', {}).get(group, 0)
-            if current_time - last_v_time < 3.0: return 
-            if not hasattr(self, 'last_voice_times'): self.last_voice_times = {}
-            self.last_voice_times[group] = current_time
-
-            # --- 3. Đẩy vào hàng đợi để phát âm thanh tự động ---
             if platform == 'android':
                 try:
-                    self.audio_queue.put_nowait((conversation_id, msg_id, cache_key, duration))
+                    self.audio_queue.put_nowait((conversation_id, msg_id, perm_key, duration))
                 except queue.Full: pass
             
-            # --- 4. Đẩy ra UI Tab Canh Me ---
+            # Nổ UI Canh Me
             try:
-                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
+                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, perm_key)))
                 self.ui_queue.put_nowait(('log', (group, display_msg)))
                 
                 if self.config_data.get('sw_voice', True):
@@ -1295,28 +1265,65 @@ class ZAutoProApp(MDApp):
                         self.ui_queue.put_nowait(('speak', f"Có tin nhắn thoại từ nhóm {clean_group}"))
             except queue.Full: pass
             
-            return
+            return # NGẮT HÀM - Không Auto Chốt đối với Voice
 
-        # ==============================================================
-        # XỬ LÝ CHO TIN NHẮN CHỮ (TEXT) - LUÔN BÁO TRƯỚC, CHỐT SAU
-        # ==============================================================
-        # 1. BÁO CÁO NGAY LẬP TỨC LÊN UI VÀ ĐỌC ÂM THANH (Dù bật hay tắt Auto đều báo)
-        try:
-            self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
-            self.ui_queue.put_nowait(('log', (group, display_msg)))
-            if self.config_data.get('sw_bubble', True):
-                self.ui_queue.put_nowait(('bubble', (group, display_msg, conversation_id, msg_id)))
-            if self.config_data.get('sw_voice', True):
-                clean_group = re.sub(r'[^\w\s]', '', group)
-                self.ui_queue.put_nowait(('speak', f"Chú ý có cuốc xe mới từ nhóm {clean_group}"))
-        except queue.Full: pass
+        else:
+            # ============================================================
+            # 💬 LUỒNG TEXT
+            # Quy tắc: Tắt Filter -> Hiện full. Bật Filter -> Chỉ hiện từ khóa. Auto chốt chờ delay.
+            # ============================================================
+            
+            # --- Lọc từ khóa (Chỉ chạy khi Nút Filter BẬT) ---
+            if sw_filter_active:
+                loai_keys = [k.strip() for k in self.config_data.get('loai', '').lower().split(',') if k.strip()]
+                if loai_keys and any(lk in msg_content_only for lk in loai_keys): 
+                    return # Nằm trong từ khóa loại -> Bỏ qua
+                
+                nhan_keys = [k.strip() for k in self.config_data.get('nhan', '').lower().split(',') if k.strip()]
+                if nhan_keys and not any(nk in msg_content_only for nk in nhan_keys): 
+                    return # Không có từ khóa nhận -> Bỏ qua
 
-        # 2. KIỂM TRA NÚT AUTO -> NẾU BẬT THÌ ĐƯA VÀO HÀNG ĐỢI CHỐT
-        sw_auto_active = self.config_data.get('sw_auto', False)
-        if sw_auto_active:
-            final_reply = random.choice(replies) if replies else "Ok nhận"
-            # Đẩy lệnh vào hàng đợi, hệ thống sẽ tự động chờ hết thời gian delay rồi mới gửi "Ok nhận"
-            self.queue_reply(group, conversation_id, msg_id, final_reply, display_msg)
+            # --- Định danh nội dung tin chữ bằng Hash ---
+            content_hash = hashlib.md5(msg_clean.encode('utf-8')).hexdigest()[:12]
+            content_key = f"CONTENT_TEXT_{conversation_id}_{content_hash}"
+
+            # 🛡️ TẦNG 1: Chống lặp nội dung trong 8 giây (Chống Zalo tráo ID)
+            if content_key in self.processed_msg_hashes:
+                last_seen = self.processed_msg_hashes[content_key]
+                if current_time - last_seen < 8.0:
+                    # FIX TỬ HUYỆT: Cập nhật ID thật vào Két Sắt Vĩnh Viễn trước khi chặn!
+                    if not msg_id.startswith("TIME_"):
+                        self.processed_msg_hashes[f"PERM_TEXT_{conversation_id}_{msg_id}"] = current_time
+                    return
+                    
+            self.processed_msg_hashes[content_key] = current_time
+
+            # 🛡️ TẦNG 2: Chống Zombie Reload bằng ID thật (Két Sắt Vĩnh Viễn)
+            if not msg_id.startswith("TIME_"):
+                perm_key = f"PERM_TEXT_{conversation_id}_{msg_id}"
+                if perm_key in self.processed_msg_hashes:
+                    return
+                self.processed_msg_hashes[perm_key] = current_time
+            else:
+                perm_key = content_key
+
+            # ✅ Vượt qua 2 tầng -> Nổ Canh me
+            display_msg = msg
+            try:
+                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, perm_key)))
+                self.ui_queue.put_nowait(('log', (group, display_msg)))
+                if self.config_data.get('sw_bubble', True):
+                    self.ui_queue.put_nowait(('bubble', (group, display_msg, conversation_id, msg_id)))
+                if self.config_data.get('sw_voice', True):
+                    clean_group = re.sub(r'[^\w\s]', '', group)
+                    self.ui_queue.put_nowait(('speak', f"Chú ý có cuốc xe mới từ nhóm {clean_group}"))
+            except queue.Full: pass
+
+            # 🚗 AUTO CHỐT (Chỉ áp dụng cho Text và tuân thủ Delay Queue)
+            sw_auto_active = self.config_data.get('sw_auto', False)
+            if sw_auto_active:
+                final_reply = random.choice(replies) if replies else "Ok nhận"
+                self.queue_reply(group, conversation_id, msg_id, final_reply, display_msg)
 
     def _system_watchdog(self, dt):
         """Khôi phục Worker, Tối ưu RAM và chặn nhân bản Thread"""
@@ -1378,7 +1385,9 @@ class ZAutoProApp(MDApp):
                         if zalo_avatar: self.config_data['zalo_avatar'] = zalo_avatar
                         self.save_config_silent()
                         self.update_profile_ui()
-                        toast("Đã liên kết Zalo Web thành công!")
+                        
+                        # ĐÃ FIX: Thay toast trực tiếp bằng safe_toast để chạy an toàn trên luồng ngầm, chống văng app!
+                        self.safe_toast("Đã liên kết Zalo Web thành công!")
                         
                     elif action == 'GROUPS_DATA':
                         groups_json = parts[1] if len(parts) > 1 else ""
@@ -1403,6 +1412,35 @@ class ZAutoProApp(MDApp):
                             except queue.Full: pass
             except Exception as e:
                 pass # Bỏ qua lỗi jnius khi khởi động
+    def _java_poll_worker(self):
+        """Worker cào dữ liệu từ Java ngầm 24/24 và kiêm luôn Báo thức Zalo"""
+        tick_count = 0
+        while getattr(self, 'app_running', True):
+            try:
+                # 1. Hút tin nhắn từ Java về liên tục
+                self._poll_java_queue(None)
+                
+                # 2. BÁO THỨC ZALO & NUÔI WATCHDOG (Chống ngâm tin 5 phút)
+                tick_count += 1
+                if tick_count >= 10:  # Cứ 2 giây (10 vòng * 0.2s) châm kim 1 lần
+                    tick_count = 0
+                    if platform == 'android' and getattr(self, 'is_linked', False):
+                        try:
+                            from jnius import autoclass
+                            mgr = autoclass('org.zauto.ZaloWebManager')
+                            # Ép Zalo quẹt chuột ảo chống ngủ đông core
+                            mgr.forceWakeup()
+                            
+                            # BƠM NHỊP TIM GIẢ: Ngăn Java reload trang khi ẩn nền
+                            System = autoclass('java.lang.System')
+                            mgr.lastHeartbeat = System.currentTimeMillis()
+                        except:
+                            pass
+            except Exception:
+                pass
+            
+            # Quét tốc độ cao 0.2s/lần
+            time.sleep(0.2)            
 
     def add_ride_card(self, group, msg, msg_id="", conversation_id="", cache_key=""):
         try:
@@ -1446,9 +1484,12 @@ class ZAutoProApp(MDApp):
         except:
             user_delay = 30.0
 
-        time_passed = now - getattr(self, 'last_global_reply_time', 0)
-        if time_passed < user_delay:
-            return 
+        # THÊM LOCK BẢO VỆ CHỐNG TRÙNG LẶP CHỐT ĐÔI CUỐC XE CHUẨN REALTIME
+        with self.reply_time_lock:
+            time_passed = now - getattr(self, 'last_global_reply_time', 0)
+            if time_passed < user_delay:
+                return 
+            self.last_global_reply_time = now # Cập nhật thời gian khóa ngay lập tức trong Lock
 
         cache_key = f"{conversation_id}_{msg_id}_{hashlib.md5(reply_text.encode('utf-8')).hexdigest()[:6]}"
         if now - self.last_reply_time.get(cache_key, 0) < 10: return 
@@ -1457,7 +1498,6 @@ class ZAutoProApp(MDApp):
         if self.reply_queue.qsize() > 40: return
         
         try:
-            self.last_global_reply_time = now 
             self.reply_queue.put({
                 'group': group, 'conversation_id': conversation_id, 'msg_id': msg_id, 'reply_text': reply_text, 'msg_content': msg_content
             }, timeout=0.3)
@@ -1660,7 +1700,7 @@ class ZAutoProApp(MDApp):
         self.is_linked = False
         
         # Tối ưu RAM: Giảm Cache xuống 300 chống Leak
-        self.processed_msg_hashes = LRUCache(maxsize=300)
+        self.processed_msg_hashes = LRUCache(maxsize=1000)
         self.global_last_reply = 0
         self.last_reply_time = LRUCache(maxsize=200)
         
