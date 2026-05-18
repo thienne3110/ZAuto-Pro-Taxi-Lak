@@ -35,9 +35,9 @@ jobs:
             ~/.gradle/caches
             ~/.gradle/wrapper
             ~/.cache/pip
-          key: ${{ runner.os }}-zauto-v17-${{ hashFiles('buildozer.spec') }}
+          key: ${{ runner.os }}-zauto-v18-${{ hashFiles('buildozer.spec') }}
           restore-keys: |
-            ${{ runner.os }}-zauto-v17-
+            ${{ runner.os }}-zauto-v18-
 
       - name: Install System Packages
         run: |
