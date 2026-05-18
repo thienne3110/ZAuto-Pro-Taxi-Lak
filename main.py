@@ -1384,9 +1384,9 @@ class ZAutoProApp(MDApp):
                         if zalo_name: self.config_data['zalo_name'] = zalo_name
                         if zalo_avatar: self.config_data['zalo_avatar'] = zalo_avatar
                         self.save_config_silent()
-                        self.update_profile_ui()
                         
-                        # ĐÃ FIX: Thay toast trực tiếp bằng safe_toast để chạy an toàn trên luồng ngầm, chống văng app!
+                        # FIX AN TOÀN LUỒNG: Đẩy lệnh cập nhật giao diện Profile lên Luồng UI chính
+                        Clock.schedule_once(lambda dt: self.update_profile_ui(), 0)
                         self.safe_toast("Đã liên kết Zalo Web thành công!")
                         
                     elif action == 'GROUPS_DATA':
@@ -1394,7 +1394,8 @@ class ZAutoProApp(MDApp):
                         if groups_json:
                             try:
                                 groups = json.loads(groups_json)
-                                self.update_group_list_ui(groups)
+                                # FIX CHÍ MẠNG: Ép Kivy vẽ và nổ danh sách nhóm trên Luồng UI chính (Main Thread)
+                                Clock.schedule_once(lambda dt, g=groups: self.update_group_list_ui(g), 0)
                             except Exception as e:
                                 logger.error(f"GROUPS_DATA Error: {e}")
                                 
@@ -1405,7 +1406,7 @@ class ZAutoProApp(MDApp):
                         conv_id = parts[4] if len(parts) > 4 else ""
                         
                         if group and msg:
-                            # ĐÃ FIX: Chỉ đẩy duy nhất 1 lần vào máy quét, dọn sạch code thừa gây nhân đôi tin nhắn
+                            # ĐƠN GIẢN HÓA: Đẩy dữ liệu vào hàng đợi xử lý tuần tự
                             payload = {'group': group, 'msg': msg, 'msg_id': msg_id, 'conversation_id': conv_id}
                             try:
                                 self.msg_queue.put(('WEB_NEW_MSG', payload), timeout=0.3)
