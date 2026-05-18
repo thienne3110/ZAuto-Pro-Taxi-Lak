@@ -119,232 +119,173 @@ public class ZaloWebManager {
     // =========================================================
     // GỬI TIN NHẮN REPLY VÀO NHÓM CỤ THỂ (NÂNG CẤP CLICK ĐÚP + ENTER)
     // =========================================================
+    // =========================================================
+    // GỬI TIN NHẮN REPLY VÀO NHÓM CỤ THỂ (NÂNG CẤP API + UI CLICK KÉP)
+    // =========================================================
     public static void sendReplyToSpecificMessage(
-        final Activity activity,
-        final String conversationId,
-        final String msgId,
-        final String text,
-        final String msgTextToFind,
-        final String sentTime) {
+            final Activity activity,
+            final String conversationId,
+            final String msgId,
+            final String text,
+            final String msgTextToFind,
+            final String sentTime) {
 
-    Activity safeActivity = activityRef != null ? activityRef.get() : activity;
-    if (safeActivity == null || hiddenWebView == null) return;
+        Activity safeActivity = activityRef != null ? activityRef.get() : activity;
+        if (safeActivity == null || hiddenWebView == null) return;
 
-    replyQueue.add(() -> safeActivity.runOnUiThread(() -> {
-        try {
-            String safeReply = escapeJs(text);
-            String safeSearchText = escapeJs(msgTextToFind != null ? msgTextToFind : "");
-            String safeMsgId = escapeJs(msgId != null ? msgId : "");
-            String safeTime = escapeJs(sentTime != null ? sentTime : "");
-            String safeConvId = escapeJs(conversationId != null ? conversationId : "");
+        replyQueue.add(() -> safeActivity.runOnUiThread(() -> {
+            try {
+                String safeReply = escapeJs(text);
+                String safeSearchText = escapeJs(msgTextToFind != null ? msgTextToFind : "");
+                String safeMsgId = escapeJs(msgId != null ? msgId : "");
+                String safeTime = escapeJs(sentTime != null ? sentTime : "");
+                String safeConvId = escapeJs(conversationId != null ? conversationId : "");
 
-            String jsCode =
-            "(function() {" +
-            "try {" +
+                String jsCode =
+                "(function() {" +
+                "try {" +
+                "   var convId = '" + safeConvId + "';" +
+                "   var safeReply = '" + safeReply + "';" +
+                "   var safeSearchText = '" + safeSearchText + "';" +
+                "   var targetMsgId = '" + safeMsgId + "';" +
+                "   var targetTime = '" + safeTime + "';" +
 
-            // =========================================================
-            // BƯỚC 1: VÀO ĐÚNG NHÓM CẦN CHỐT
-            // Tìm nhóm theo conversationId, click vào để mở màn hình chat
-            // =========================================================
-            "   var convId = '" + safeConvId + "';" +
-            "   var safeReply = '" + safeReply + "';" +
-            "   var safeSearchText = '" + safeSearchText + "';" +
-            "   var targetMsgId = '" + safeMsgId + "';" +
-            "   var targetTime = '" + safeTime + "';" +
+                // =========================================================
+                // BƯỚC 1: VÀO ĐÚNG NHÓM CẦN CHỐT
+                // =========================================================
+                "   function openGroup(callback) {" +
+                "       var groupItem = document.querySelector('.msg-item[anim-data-id=\"' + convId + '\"] .conv-item')" +
+                "                    || document.querySelector('.msg-item[anim-data-id=\"' + convId + '\"]');" +
+                "       if (!groupItem) {" +
+                "           callback(false); return;" +
+                "       }" +
+                "       groupItem.scrollIntoView({block: 'center'});" +
+                "       groupItem.click();" +
+                "       var key = Object.keys(groupItem).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
+                "       if (key && groupItem[key]) {" +
+                "           var handler = groupItem[key].onClick || (groupItem[key].return && groupItem[key].return.memoizedProps && groupItem[key].return.memoizedProps.onClick);" +
+                "           if (handler) handler({preventDefault:()=>{}, stopPropagation:()=>{}});" +
+                "       }" +
+                "       setTimeout(() => callback(true), 2000);" + // Chờ 2000ms như bạn phân tích cho Android 10
+                "   }" +
 
-            "   function openGroup(callback) {" +
-            "       var groupItem = document.querySelector('.msg-item[anim-data-id=\"' + convId + '\"] .conv-item')" +
-            "                    || document.querySelector('.msg-item[anim-data-id=\"' + convId + '\"]');" +
-            "       if (!groupItem) {" +
-            "           callback(false); return;" +
-            "       }" +
-            // Scroll nhóm vào tầm nhìn
-            "       groupItem.scrollIntoView({block: 'center'});" +
-            // Click thường để mở
-            "       groupItem.click();" +
-            // Click React Fiber để đảm bảo
-            "       var key = Object.keys(groupItem).find(k =>" +
-            "           k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
-            "       if (key && groupItem[key]) {" +
-            "           var handler = groupItem[key].onClick" +
-            "               || (groupItem[key].return && groupItem[key].return.memoizedProps && groupItem[key].return.memoizedProps.onClick);" +
-            "           if (handler) handler({preventDefault:()=>{}, stopPropagation:()=>{}});" +
-            "       }" +
-            // Chờ màn hình chat load - Android 10 cần 2 giây
-            "       setTimeout(() => callback(true), 2000);" +
-            "   }" +
+                // =========================================================
+                // BƯỚC 2: TÌM TIN CẦN REPLY (SCROLL TỚI CHỖ ĐÓ)
+                // =========================================================
+                "   function findTargetMessage() {" +
+                "       var targetNode = null;" +
+                "       if (targetMsgId && !targetMsgId.startsWith('TIME_') && targetMsgId.length > 3) {" +
+                "           targetNode = document.querySelector('[data-msg-id=\"' + targetMsgId + '\"]') || document.querySelector('div[id*=\"' + targetMsgId + '\"]');" +
+                "       }" +
+                "       if (!targetNode && safeSearchText && safeSearchText.length > 2) {" +
+                "           var isVoice = safeSearchText.toLowerCase().includes('ghi âm') || safeSearchText.toLowerCase().includes('thoại') || safeSearchText.toLowerCase().includes('audio');" +
+                "           var allItems = document.querySelectorAll('.chat-item, .message-item, [class*=\"message\"], [class*=\"chat-bubble\"], div[id^=\"msg_\"], div[id^=\"msg-\"]');" +
+                "           for (var i = allItems.length - 1; i >= 0; i--) {" +
+                "               var el = allItems[i];" +
+                "               var elText = (el.innerText || el.textContent || '').trim();" +
+                "               if (isVoice) {" +
+                "                   var elHtml = el.innerHTML ? el.innerHTML.toLowerCase() : '';" +
+                "                   if (elHtml.includes('audio') || elHtml.includes('voice') || elHtml.includes('ico-voice')) {" +
+                "                       if (!targetTime || elText.includes(targetTime)) { targetNode = el; break; }" +
+                "                   }" +
+                "               } else {" +
+                "                   if (elText.includes(safeSearchText) && (!targetTime || elText.includes(targetTime))) { targetNode = el; break; }" +
+                "               }" +
+                "           }" +
+                "       }" +
+                "       if (!targetNode) {" +
+                "           var allMsgs = document.querySelectorAll('div[id^=\"msg_\"], div[id^=\"msg-\"], .chat-item, .message-item');" +
+                "           if (allMsgs.length > 0) targetNode = allMsgs[allMsgs.length - 1];" +
+                "       }" +
+                "       return targetNode;" +
+                "   }" +
 
-            // =========================================================
-            // BƯỚC 2: TÌM ĐÚNG TIN CẦN REPLY VÀ SCROLL ĐẾN NÓ
-            // Tìm theo msgId trước, fallback sang text+time, fallback tin cuối
-            // =========================================================
-            "   function findTargetMessage() {" +
-            "       var targetNode = null;" +
+                // =========================================================
+                // BƯỚC 3: DÙNG API NỘI BỘ (VŨ KHÍ TỐI THƯỢNG) HOẶC UI FALLBACK CỦA BẠN
+                // =========================================================
+                "   function executeSend(targetNode) {" +
+                "       let realQuoteId = targetMsgId;" +
+                "       if (targetNode) {" +
+                "           targetNode.scrollIntoView({block: 'center', behavior: 'smooth'});" +
+                "           let nid = targetNode.getAttribute('data-msg-id') || targetNode.id || '';" +
+                "           if(nid.length > 4) realQuoteId = nid.replace('msg-', '').replace('msg_', '');" +
+                "       }" +
 
-            // Ưu tiên 1: Tìm theo msg_id chính xác nhất
-            "       if (targetMsgId && !targetMsgId.startsWith('TIME_') && targetMsgId.length > 3) {" +
-            "           targetNode = document.querySelector('[data-msg-id=\"' + targetMsgId + '\"]')" +
-            "                     || document.querySelector('div[id*=\"' + targetMsgId + '\"]');" +
-            "       }" +
+                // 3A. Thử bắn bằng API Ngầm trước (Tỉ lệ thành công 100% trong nền)
+                "       if (window.zMessenger && typeof window.zMessenger.sendMessage === 'function') {" +
+                "           let req = { toid: convId, msg: safeReply, type: 1 };" +
+                "           if (realQuoteId && !realQuoteId.startsWith('TIME_')) req.quote_msgId = realQuoteId;" +
+                "           window.zMessenger.sendMessage(req);" +
+                "           ZAutoBridge.onLoginSuccess('Đã chốt Auto API:', '');" +
+                "       } else {" +
+                // 3B. Nếu mất API -> Dùng UI Click đúp & TypeAndSend (Code tối ưu của bạn)
+                "           if (targetNode) {" +
+                "               setTimeout(() => {" +
+                "                   var rect = targetNode.getBoundingClientRect();" +
+                "                   var clickX = rect.right - 20; var clickY = rect.top + (rect.height / 2);" +
+                "                   var dblEvt = new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window, clientX: clickX, clientY: clickY });" +
+                "                   targetNode.dispatchEvent(dblEvt);" +
+                "                   var rKey = Object.keys(targetNode).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
+                "                   if (rKey && targetNode[rKey]) {" +
+                "                       var dblHandler = targetNode[rKey].onDoubleClick || (targetNode[rKey].return && targetNode[rKey].return.memoizedProps && targetNode[rKey].return.memoizedProps.onDoubleClick);" +
+                "                       if (dblHandler) dblHandler({ preventDefault:()=>{}, stopPropagation:()=>{}, clientX: clickX, clientY: clickY });" +
+                "                   }" +
+                "                   setTimeout(typeAndSendUI, 800);" + // Chờ UI Reply mở ra
+                "               }, 500);" + // Chờ scrollIntoView xong
+                "           } else {" +
+                "               typeAndSendUI();" + 
+                "           }" +
+                "       }" +
+                "   }" +
 
-            // Ưu tiên 2: Tìm theo nội dung text + giờ gửi
-            "       if (!targetNode && safeSearchText && safeSearchText.length > 2) {" +
-            "           var isVoice = safeSearchText.toLowerCase().includes('ghi âm')" +
-            "               || safeSearchText.toLowerCase().includes('thoại')" +
-            "               || safeSearchText.toLowerCase().includes('audio');" +
+                // =========================================================
+                // BƯỚC 4: GÕ VÀ GỬI (NẾU API XỊT)
+                // =========================================================
+                "   function typeAndSendUI() {" +
+                "       var input = document.querySelector('#richInput') || document.querySelector('[contenteditable=\"true\"]') || document.querySelector('.chat-input');" +
+                "       if (!input) return;" +
+                "       input.focus(); input.innerHTML = safeReply;" +
+                "       input.dispatchEvent(new Event('input', {bubbles: true}));" +
+                "       input.dispatchEvent(new Event('change', {bubbles: true}));" +
+                "       setTimeout(() => {" +
+                "           var btnSend = null;" +
+                "           var selectors = ['#chat-input-container-id .send-msg-btn', '.fa-Sent-msg_24_Line', '[data-translate-title=\"STR_SEND\"]', '.send-msg-btn'];" +
+                "           for (var s of selectors) { var el = document.querySelector(s); if (el) { btnSend = el; break; } }" +
+                "           if (btnSend) {" +
+                "               var tgt = btnSend.closest('.z--btn--v2') || btnSend.parentNode || btnSend;" +
+                "               tgt.click();" +
+                "               var bk = Object.keys(tgt).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
+                "               if (bk && tgt[bk] && tgt[bk].onClick) tgt[bk].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
+                "           }" +
+                "           var enterEvt = new KeyboardEvent('keydown', { bubbles: true, cancelable: true, keyCode: 13, which: 13, key: 'Enter', code: 'Enter' });" +
+                "           input.dispatchEvent(enterEvt);" +
+                "           ZAutoBridge.onLoginSuccess('Đã chốt Auto UI:', '');" +
+                "       }, 400);" +
+                "   }" +
 
-            "           var allItems = document.querySelectorAll(" +
-            "               '.chat-item, .message-item, [class*=\"message\"], [class*=\"chat-bubble\"]," +
-            "                div[id^=\"msg_\"], div[id^=\"msg-\"]'" +
-            "           );" +
+                // =========================================================
+                // LUỒNG THỰC THI CHÍNH
+                // =========================================================
+                "   openGroup(function(opened) {" +
+                "       if (!opened) {" +
+                "           console.log('ZAuto: Khong mo duoc nhom, huy bo chot de tranh gui nham!');" +
+                "           return;" + // <--- ĐÃ FIX LỖI 1: NẾU KHÔNG MỞ ĐƯỢC ĐÚNG NHÓM, CẤM GỬI!
+                "       }" +
+                "       var targetNode = findTargetMessage();" +
+                "       executeSend(targetNode);" +
+                "   });" +
 
-            "           for (var i = allItems.length - 1; i >= 0; i--) {" +
-            "               var el = allItems[i];" +
-            "               var elText = (el.innerText || el.textContent || '').trim();" +
-            "               if (isVoice) {" +
-            "                   var elHtml = el.innerHTML ? el.innerHTML.toLowerCase() : '';" +
-            "                   if (elHtml.includes('audio') || elHtml.includes('voice') || elHtml.includes('ico-voice')) {" +
-            "                       if (!targetTime || elText.includes(targetTime)) {" +
-            "                           targetNode = el; break;" +
-            "                       }" +
-            "                   }" +
-            "               } else {" +
-            "                   if (elText.includes(safeSearchText) && (!targetTime || elText.includes(targetTime))) {" +
-            "                       targetNode = el; break;" +
-            "                   }" +
-            "               }" +
-            "           }" +
-            "       }" +
+                "} catch(e) { console.log('ZAuto Reply Error:', e); }" +
+                "})();";
 
-            // Ưu tiên 3: Lấy tin cuối cùng trong chat
-            "       if (!targetNode) {" +
-            "           var allMsgs = document.querySelectorAll(" +
-            "               'div[id^=\"msg_\"], div[id^=\"msg-\"], .chat-item, .message-item'" +
-            "           );" +
-            "           if (allMsgs.length > 0) targetNode = allMsgs[allMsgs.length - 1];" +
-            "       }" +
+                hiddenWebView.evaluateJavascript(jsCode, null);
+            } catch (Exception e) {
+                Log.e(TAG, "Reply Engine Error", e);
+            }
+        }));
 
-            "       return targetNode;" +
-            "   }" +
-
-            // =========================================================
-            // BƯỚC 3: CLICK ĐÚP VÀO VÙNG CẠNH TIN ĐỂ HIỆN Ô REPLY
-            // Đây là thao tác kích hoạt chức năng Quote Reply của Zalo
-            // Phải scroll đến tin trước, rồi mới double click
-            // =========================================================
-            "   function doubleClickMessage(node, callback) {" +
-            "       if (!node) { callback(false); return; }" +
-
-            // Scroll đến tin cần reply để nó nằm trong viewport
-            "       node.scrollIntoView({block: 'center', behavior: 'smooth'});" +
-
-            "       setTimeout(() => {" +
-            // Tính tọa độ vùng cạnh tin nhắn (bên phải nội dung)
-            "           var rect = node.getBoundingClientRect();" +
-            "           var clickX = rect.right - 20;" + // Vùng cạnh bên phải
-            "           var clickY = rect.top + (rect.height / 2);" +
-
-            // Tạo sự kiện double click tại đúng vị trí đó
-            "           var dblEvt = new MouseEvent('dblclick', {" +
-            "               bubbles: true, cancelable: true, view: window," +
-            "               clientX: clickX, clientY: clickY" +
-            "           });" +
-            "           node.dispatchEvent(dblEvt);" +
-
-            // Kích hoạt thêm qua React Fiber để đảm bảo
-            "           var rKey = Object.keys(node).find(k =>" +
-            "               k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
-            "           if (rKey && node[rKey]) {" +
-            "               var dblHandler = node[rKey].onDoubleClick" +
-            "                   || (node[rKey].return && node[rKey].return.memoizedProps && node[rKey].return.memoizedProps.onDoubleClick);" +
-            "               if (dblHandler) dblHandler({" +
-            "                   preventDefault:()=>{}, stopPropagation:()=>{}," +
-            "                   clientX: clickX, clientY: clickY" +
-            "               });" +
-            "           }" +
-
-            // Chờ ô reply xuất hiện
-            "           setTimeout(() => callback(true), 800);" +
-            "       }, 500);" + // Chờ scroll xong
-            "   }" +
-
-            // =========================================================
-            // BƯỚC 4: GÕ NỘI DUNG VÀ GỬI TIN
-            // Thử API nội bộ Zalo trước, fallback sang UI click nút gửi
-            // =========================================================
-            "   function typeAndSend() {" +
-            "       var input = document.querySelector('#richInput')" +
-            "               || document.querySelector('[contenteditable=\"true\"]')" +
-            "               || document.querySelector('.chat-input');" +
-
-            "       if (!input) { return; }" +
-
-            "       input.focus();" +
-            "       input.innerHTML = safeReply;" +
-            "       input.dispatchEvent(new Event('input', {bubbles: true}));" +
-            "       input.dispatchEvent(new Event('change', {bubbles: true}));" +
-
-            "       setTimeout(() => {" +
-            // Thử click nút gửi
-            "           var btnSend = null;" +
-            "           var selectors = [" +
-            "               '#chat-input-container-id .send-msg-btn'," +
-            "               '.fa-Sent-msg_24_Line'," +
-            "               '[data-translate-title=\"STR_SEND\"]'," +
-            "               '.send-msg-btn'" +
-            "           ];" +
-            "           for (var s of selectors) {" +
-            "               var el = document.querySelector(s);" +
-            "               if (el) { btnSend = el; break; }" +
-            "           }" +
-
-            "           if (btnSend) {" +
-            "               var tgt = btnSend.closest('.z--btn--v2') || btnSend.parentNode || btnSend;" +
-            "               tgt.click();" +
-            "               var bk = Object.keys(tgt).find(k =>" +
-            "                   k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
-            "               if (bk && tgt[bk] && tgt[bk].onClick)" +
-            "                   tgt[bk].onClick({preventDefault:()=>{}, stopPropagation:()=>{}});" +
-            "           }" +
-
-            // Bổ sung Enter để đảm bảo gửi
-            "           var enterEvt = new KeyboardEvent('keydown', {" +
-            "               bubbles: true, cancelable: true," +
-            "               keyCode: 13, which: 13, key: 'Enter', code: 'Enter'" +
-            "           });" +
-            "           input.dispatchEvent(enterEvt);" +
-
-            "           ZAutoBridge.onLoginSuccess('Đã chốt xong!', '');" +
-            "       }, 400);" +
-            "   }" +
-
-            // =========================================================
-            // LUỒNG THỰC THI CHÍNH: Tuần tự từng bước
-            // Bước 1 → Bước 2 → Bước 3 → Bước 4
-            // =========================================================
-            "   openGroup(function(opened) {" +
-            "       if (!opened) {" +
-            // Không tìm thấy nhóm → vẫn thử gửi vào nhóm đang mở
-            "           typeAndSend(); return;" +
-            "       }" +
-            "       var targetNode = findTargetMessage();" +
-            "       doubleClickMessage(targetNode, function(clicked) {" +
-            "           typeAndSend();" +
-            "       });" +
-            "   });" +
-
-            "} catch(e) { console.log('ZAuto Reply Error:', e); }" +
-            "})();";
-
-            hiddenWebView.evaluateJavascript(jsCode, null);
-
-        } catch (Exception e) {
-            Log.e(TAG, "Reply Engine Error", e);
-        }
-    }));
-
-    safeActivity.runOnUiThread(ZaloWebManager::processReplyQueue);
-}
+        safeActivity.runOnUiThread(ZaloWebManager::processReplyQueue);
+    }
 
     // =========================================================
     // JAVA BRIDGE → NÉM VÀO RAM PYTHON THAY VÌ BROADCAST
