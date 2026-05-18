@@ -49,6 +49,17 @@ public class ZaloWebManager {
     // =========================================================
     public static final ConcurrentLinkedQueue<String> pythonMsgQueue = new ConcurrentLinkedQueue<>();
     public static TextToSpeech tts;
+	// =========================================================
+    // HÀM ÉP TỈNH NGỦ TỪ PYTHON GỌI XUỐNG
+    // =========================================================
+    public static void forceWakeup() {
+        safeEvaluateJs(
+            "try { " +
+            "   if(window.zauto_sidebar_observer) { document.querySelectorAll('.msg-item').forEach(scanConvItem); } " +
+            "   document.body.dispatchEvent(new MouseEvent('mousemove', {bubbles:true, clientX: 100, clientY: 100}));" +
+            "} catch(e) {}"
+        );
+    }
     // =========================================================
     // REPLY QUEUE
     // =========================================================
@@ -252,7 +263,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // KHỞI TẠO WEBVIEW
+    // KHỞI TẠO WEBVIEW TƯƠNG THÍCH MỌI PHIÊN BẢN ANDROID 10 -> 15
     // =========================================================
     public static void initWebView(final Activity activity) {
         if (activity == null) return;
@@ -265,12 +276,25 @@ public class ZaloWebManager {
                 webLayout = new FrameLayout(activity);
                 hiddenWebView = new WebView(activity);
 
-                hiddenWebView.setLayerType(View.LAYER_TYPE_NONE, null);
+                // =========================================================
+                // CẤU HÌNH LAYER TYPE THEO VERSION (CHỐNG TRẮNG/ĐEN MÀN HÌNH)
+                // =========================================================
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    // Android 11+ (API 30+): GPU rendering mạnh mẽ
+                    hiddenWebView.setLayerType(View.LAYER_TYPE_NONE, null);
+                } else {
+                    // Android 10 trở xuống: Ép dùng SOFTWARE để tránh lỗi trình điều khiển GPU cũ gây crash
+                    hiddenWebView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
+                }
 
+                // Android 8+ trở lên: Ưu tiên tài nguyên hệ thống cho render process
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
                     hiddenWebView.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, true);
                 }
 
+                // =========================================================
+                // CẤU HÌNH WEBSETTINGS TƯƠNG THÍCH MỌI PHIÊN BẢN CHROME CORE
+                // =========================================================
                 WebSettings settings = hiddenWebView.getSettings();
                 settings.setJavaScriptEnabled(true);
                 settings.setDomStorageEnabled(true);
@@ -278,21 +302,35 @@ public class ZaloWebManager {
                 settings.setAllowFileAccess(true);
                 settings.setLoadsImagesAutomatically(true);
                 settings.setMediaPlaybackRequiresUserGesture(false);
-                settings.setOffscreenPreRaster(true);
                 settings.setCacheMode(WebSettings.LOAD_DEFAULT);
                 settings.setNeedInitialFocus(false);
-                if (android.os.Build.VERSION.SDK_INT >= 29) {
-                    settings.setForceDark(WebSettings.FORCE_DARK_OFF);
-                }
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 settings.setUseWideViewPort(true);
                 settings.setLoadWithOverviewMode(true);
+
+                // OffscreenPreRaster: Chỉ kích hoạt trên Android 11+ nhằm tối ưu tải trang ngầm
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+                    settings.setOffscreenPreRaster(true);
+                }
+
+                // ForceDark: Tắt chế độ tối trên Android 10+ để mã QR hiển thị rõ nét nhất
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+                    settings.setForceDark(WebSettings.FORCE_DARK_OFF);
+                }
+
+                // =========================================================
+                // ⚠️ BẮT BUỘC GIỮ USER AGENT DESKTOP
+                // Để Zalo luôn kích hoạt phiên bản máy tính phục vụ cào quét tin ngầm
+                // =========================================================
                 settings.setUserAgentString(
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
                     "AppleWebKit/537.36 (KHTML, like Gecko) " +
                     "Chrome/136.0.0.0 Safari/537.36"
                 );
 
+                // =========================================================
+                // QUẢN LÝ COOKIE THÀNH PHẦN THỨ BA
+                // =========================================================
                 CookieManager cookieManager = CookieManager.getInstance();
                 cookieManager.setAcceptCookie(true);
                 cookieManager.setAcceptThirdPartyCookies(hiddenWebView, true);
@@ -300,17 +338,24 @@ public class ZaloWebManager {
                 hiddenWebView.addJavascriptInterface(new WebAppInterface(activity), "ZAutoBridge");
                 hiddenWebView.setWebChromeClient(new WebChromeClient());
 
+                // =========================================================
+                // WEBVIEW CLIENT: XỬ LÝ LỖI MẠNG VÀ INJECT JS TỰ ĐỘNG
+                // =========================================================
                 hiddenWebView.setWebViewClient(new WebViewClient() {
-                    // --- ĐOẠN QUAN TRỌNG: TỰ ĐỘNG REFRESH KHI MẤT MẠNG ---
                     @Override
                     public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                        if (request.isForMainFrame()) {
+                        if (request != null && request.isForMainFrame()) {
                             Log.e(TAG, "Lỗi kết nối Zalo: " + error.getDescription());
-                            // Nếu tắt màn hình bị mất mạng, khi có mạng lại nó sẽ tự tải lại trang sau 5 giây
                             view.postDelayed(() -> {
-                                if (view != null) view.reload();
+                                if (view != null) safeReload();
                             }, 5000);
                         }
+                    }
+
+                    @Override
+                    public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
+                        // VÁ LỖI ANDROID 10: Bỏ qua lỗi bắt tay SSL do chứng chỉ trung gian Let's Encrypt hết hạn trên máy cũ
+                        handler.proceed();
                     }
 
                     @Override
@@ -335,7 +380,12 @@ public class ZaloWebManager {
                             hiddenWebView = null;
                         }
                         Activity act = activityRef != null ? activityRef.get() : null;
-                        if (act != null) initWebView(act);
+                        if (act != null) {
+                            // Chờ 2 giây giải phóng luồng cũ rồi tự động khởi tạo lại hệ thống ngầm
+                            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                                initWebView(act);
+                            }, 2000);
+                        }
                         return true;
                     }
                 });
@@ -348,11 +398,20 @@ public class ZaloWebManager {
                 );
                 webLayout.addView(hiddenWebView, webParams);
 
-                // ĐÁNH LỪA ANDROID CŨ (Tránh View Clipping / Ngủ đông GPU)
-                FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(1080, 2400);
-                rootParams.leftMargin = -2000; 
-                rootParams.topMargin = -2000;
-                webLayout.setAlpha(0.01f); // QUAN TRỌNG: 0.01f giúp Web chạy ngầm 100% công suất
+                // =========================================================
+                // CƠ CHẾ KHÓA VIEWPORT TÀNG HÌNH ĐỘC QUYỀN CHỐNG ĐƠ TRÊN ANDROID 10
+                // =========================================================
+                FrameLayout.LayoutParams rootParams = new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                );
+                rootParams.leftMargin = 0;
+                rootParams.topMargin = 0;
+                
+                // Alpha 0.01f: Giúp WebView tàng hình nhưng GPU vẫn bắt buộc phải vẽ, giữ luồng WebSocket sống 24/24
+                webLayout.setAlpha(0.01f); 
+                // Đẩy vị trí hiển thị chìm xuống dưới cùng, nằm dưới toàn bộ giao diện Kivy
+                webLayout.setTranslationZ(-100f); 
 
                 if (webLayout.getParent() != null) {
                     ((ViewGroup) webLayout.getParent()).removeView(webLayout);
@@ -363,11 +422,16 @@ public class ZaloWebManager {
                 hiddenWebView.bringToFront();
                 hiddenWebView.requestFocus();
 
-                // KHỞI TẠO GIỌNG NÓI TIẾNG VIỆT
+                // KHỞI TẠO GIỌNG NÓI TIẾNG VIỆT CÓ BẢO VỆ FALLBACK
                 if (tts == null) {
                     tts = new TextToSpeech(activity.getApplicationContext(), status -> {
                         if (status == TextToSpeech.SUCCESS) {
-                            tts.setLanguage(new Locale("vi", "VN"));
+                            int result = tts.setLanguage(new Locale("vi", "VN"));
+                            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
+                                // Nếu máy thiếu dữ liệu gói tiếng Việt, tự động lùi về ngôn ngữ mặc định của máy để tránh câm loa
+                                tts.setLanguage(Locale.getDefault());
+                                Log.w(TAG, "TTS: Thừa dữ liệu tiếng Việt, lùi về ngôn ngữ hệ thống thiết bị.");
+                            }
                         }
                     });
                 }
@@ -522,32 +586,38 @@ public class ZaloWebManager {
             "               msgText = fullTxt.trim();" +
             "           }" +
             
-            "           let isVoiceNode = bodyEl.querySelector('[class*=\"audio\"], [class*=\"voice\"], [class*=\"Voice\"], svg');" +
-            "           let isTimeOnly = /^[0-9]{1,2}:[0-9]{2}$/.test(msgText) || /^[0-9]{1,2}:[0-9]{2}$/.test(bodyEl.innerText.trim());" + 
+            // --- ĐOẠN THAY THẾ CHUẨN HÓA BÊN TRONG JS scanConvItem ---
+            "           let isVoiceNode = bodyEl ? bodyEl.querySelector('[class*=\"audio\"], [class*=\"voice\"], [class*=\"Voice\"], svg') : null;" +
+            "           let isTimeOnly = bodyEl ? (/^[0-9]{1,2}:[0-9]{2}$/.test(msgText) || /^[0-9]{1,2}:[0-9]{2}$/.test(bodyEl.innerText.trim())) : false;" + 
+            "           let seconds = -1; let isVoice = false;" +
+            
             "           if (isVoiceNode || isTimeOnly) {" +
+            "               isVoice = true;" +
             "               let rawBody = bodyEl.textContent || bodyEl.innerText || '';" +
             "               if (rawBody.indexOf(': ') > -1) {" +
             "                   msgText = rawBody.split(': ')[0] + ': [Tin nhắn thoại]';" +
             "               } else {" +
             "                   msgText = '[Tin nhắn thoại]';" +
             "               }" +
-            "               " +
-            "               let seconds = -1;" + // Mặc định gán -1 (Báo hiệu quét lỗi/Không tìm thấy)
             "               try {" +
             "                   let timeNode = msgItemEl.querySelector('[class*=\"audio-time\"], [class*=\"duration\"], span[class*=\"time\"]');" +
             "                   if (timeNode) {" +
-            "                       let durationText = timeNode.innerText.trim();" + // Lấy chuỗi dạng "0:04"
+            "                       let durationText = timeNode.innerText.trim();" + 
             "                       if (durationText.includes(':')) {" +
             "                           let parts = durationText.split(':');" +
             "                           seconds = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);" +
             "                       }" +
             "                   }" +
             "               } catch(err) { seconds = -1; }" +
-            "               " +
-            "               msgText = msgText + '%%%' + seconds;" + // Ghép số giây vào cuối nội dung để gửi về Python
+            "               msgText = msgText + '%%%' + seconds;" + 
             "           }" +
 
-            "           if(!groupName || !msgText) return;" +
+            // THAY THẾ CƠ CHẾ RETRY CHỐNG MẤT TIN KHI ZALO RENDER CHẬM
+            "           if(!groupName) return;" +
+            "           if(!msgText || msgText.length < 1) {" +
+            "               setTimeout(() => { try { scanConvItem(msgItemEl); }catch(e){} }, 1000);" +
+            "               return;" +
+            "           }" +
 
             "           let timeEl = convItem.querySelector('.conv-item-title__time, [class*=\"time\"]');" +
             "           let timeString = timeEl ? (timeEl.textContent || '').trim() : '';" +
@@ -556,13 +626,19 @@ public class ZaloWebManager {
             "               realMsgId = 'TIME_' + timeString;" +
             "           }" +
 
-            "           let fp = convId + '|' + realMsgId + '|' + timeString + '|' + msgText.substring(0, 40);" +
+            // TỐI ƯU VÂN TAY (FINGERPRINT): TÁCH BIỆT VOICE VÀ TEXT ĐỂ KHÔNG BỊ TRÙNG LẶP TIN NHẮN LIÊN TIẾP
+            "           let fp = '';" +
+            "           if (isVoice) {" +
+            "               fp = convId + '|' + timeString + '|' + msgText.substring(0, 40) + '|' + seconds;" +
+            "           } else {" +
+            "               fp = convId + '|' + timeString + '|' + msgText.substring(0, 40);" +
+            "           }" +
+            
             "           if(window.zauto_seen[fp]) return;" +
             "           window.zauto_seen[fp] = true;" +
             "           window.zauto_seen_keys.push(fp);" +
             "           if(window.zauto_seen_keys.length > 800) { let old = window.zauto_seen_keys.splice(0, 100); old.forEach(k => delete window.zauto_seen[k]); }" +
             "           if (Date.now() - window.zauto_boot_time > 8000) {" +
-            // ĐÃ FIX: TRUYỀN ĐẦY ĐỦ THÔNG SỐ VỀ CHO PYTHON ĐỂ XỬ LÝ (Có ID để chống trùng)
             "               ZAutoBridge.onNewWebMsg(groupName, msgText, realMsgId, convId);" +
             "           }" +
             "       } catch(e) {}" +
@@ -667,7 +743,7 @@ public class ZaloWebManager {
     }
 
     // =========================================================
-    // CÁC HÀM TIỆN ÍCH - GIỮ NGUYÊN KÍCH THƯỚC KHỔNG LỒ
+    // ĐIỀU CHỈNH TOẠ ĐỘ RENDER HIỂN THỊ WEB KHỚP VỚI CÁC TAB KIVY
     // =========================================================
     public static void updateWebViewBounds(
             final Activity activity,
@@ -684,13 +760,17 @@ public class ZaloWebManager {
                 FrameLayout.LayoutParams params =
                         (FrameLayout.LayoutParams) webLayout.getLayoutParams();
                 if (!visible) {
-                    webLayout.setAlpha(0.01f); // QUAN TRỌNG: 0.01f
-                    params.leftMargin = -2000; 
-                    params.topMargin = -2000;
-                    params.width = 1080;
-                    params.height = 2400;
+                    // TRẠNG THÁI ẨN NỀN: Giữ nguyên kích thước tràn màn hình nhưng ẩn sâu dưới đáy UI Kivy
+                    webLayout.setAlpha(0.01f);
+                    webLayout.setTranslationZ(-100f);
+                    params.leftMargin = 0;
+                    params.topMargin = 0;
+                    params.width = ViewGroup.LayoutParams.MATCH_PARENT;
+                    params.height = ViewGroup.LayoutParams.MATCH_PARENT;
                 } else {
+                    // TRẠNG THÁI HIỆN (TAB ZALO): Nổi lên trên đỉnh, hiển thị sắc nét đúng tọa độ Kivy chỉ định
                     webLayout.setAlpha(1.0f);
+                    webLayout.setTranslationZ(100f);
                     params.leftMargin = x;
                     params.topMargin = y;
                     params.width = width;
