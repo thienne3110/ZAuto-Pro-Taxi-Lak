@@ -424,8 +424,7 @@ public class ZaloWebManager {
                         super.onPageFinished(view, url);
                         CookieManager.getInstance().flush();
                         
-                        // ÉP KHUNG HÌNH DESKTOP MỞ RỘNG 1024PX ĐỂ KHÔNG BỊ GIẤU MÃ QR
-                        view.evaluateJavascript("var m = document.createElement('meta'); m.name = 'viewport'; m.content = 'width=1024'; document.head.appendChild(m);", null);
+                        // ĐÃ FIX: Không ép viewport 1024px nữa để User-Agent Desktop tự do render chuẩn tỉ lệ Zalo Web
                         
                         view.postDelayed(() -> {
                             try {
@@ -483,9 +482,10 @@ public class ZaloWebManager {
                 }
                 activity.addContentView(webLayout, rootParams);
 
+                // FIX LỖI CRASH APP VÀ MẤT QR: 
+                // Chỉ bật hiển thị webLayout, tuyệt đối không dùng bringToFront hay requestFocus ở đây!
+                webLayout.setVisibility(View.VISIBLE);
                 hiddenWebView.setVisibility(View.VISIBLE);
-                hiddenWebView.bringToFront();
-                hiddenWebView.requestFocus();
 
                 // KHỞI TẠO GIỌNG NÓI TIẾNG VIỆT CÓ BẢO VỆ FALLBACK
                 if (tts == null) {
