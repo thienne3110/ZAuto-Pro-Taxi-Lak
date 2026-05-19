@@ -7,6 +7,8 @@ import gc
 import random
 import sqlite3
 import logging
+from kivy.network.urlrequest import UrlRequest
+import webbrowser
 from logging.handlers import RotatingFileHandler
 from collections import OrderedDict
 from kivy.uix.image import Image
@@ -28,6 +30,7 @@ from kivymd.uix.card import MDCard
 from kivymd.uix.list import TwoLineAvatarIconListItem, ImageLeftWidget
 from kivy.properties import StringProperty, BooleanProperty
 from kivymd.toast import toast
+
 
 # BẮT BUỘC: Cấu hình đồ họa để giảm lag GPU trên Android yếu
 from kivy.config import Config
@@ -791,8 +794,14 @@ class RideCard(MDCard):
     time_text = StringProperty()
 
 class ZAutoProApp(MDApp):
+    # ==========================================
+    # QUẢN LÝ PHIÊN BẢN (TĂNG SỐ NÀY LÊN MỖI LẦN BUILD MỚI)
+    APP_VERSION = 1.0  
     
-      
+    # LINK TRẠM PHÁT SÓNG GITHUB GIST CỦA BẠN
+    UPDATE_URL = "https://gist.githubusercontent.com/thienne3110/201422dc482a5ba8e519cad25aeb8918/raw/ea7038735a001789f141690e1e836de5021c6fd4/update.json"
+    # ==========================================
+
     def toggle_radar(self):
         """Hàm bật/tắt công tắc Radar (Chỉ quét, không quyết định Auto)"""
         self.is_radar_running = not self.is_radar_running
@@ -849,6 +858,7 @@ class ZAutoProApp(MDApp):
         init_db()
         self.load_config()
         self.check_license_at_startup()
+        self.check_for_update()
         if platform == 'android':
             try:
                 request_permissions([Permission.INTERNET, Permission.ACCESS_FINE_LOCATION, Permission.POST_NOTIFICATIONS])
@@ -1857,6 +1867,73 @@ class ZAutoProApp(MDApp):
 
             except Exception as e:
                 logger.error(f"Lỗi dọn dẹp on_stop: {e}")
+    def check_for_update(self):
+        """Hỏi trạm phát sóng xem có bản nào mới hơn không"""
+        try:
+            # Dùng UrlRequest của Kivy để chạy ngầm, không làm đơ màn hình
+            UrlRequest(
+                self.UPDATE_URL, 
+                on_success=self._on_update_received, 
+                timeout=5
+            )
+        except Exception as e:
+            logger.error(f"Lỗi kiểm tra cập nhật: {e}")
+
+    def _on_update_received(self, request, result):
+        """Xử lý khi nhận được data từ trạm phát"""
+        try:
+            # Result tự động được Kivy parse thành Dict (JSON)
+            server_version = float(result.get("version", self.APP_VERSION))
+            download_url = result.get("url", "")
+            update_note = result.get("note", "Bản cập nhật mới để app chạy mượt hơn.")
+
+            # Nếu phiên bản trên mạng lớn hơn phiên bản trong máy khách -> Bắt cập nhật
+            if server_version > self.APP_VERSION:
+                self.show_update_popup(server_version, update_note, download_url)
+        except Exception as e:
+            logger.error(f"Lỗi đọc data cập nhật: {e}")
+
+    def show_update_popup(self, new_ver, note, url):
+        """Hiện bảng ép khách hàng tải bản mới"""
+        from kivy.uix.popup import Popup
+        from kivy.uix.boxlayout import BoxLayout
+        from kivy.uix.label import Label
+        from kivy.uix.button import Button
+        from kivy.metrics import dp
+
+        content = BoxLayout(orientation='vertical', padding=dp(15), spacing=dp(10))
+        
+        content.add_widget(Label(
+            text=f"Phiên bản mới: v{new_ver}",
+            font_size='18sp', bold=True, color=(0.1, 0.5, 0.8, 1),
+            size_hint_y=None, height=dp(30)
+        ))
+        
+        content.add_widget(Label(
+            text=note, text_size=(dp(250), None), halign='center', valign='middle',
+            color=(0.2, 0.2, 0.2, 1)
+        ))
+
+        # Nút Cập Nhật
+        btn_update = Button(
+            text="TẢI VÀ CÀI ĐẶT NGAY", 
+            size_hint_y=None, height=dp(50),
+            background_normal='', background_color=(0.1, 0.6, 0.2, 1), bold=True
+        )
+        # Khi bấm nút -> Chuyển hướng trình duyệt đt tải file APK
+        btn_update.bind(on_release=lambda x: webbrowser.open(url))
+        content.add_widget(btn_update)
+
+        # Tạo Popup (Không cho bấm ra ngoài để ép phải cập nhật)
+        update_popup = Popup(
+            title="CÓ BẢN NÂNG CẤP BẮT BUỘC!",
+            content=content,
+            size_hint=(0.85, None), height=dp(250),
+            auto_dismiss=False, # Khóa chết màn hình, ép cập nhật
+            title_color=(1, 0, 0, 1), separator_color=(1, 0, 0, 1),
+            background_color=(1, 1, 1, 1)
+        )
+        update_popup.open()            
 
 if __name__ == '__main__':
     ZAutoProApp().run()
