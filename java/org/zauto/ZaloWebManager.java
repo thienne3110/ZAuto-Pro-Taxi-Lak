@@ -221,13 +221,21 @@ public class ZaloWebManager {
                 // 3B. Nếu mất API -> Dùng UI Click đúp & TypeAndSend (Code tối ưu của bạn)
                 "           if (targetNode) {" +
                 "               setTimeout(() => {" +
-                "                   var rect = targetNode.getBoundingClientRect();" +
-                "                   var clickX = rect.right - 20; var clickY = rect.top + (rect.height / 2);" +
+                                    // 1. LẤY KHUNG BAO NGOÀI CÙNG (CẢ HÀNG NGANG) THAY VÌ LẤY CHỮ
+                "                   var wrapperNode = targetNode.closest('.chat-message, .msg-item, [class*=\"message-view\"]') || targetNode;" +
+                "                   var rect = wrapperNode.getBoundingClientRect();" +
+                                    
+                                    // 2. TỌA ĐỘ BẤM: Ép click vào khoảng trống bên phải (cách mép phải 40px)
+                "                   var clickX = rect.right - 40; var clickY = rect.top + (rect.height / 2);" +
                 "                   var dblEvt = new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window, clientX: clickX, clientY: clickY });" +
-                "                   targetNode.dispatchEvent(dblEvt);" +
-                "                   var rKey = Object.keys(targetNode).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
-                "                   if (rKey && targetNode[rKey]) {" +
-                "                       var dblHandler = targetNode[rKey].onDoubleClick || (targetNode[rKey].return && targetNode[rKey].return.memoizedProps && targetNode[rKey].return.memoizedProps.onDoubleClick);" +
+                
+                                    // 3. BẮN SỰ KIỆN CLICK VÀO VÙNG TRỐNG
+                "                   wrapperNode.dispatchEvent(dblEvt);" + 
+                
+                                    // 4. BẮN REACT FIBER VÀO WRAPPER (Zalo thường gắn Event ở thẻ ngoài cùng)
+                "                   var rKey = Object.keys(wrapperNode).find(k => k.startsWith('__reactEventHandlers') || k.startsWith('__reactFiber'));" +
+                "                   if (rKey && wrapperNode[rKey]) {" +
+                "                       var dblHandler = wrapperNode[rKey].onDoubleClick || (wrapperNode[rKey].return && wrapperNode[rKey].return.memoizedProps && wrapperNode[rKey].return.memoizedProps.onDoubleClick);" +
                 "                       if (dblHandler) dblHandler({ preventDefault:()=>{}, stopPropagation:()=>{}, clientX: clickX, clientY: clickY });" +
                 "                   }" +
                 "                   setTimeout(typeAndSendUI, 800);" + // Chờ UI Reply mở ra
@@ -238,7 +246,7 @@ public class ZaloWebManager {
                 "       }" +
                 "   }" +
 
-                // =========================================================
+// =========================================================
                 // BƯỚC 4: GÕ VÀ GỬI (NẾU API XỊT)
                 // =========================================================
                 "   function typeAndSendUI() {" +
@@ -247,6 +255,7 @@ public class ZaloWebManager {
                 "       input.focus(); input.innerHTML = safeReply;" +
                 "       input.dispatchEvent(new Event('input', {bubbles: true}));" +
                 "       input.dispatchEvent(new Event('change', {bubbles: true}));" +
+                "       input.blur();" + // CHẶN BÀN PHÍM: Hủy focus ngay lập tức để tát tắt bàn phím ảo của Android
                 "       setTimeout(() => {" +
                 "           var btnSend = null;" +
                 "           var selectors = ['#chat-input-container-id .send-msg-btn', '.fa-Sent-msg_24_Line', '[data-translate-title=\"STR_SEND\"]', '.send-msg-btn'];" +
@@ -330,15 +339,9 @@ public class ZaloWebManager {
                 hiddenWebView = new WebView(activity);
 
                 // =========================================================
-                // CẤU HÌNH LAYER TYPE THEO VERSION (CHỐNG TRẮNG/ĐEN MÀN HÌNH)
+                // CẤU HÌNH LAYER TYPE - ÉP DÙNG HARDWARE ĐỂ VẼ QR CANVAS
                 // =========================================================
-                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                    // Android 11+ (API 30+): GPU rendering mạnh mẽ
-                    hiddenWebView.setLayerType(View.LAYER_TYPE_NONE, null);
-                } else {
-                    // Android 10 trở xuống: Ép dùng SOFTWARE để tránh lỗi trình điều khiển GPU cũ gây crash
-                    hiddenWebView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
-                }
+                hiddenWebView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
 
                 // Android 8+ trở lên: Ưu tiên tài nguyên hệ thống cho render process
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
@@ -360,6 +363,11 @@ public class ZaloWebManager {
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 settings.setUseWideViewPort(true);
                 settings.setLoadWithOverviewMode(true);
+                
+                // BẬT ZOOM NGẦM ĐỂ TRÁNH CSS ẨN KHUNG QR ĐĂNG NHẬP
+                settings.setSupportZoom(true);
+                settings.setBuiltInZoomControls(true);
+                settings.setDisplayZoomControls(false);
 
                 // OffscreenPreRaster: Chỉ kích hoạt trên Android 11+ nhằm tối ưu tải trang ngầm
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
@@ -415,6 +423,10 @@ public class ZaloWebManager {
                     public void onPageFinished(WebView view, String url) {
                         super.onPageFinished(view, url);
                         CookieManager.getInstance().flush();
+                        
+                        // ÉP KHUNG HÌNH DESKTOP MỞ RỘNG 1024PX ĐỂ KHÔNG BỊ GIẤU MÃ QR
+                        view.evaluateJavascript("var m = document.createElement('meta'); m.name = 'viewport'; m.content = 'width=1024'; document.head.appendChild(m);", null);
+                        
                         view.postDelayed(() -> {
                             try {
                                 if (hiddenWebView != null) injectSidebarObserver(hiddenWebView);
@@ -607,7 +619,7 @@ public class ZaloWebManager {
 			"           let msgText = bodyEl ? (bodyEl.textContent || bodyEl.innerText || '').trim() : '';" +
             "           let convId = msgItemEl.getAttribute('anim-data-id') || msgItemEl.id || '';" +
             
-            // DEEP BYPASS: QUÉT VÉT CẠN MỌI TẦNG REACT FIBER ĐỂ LỘT TRẦN ID BỊ GIẤU
+            // DEEP BYPASS: QUÉT VÉT CẠN MỌI TẦNG REACT FIBER (8 TẦNG) ĐỂ LỘT TRẦN ID BỊ GIẤU
             "           let realMsgId = ''; var fullTxt = '';" +
             "           try {" +
             "               let id1 = msgItemEl.getAttribute('data-msg-id') || (msgItemEl.dataset ? msgItemEl.dataset.msgId : '');" +
@@ -617,17 +629,15 @@ public class ZaloWebManager {
             "               let rK = keys.find(k => k.startsWith('__reactFiber') || k.startsWith('__reactProps'));" +
             "               if (rK && msgItemEl[rK]) {" +
             "                   let node = msgItemEl[rK];" +
-            "                   for(let step = 0; step < 4; step++) {" +
+            "                   for(let step = 0; step < 8; step++) {" + // Tăng độ sâu lên 8 tầng
             "                       if(!node) break;" +
             "                       let p = node.memoizedProps || node.pendingProps;" +
             "                       if (p) {" +
-            "                           let objs = [p.data?.lastMsg, p.item?.lastMsg, p.lastMsg, p.message, p.msg, p.data, p.item, p];" +
-            "                           for (let o of objs) {" +
-            "                               if (o && typeof o === 'object') {" +
-            "                                   let foundId = o.msgId || o.messageId || o.cliMsgId || o.globalMsgId;" +
-            "                                   if (!realMsgId && foundId && String(foundId).length > 5) { realMsgId = String(foundId); }" +
-            "                                   if (!fullTxt && typeof o.content === 'string' && o.content.trim() !== '') { fullTxt = o.content; }" +
-            "                               }" +
+            "                           let o = p.msg || p.message || p.data || p.item || p;" +
+            "                           if (o && typeof o === 'object') {" +
+            "                               let foundId = o.msgId || o.messageId || o.cliMsgId || o.globalMsgId;" +
+            "                               if (!realMsgId && foundId && String(foundId).length > 5) { realMsgId = String(foundId); }" +
+            "                               if (!fullTxt && typeof o.content === 'string' && o.content.trim() !== '') { fullTxt = o.content; }" +
             "                           }" +
             "                       }" +
             "                       node = node.return;" +
@@ -639,7 +649,6 @@ public class ZaloWebManager {
             "               msgText = fullTxt.trim();" +
             "           }" +
             
-            // --- ĐOẠN THAY THẾ CHUẨN HÓA BÊN TRONG JS scanConvItem ---
             "           let isVoiceNode = bodyEl ? bodyEl.querySelector('[class*=\"audio\"], [class*=\"voice\"], [class*=\"Voice\"], svg') : null;" +
             "           let isTimeOnly = bodyEl ? (/^[0-9]{1,2}:[0-9]{2}$/.test(msgText) || /^[0-9]{1,2}:[0-9]{2}$/.test(bodyEl.innerText.trim())) : false;" + 
             "           let seconds = -1; let isVoice = false;" +
@@ -662,10 +671,9 @@ public class ZaloWebManager {
             "                       }" +
             "                   }" +
             "               } catch(err) { seconds = -1; }" +
-            "               msgText = msgText + '%%%' + seconds;" + 
+            "               msgText = msgText + '%%%' + seconds;" + // Vẫn phải gửi số giây xuống cho Python để Auto Play
             "           }" +
 
-            // THAY THẾ CƠ CHẾ RETRY CHỐNG MẤT TIN KHI ZALO RENDER CHẬM
             "           if(!groupName) return;" +
             "           if(!msgText || msgText.length < 1) {" +
             "               setTimeout(() => { try { scanConvItem(msgItemEl); }catch(e){} }, 1000);" +
@@ -679,18 +687,17 @@ public class ZaloWebManager {
             "               realMsgId = 'TIME_' + timeString;" +
             "           }" +
 
-            // TỐI ƯU VÂN TAY (FINGERPRINT): TÁCH BIỆT VOICE VÀ TEXT ĐỂ KHÔNG BỊ TRÙNG LẶP TIN NHẮN LIÊN TIẾP
-            "           let fp = '';" +
-            "           if (isVoice) {" +
-            "               fp = convId + '|' + timeString + '|' + msgText.substring(0, 40) + '|' + seconds;" +
-            "           } else {" +
-            "               fp = convId + '|' + timeString + '|' + msgText.substring(0, 40);" +
-            "           }" +
-            
+            // =========================================================================
+            // TẠO FINGERPRINT (VÁ LỖI BÍ ẨN 2: BỎ SECONDS KHỎI CHÌA KHÓA VOICE)
+            // =========================================================================
+            "           let fp = 'MSG|' + convId + '|' + realMsgId + '|' + msgText.substring(0, 40);" +
             "           if(window.zauto_seen[fp]) return;" +
             "           window.zauto_seen[fp] = true;" +
             "           window.zauto_seen_keys.push(fp);" +
-            "           if(window.zauto_seen_keys.length > 800) { let old = window.zauto_seen_keys.splice(0, 100); old.forEach(k => delete window.zauto_seen[k]); }" +
+            "           if(window.zauto_seen_keys.length > 800) { " +
+            "               let old = window.zauto_seen_keys.splice(0, 200); " +
+            "               old.forEach(k => { delete window.zauto_seen[k]; });" + 
+            "           }" +
             "           if (Date.now() - window.zauto_boot_time > 8000) {" +
             "               ZAutoBridge.onNewWebMsg(groupName, msgText, realMsgId, convId);" +
             "           }" +
