@@ -796,7 +796,7 @@ class RideCard(MDCard):
 class ZAutoProApp(MDApp):
     # ==========================================
     # QUẢN LÝ PHIÊN BẢN (TĂNG SỐ NÀY LÊN MỖI LẦN BUILD MỚI)
-    APP_VERSION = 1.0  
+    APP_VERSION = 1.1  
     
     # LINK TRẠM PHÁT SÓNG GITHUB GIST CỦA BẠN
     UPDATE_URL = "https://gist.githubusercontent.com/thienne3110/201422dc482a5ba8e519cad25aeb8918/raw/ea7038735a001789f141690e1e836de5021c6fd4/update.json"
@@ -1250,12 +1250,12 @@ class ZAutoProApp(MDApp):
             if platform == 'android':
                 try:
                     # Gửi xuống worker để kích hàm Play
-                    self.audio_queue.put_nowait((conversation_id, msg_id, cache_key, duration))
-                except queue.Full: pass
+                    self.audio_queue.put((conversation_id, msg_id, cache_key, duration), timeout=0.5)
+                except queue.Full: logger.warning(f"Audio queue đầy, bỏ qua tin thoại nhóm {group}")
             
             # Nổ UI Canh Me
             try:
-                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
+                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key, msg)))
                 self.ui_queue.put_nowait(('log', (group, display_msg)))
                 
                 if self.config_data.get('sw_voice', True):
@@ -1284,7 +1284,7 @@ class ZAutoProApp(MDApp):
             # ✅ Vượt qua Filter -> Nổ Canh me
             display_msg = msg
             try:
-                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key)))
+                self.ui_queue.put_nowait(('add_ride', (group, display_msg, msg_id, conversation_id, cache_key, msg)))
                 self.ui_queue.put_nowait(('log', (group, display_msg)))
                 
                 if self.config_data.get('sw_voice', True):
@@ -1421,7 +1421,7 @@ class ZAutoProApp(MDApp):
             # Quét tốc độ cao 0.2s/lần
             time.sleep(0.2)            
 
-    def add_ride_card(self, group, msg, msg_id="", conversation_id="", cache_key=""):
+    def add_ride_card(self, group, msg, msg_id="", conversation_id="", cache_key="", raw_msg=""):
         try:
             max_rides = 30
             ride_list = self.root.ids.ride_list
@@ -1434,6 +1434,7 @@ class ZAutoProApp(MDApp):
             card.msg_id = msg_id
             card.conversation_id = conversation_id
             card.cache_key = cache_key # ĐÃ FIX: Nhận tham số cache_key để sau này xóa bộ đệm
+            card.raw_msg = raw_msg if raw_msg else msg  # Nội dung gốc để Java tìm đúng tin click đúp
             self.root.ids.ride_list.add_widget(card, index=0)
             
             # TỰ XÓA CUỐC SAU 2 PHÚT (120 GIÂY) ĐỂ MÀN HÌNH CANH ME SẠCH SẼ
@@ -1452,7 +1453,7 @@ class ZAutoProApp(MDApp):
         final_reply = random.choice(replies) if replies else "Ok nhận"
 
         # ĐÃ FIX: Chuyền đầy đủ nội dung tin nhắn xuống để Java Click Đúp đè tin
-        self.queue_reply(card_widget.group_text, getattr(card_widget, 'conversation_id', ''), getattr(card_widget, 'msg_id', ''), final_reply, card_widget.msg_text)
+        self.queue_reply(card_widget.group_text, getattr(card_widget, 'conversation_id', ''), getattr(card_widget, 'msg_id', ''), final_reply, getattr(card_widget, 'raw_msg', card_widget.msg_text))
         toast(f"Đang chốt: {card_widget.group_text}")
         self.remove_ride(card_widget)
 
