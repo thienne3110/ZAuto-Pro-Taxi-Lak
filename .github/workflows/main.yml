@@ -74,12 +74,7 @@ jobs:
         run: |
           mkdir -p res/xml
           if [ ! -f "res/xml/file_paths.xml" ]; then
-            cat > res/xml/file_paths.xml << 'EOF'
-<?xml version="1.0" encoding="utf-8"?>
-<paths>
-    <files-path name="apk_files" path="." />
-</paths>
-EOF
+            echo '<?xml version="1.0" encoding="utf-8"?><paths><files-path name="apk_files" path="." /></paths>' > res/xml/file_paths.xml
           fi
 
       - name: Validate Project
