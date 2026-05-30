@@ -33,9 +33,73 @@ from kivymd.uix.card import MDCard
 from kivymd.uix.list import TwoLineAvatarIconListItem, ImageLeftWidget
 from kivy.properties import StringProperty, BooleanProperty
 from kivymd.toast import toast
+import base64
+import requests
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+
+class ZaloAPIEngine:
+    def __init__(self, secret_key, cookie_str):
+        self.key = base64.b64decode(secret_key)
+        self.cookie_str = cookie_str
+        self.iv = bytes.fromhex("00000000000000000000000000000000")
+        self.headers = {
+            "Accept": "application/json, text/plain, */*",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Cookie": self.cookie_str,
+            "Origin": "https://chat.zalo.me",
+            "Referer": "https://chat.zalo.me/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36"
+        }
+
+    def encrypt_payload(self, data_dict):
+        raw_string = json.dumps(data_dict, separators=(',', ':'))
+        cipher = AES.new(self.key, AES.MODE_CBC, self.iv)
+        padded_data = pad(raw_string.encode('utf-8'), AES.block_size)
+        encrypted_bytes = cipher.encrypt(padded_data)
+        return base64.b64encode(encrypted_bytes).decode('utf-8')
+
+    def decrypt_response(self, encrypted_base64):
+        try:
+            encrypted_bytes = base64.b64decode(encrypted_base64)
+            cipher = AES.new(self.key, AES.MODE_CBC, self.iv)
+            decrypted_bytes = cipher.decrypt(encrypted_bytes)
+            return unpad(decrypted_bytes, AES.block_size).decode('utf-8')
+        except Exception as e:
+            return f"Lỗi giải mã: {str(e)}"
+
+    def send_group_message(self, group_id, message_text, quote_msg_id="", quote_msg_content=""):
+        url = "https://wpa.zalo.me/api/group/sendmsg?zpw_ver=665&zpw_type=30"
+        payload_data = {
+            "grid": str(group_id),
+            "message": str(message_text),
+            "clientId": int(time.time() * 1000),
+            "ttl": 0,
+            "visibility": 0
+        }
+        
+        # GHI ĐÈ TIN GỐC (QUOTE) ĐỂ NHẬN CUỐC RÕ RÀNG
+        if quote_msg_id and len(quote_msg_id) > 4 and not quote_msg_id.startswith("TIME_"):
+            payload_data["quote"] = {
+                "globalMsgId": str(quote_msg_id),
+                "msg": str(quote_msg_content) if quote_msg_content else "Tin nhắn", 
+                "type": 1
+            }
+
+        try:
+            encrypted_params = self.encrypt_payload(payload_data)
+            request_body = {"params": encrypted_params}
+            response = requests.post(url, headers=self.headers, data=request_body, timeout=5)
+            if response.status_code == 200:
+                resp_json = response.json()
+                if resp_json.get("error_code") == 0:
+                    return True, resp_json
+                return False, resp_json.get('error_message')
+            return False, f"HTTP Error: {response.status_code}"
+        except Exception as e:
+            return False, str(e)
 
 
-# BẮT BUỘC: Cấu hình đồ họa để giảm lag GPU trên Android yếu
 from kivy.config import Config
 Config.set('graphics', 'multisamples', '0')
 Config.set('kivy', 'pause_on_minimize', '0') # CẤM KIVY NGỦ ĐÔNG KHI ẨN APP
@@ -988,44 +1052,50 @@ class ZAutoProApp(MDApp):
             except Exception as e:
                 logger.error(f"Lỗi on_start: {traceback.format_exc()}")
     def update_group_list_ui(self, groups):
-        """Cập nhật danh sách nhóm từ Zalo Web lên giao diện Tab Nhóm"""
+        """Cập nhật danh sách nhóm (Chỉ hiển thị Avatar + Tên Nhóm) lên giao diện Tab Nhóm"""
         try:
             group_list_widget = self.root.ids.group_filter_list
             # Lấy danh sách các nhóm hiện đang hiển thị trên màn hình
             current_ui_groups = [item.text for item in group_list_widget.children if hasattr(item, 'text')]
             
-            from kivymd.uix.list import OneLineIconListItem, IconLeftWidget
+            # ĐÃ ĐỔI: Dùng OneLineAvatarIconListItem thay vì TwoLine
+            from kivymd.uix.list import OneLineAvatarIconListItem, ImageLeftWidget
             from kivymd.uix.selectioncontrol import MDSwitch
-            from kivy.uix.boxlayout import BoxLayout
 
-            for g_name in groups:
+            for g_data in groups:
+                # Xử lý tương thích: Nếu data trả về chỉ là mảng chuỗi
+                if isinstance(g_data, str):
+                    g_name, g_avt = g_data, "profile.jpg"
+                else:
+                    # Lấy Tên và Link Avatar từ Java gửi lên (vẫn giữ ID để xử lý ngầm nhưng không hiện lên UI)
+                    g_name = g_data.get('name', '')
+                    g_avt = g_data.get('avatar', 'profile.jpg')
+                    if not g_avt.startswith('http'): g_avt = 'profile.jpg'
+                
                 # Nếu nhóm này chưa có trong giao diện thì mới thêm vào
                 if g_name not in current_ui_groups:
                     # Mặc định nhóm mới là BẬT nếu chưa từng lưu trạng thái
                     if g_name not in self.enabled_groups:
                         self.enabled_groups[g_name] = False
                     
-                    # Tạo item danh sách
-                    item = OneLineIconListItem(text=g_name)
+                    # 1. Tạo item danh sách 1 dòng (Chỉ hiện Tên Nhóm)
+                    item = OneLineAvatarIconListItem(text=g_name)
                     
-                    # Thêm icon đại diện bên trái cho chuyên nghiệp
-                    icon = IconLeftWidget(icon="account-group")
-                    item.add_widget(icon)
+                    # 2. Thêm Avatar của nhóm ở bên trái
+                    avatar = ImageLeftWidget(source=g_avt)
+                    item.add_widget(avatar)
                     
-                    # Tạo công tắc gạt bên phải
+                    # 3. Tạo công tắc gạt bên phải
                     switcher = MDSwitch(
                         active=self.enabled_groups[g_name],
                         pos_hint={'center_x': .9, 'center_y': .5}
                     )
-                    
-                    # Gán sự kiện khi tài xế gạt nút
-                    # Dùng partial hoặc lambda có gán mặc định để tránh lỗi ghi đè biến name
                     switcher.bind(active=lambda sw, val, name=g_name: self.toggle_group(name, val))
                     
                     item.add_widget(switcher)
                     group_list_widget.add_widget(item)
         except Exception as e:
-            print(f"Lỗi update_group_list_ui: {e}")
+            logger.error(f"Lỗi update_group_list_ui: {e}")
 
     def toggle_group(self, name, status):
         """Lưu trạng thái bật/tắt của từng nhóm và thông báo"""
@@ -1327,39 +1397,31 @@ class ZAutoProApp(MDApp):
         sw_filter_active = self.config_data.get('sw_filter', False)
 
         # ==============================================================
-        # 3. CHỐNG SPAM TIN TRÙNG - CHỈ ÁP DỤNG CHO TIN TEXT, KHÔNG CHẶN VOICE
+        # 3. CHỐNG SPAM TIN TRÙNG - FIX LỖI TIN THOẠI BỊ CHẶN & LẶP LẠI
         # ==============================================================
         if not hasattr(self, 'last_msg_per_group'):
             self.last_msg_per_group = {}
 
         msg_hash = hashlib.md5(msg_clean.encode('utf-8')).hexdigest()[:12]
 
-        # Chỉ kiểm tra trùng lặp cho tin TEXT - voice không áp dụng
         if not is_voice:
+            # 1. NẾU LÀ TIN TEXT: Chặn trùng lặp 300s dựa vào Nội dung (Hash)
             if conversation_id in self.last_msg_per_group:
                 last_id, last_hash, last_time = self.last_msg_per_group[conversation_id]
                 both_time_fallback = msg_id.startswith("TIME_") and last_id.startswith("TIME_")
                 if (msg_id == last_id or both_time_fallback) and msg_hash == last_hash:
                     if time.time() - last_time < 300.0:
                         return # Tin text trùng -> Bỏ qua
-        # Voice: chặn trùng lặp cả 2 trường hợp — có ID thật và không có ID thật
         else:
-            if not msg_id.startswith("TIME_") and not msg_id.startswith("VIRTUAL_") and not msg_id.startswith("CONTENT_") and not msg_id.startswith("VOICE_"):
-                # Voice có ID thật → chặn 60s theo ID
-                voice_key = f"VOICE_REAL_{conversation_id}_{msg_id}"
-                if voice_key in self.processed_msg_hashes:
-                    if time.time() - self.processed_msg_hashes[voice_key] < 60.0:
-                        return
-                self.processed_msg_hashes[voice_key] = time.time()
-            else:
-                # Voice KHÔNG có ID thật → chặn 60s theo convId+hash nội dung
-                # Đây là nguyên nhân mỗi nhóm chỉ hiện 1 tin rồi im: JS stableId dùng timeString
-                # cố định nên zauto_seen đã chặn, nhưng nếu timeString thay đổi thì lọt qua
-                voice_fb_key = f"VOICE_FB_{conversation_id}_{msg_hash}"
-                if voice_fb_key in self.processed_msg_hashes:
-                    if time.time() - self.processed_msg_hashes[voice_fb_key] < 60.0:
-                        return
-                self.processed_msg_hashes[voice_fb_key] = time.time()
+            # 2. NẾU LÀ TIN THOẠI (VOICE): Ghi nhớ ID (thật hoặc ảo) trong 120 giây
+            voice_key = f"VOICE_CACHE_{conversation_id}_{msg_id}"
+            if voice_key in self.processed_msg_hashes:
+                # Nếu tin thoại này đã nổ cuốc rồi -> Chặn đứng không cho lặp lại tin cũ
+                if time.time() - self.processed_msg_hashes[voice_key] < 120.0:
+                    return
+            
+            # Nếu là tin thoại mới tinh -> Lưu lại mốc thời gian vào RAM để chặn lần quét sau
+            self.processed_msg_hashes[voice_key] = time.time()
 
         # Luôn cập nhật mốc mới nhất (cả voice lẫn text)
         self.last_msg_per_group[conversation_id] = (msg_id, msg_hash, time.time())
@@ -1547,7 +1609,14 @@ class ZAutoProApp(MDApp):
                         if not getattr(self, '_login_toasted', False):
                             self._login_toasted = True
                             self.safe_toast("Đã liên kết Zalo Web thành công!")
-                            
+                    elif action == 'ZALO_SESSION_READY':
+                        secret_key = parts[1] if len(parts) > 1 else ""
+                        cookies_data = parts[2] if len(parts) > 2 else ""
+                        if secret_key and cookies_data:
+                            self.zalo_api = ZaloAPIEngine(secret_key, cookies_data)
+                            logger.info("Zalo API Engine đã được cấp Key thành công!")
+                            self.safe_toast("✅ Sẵn sàng chốt cuốc siêu tốc (API)!")
+                        continue        
                     elif action == 'ZALO_LOGOUT':
                         self._login_toasted = False  # Đặt lại cờ để lần sau đăng nhập sẽ hiện Toast
                         self.is_linked = False
@@ -1709,7 +1778,37 @@ class ZAutoProApp(MDApp):
 
     @run_on_ui_thread
     def _execute_reply_safe(self, payload):
-        """HÀM GỌI XUỐNG JAVA — CHẠY ÂM THẦM, KHÔNG NHẢY TAB, KHÔNG LÀM PHIỀN NGƯỜI DÙNG"""
+        """HÀM CHỐT CUỐC HYBRID (ƯU TIÊN API TỐC ĐỘ ÁNH SÁNG -> FALLBACK JAVA UI)"""
+        try:
+            group_id = payload.get('conversation_id', '')
+            reply_text = payload.get('reply_text', 'Ok nhận')
+            msg_id = payload.get('msg_id', '')
+
+            # LỚP 1: THỬ NGAY API (Không lag giao diện, xuyên thẳng máy chủ 100ms)
+            if hasattr(self, 'zalo_api') and self.zalo_api and group_id:
+                def api_send_worker():
+                    success, result = self.zalo_api.send_group_message(group_id, reply_text, msg_id, payload.get('msg_content', ''))
+                    if success:
+                        if self.config_data.get('sw_voice', True):
+                            self.ui_queue.put_nowait(('speak', "Chốt cuốc xe thành công"))
+                        logger.info("✅ ĐÃ CHỐT BẰNG API NODE SIÊU TỐC!")
+                    else:
+                        logger.error(f"❌ API Chốt lỗi: {result}. Kích hoạt chế độ UI dự phòng.")
+                        self._fallback_execute_ui(payload)
+                
+                import threading
+                threading.Thread(target=api_send_worker, daemon=True).start()
+            
+            # LỚP 2: CHƯA CÓ API HOẶC API LỖI -> Dùng phương pháp Java UI cũ
+            else:
+                self._fallback_execute_ui(payload)
+
+        except Exception as e:
+            logger.error(f"Lỗi _execute_reply_safe: {traceback.format_exc()}")
+
+    @run_on_ui_thread
+    def _fallback_execute_ui(self, payload):
+        """Phương án dự phòng: Java chọc vào Webpack hoặc gõ phím ảo"""
         try:
             if platform == 'android':
                 # BƯỚC 1: Ẩn bàn phím (an toàn, không ảnh hưởng UI)
@@ -1719,41 +1818,35 @@ class ZAutoProApp(MDApp):
                     _ac('org.zauto.ZaloWebManager').hideKeyboard(_act)
                 except: pass
 
-            if platform == 'android' and getattr(self, 'is_linked', False):
-                from jnius import autoclass
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                current_time_str = time.strftime('%H:%M')
-
-                # BƯỚC 2: Switch sang tab Zalo để WebView có focus nhận touch/click event
-                # (cần thiết cho fallback click/longpress khi API Webpack thất bại)
-                try:
-                    self.root.ids.bottom_nav.switch_tab('tab_zalo')
-                except Exception as e_tab:
-                    logger.warning(f"switch_tab lỗi (bỏ qua): {e_tab}")
-
-                # BƯỚC 3: Gọi sendReply sau 300ms để tab kịp switch xong
-                import threading
-                def _do_send_delayed():
-                    import time as _time
-                    _time.sleep(0.3)
+                if getattr(self, 'is_linked', False):
+                    # BƯỚC 2: Switch sang tab Zalo để WebView có focus
                     try:
-                        from jnius import autoclass as _ac2
-                        _PythonActivity = _ac2('org.kivy.android.PythonActivity')
-                        _ac2('org.zauto.ZaloWebManager').sendReplyToSpecificMessage(
-                            _PythonActivity.mActivity,
-                            payload.get('conversation_id', ''),
-                            payload.get('msg_id', ''),
-                            payload.get('reply_text', ''),
-                            payload.get('msg_content', ''),
-                            _time.strftime('%H:%M')
-                        )
-                        logger.info("Đã gửi lệnh chốt Zalo (có switch_tab + focus)")
-                    except Exception as e_send:
-                        logger.error(f"Lỗi _do_send_delayed: {e_send}")
-                threading.Thread(target=_do_send_delayed, daemon=True).start()
+                        self.root.ids.bottom_nav.switch_tab('tab_zalo')
+                    except Exception as e_tab:
+                        logger.warning(f"switch_tab lỗi (bỏ qua): {e_tab}")
 
+                    # BƯỚC 3: Gọi sendReply qua Java
+                    import threading
+                    def _do_send_delayed():
+                        import time as _time
+                        _time.sleep(0.3)
+                        try:
+                            from jnius import autoclass as _ac2
+                            _PythonActivity = _ac2('org.kivy.android.PythonActivity')
+                            _ac2('org.zauto.ZaloWebManager').sendReplyToSpecificMessage(
+                                _PythonActivity.mActivity,
+                                payload.get('conversation_id', ''),
+                                payload.get('msg_id', ''),
+                                payload.get('reply_text', ''),
+                                payload.get('msg_content', ''),
+                                _time.strftime('%H:%M')
+                            )
+                            logger.info("Đã gửi lệnh chốt Zalo (UI Fallback)")
+                        except Exception as e_send:
+                            logger.error(f"Lỗi fallback UI: {e_send}")
+                    threading.Thread(target=_do_send_delayed, daemon=True).start()
         except Exception as e:
-            logger.error(f"Lỗi _execute_reply_safe: {traceback.format_exc()}")
+            logger.error(f"Lỗi _fallback_execute_ui: {traceback.format_exc()}")
     
     def load_config(self):
         try:
