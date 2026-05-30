@@ -958,6 +958,11 @@ public class ZaloWebManager {
         @JavascriptInterface
         public void onLoginSuccess(String name, String avatar) {
             pythonMsgQueue.add("LOGIN_SUCCESS|||" + name + "|||" + avatar);
+            
+            // TỰ ĐỘNG LẤY CHÌA KHÓA API SAU KHI ĐĂNG NHẬP THÀNH CÔNG
+            if (activityRef != null && activityRef.get() != null) {
+                extractZaloSession(activityRef.get());
+            }
         }
 
         @JavascriptInterface
@@ -1648,6 +1653,37 @@ public class ZaloWebManager {
                 "   }, 1500);" +
                 "})();";
             hiddenWebView.evaluateJavascript(js, null);
+        });
+    }
+	// THÊM MỚI: Hàm trích xuất Cookie và Secret Key (Đã fix chuẩn tên biến hiddenWebView)
+    public static void extractZaloSession(final Activity activity) {
+        activity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                if (hiddenWebView == null) return;
+
+                // Lấy Cookie
+                CookieManager cookieManager = CookieManager.getInstance();
+                final String cookies = cookieManager.getCookie("https://chat.zalo.me");
+
+                // Lấy khóa zpw_sek từ LocalStorage
+                hiddenWebView.evaluateJavascript(
+                    "(function() { return localStorage.getItem('zpw_sek'); })();",
+                    new android.webkit.ValueCallback<String>() {
+                        @Override
+                        public void onReceiveValue(String value) {
+                            if (value != null && !value.equals("null") && !value.isEmpty()) {
+                                String secretKey = value.replace("\"", "");
+                                // Gửi về cho Python
+                                String sessionPayload = "ZALO_SESSION_READY|||" + secretKey + "|||" + cookies;
+                                if (pythonMsgQueue != null) {
+                                    pythonMsgQueue.add(sessionPayload);
+                                }
+                            }
+                        }
+                    }
+                );
+            }
         });
     }
 }
