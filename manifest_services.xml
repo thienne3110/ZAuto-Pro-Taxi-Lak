@@ -6,6 +6,7 @@
         <action android:name="android.intent.action.BOOT_COMPLETED" />
         <action android:name="android.intent.action.QUICKBOOT_POWERON" />
         <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+        <category android:name="android.intent.category.DEFAULT" />
     </intent-filter>
 </receiver>
 
@@ -39,3 +40,13 @@
     android:exported="false"
     android:stopWithTask="false"
     android:foregroundServiceType="dataSync" />
+
+<provider
+    android:name="androidx.core.content.FileProvider"
+    android:authorities="org.zauto.zauto.fileprovider"
+    android:exported="false"
+    android:grantUriPermissions="true">
+    <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/file_paths" />
+</provider>
