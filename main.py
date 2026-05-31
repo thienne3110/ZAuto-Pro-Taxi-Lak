@@ -979,19 +979,27 @@ class ZAutoProApp(MDApp):
         self.save_config_silent()
         toast("Đã BẬT lọc từ khóa" if active_state else "Đã TẮT lọc từ khóa - Nhận mọi tin")        
     def build(self):
-        from kivy.core.clipboard import Clipboard # Thêm dòng này
-        self.Clipboard = Clipboard
+        try:
+            from kivy.core.clipboard import Clipboard
+            self.Clipboard = Clipboard
+        except Exception:
+            self.Clipboard = None
         self.icon = 'profile.jpg'
         self.theme_cls.primary_palette = "Blue"
         self.config_data = {
             'nhan': '', 'loai': '', 'reply_msg': 'Ok nhận', 'gia_km': '12000',
-            'global_delay': '30', 'sw_voice': True, # Thêm sw_voice vào đây
+            'global_delay': '30', 'sw_voice': True,
             'sw_filter': False, 'sw_auto': False, 'is_linked': False
         }
-        self.last_global_reply_time = 0 # Thêm dòng này để theo dõi thời gian chốt cuối cùng
-        self.is_linked = False # Khai báo mặc định là chưa liên kết
-        self.root = Builder.load_string(KV)
-        
+        self.last_global_reply_time = 0
+        self.is_linked = False
+        try:
+            self.root = Builder.load_string(KV)
+        except Exception as e:
+            logger.error(f"KV load error: {e}")
+            # Fallback layout tối giản để app không chết trắng
+            from kivy.uix.label import Label
+            return Label(text="Lỗi giao diện, xem log để kiểm tra.")
         return self.root
 
     def on_start(self):
@@ -1008,22 +1016,31 @@ class ZAutoProApp(MDApp):
                 )
 
                 request_permissions([Permission.INTERNET, Permission.ACCESS_FINE_LOCATION, Permission.POST_NOTIFICATIONS])
-                autoclass('org.zauto.ZaloForegroundService').startService(PythonActivity.mActivity)
+                try:
+                    autoclass('org.zauto.ZaloForegroundService').startService(PythonActivity.mActivity)
+                except Exception as e:
+                    logger.error(f"Khong the khoi ZaloForegroundService: {e}")
 
-                # ÉP CPU KHÔNG NGỦ (MỨC 1)
-                PowerManager = autoclass('android.os.PowerManager')
-                Context = autoclass('android.content.Context')
-                pm = cast(PowerManager, PythonActivity.mActivity.getSystemService(Context.POWER_SERVICE))
-                self.wakelock = pm.newWakeLock(1, "ZAuto::WakeLockCore")
-                if not self.wakelock.isHeld():
-                    self.wakelock.acquire()
+                try:
+                    PowerManager = autoclass('android.os.PowerManager')
+                    Context = autoclass('android.content.Context')
+                    pm = cast(PowerManager, PythonActivity.mActivity.getSystemService(Context.POWER_SERVICE))
+                    self.wakelock = pm.newWakeLock(1, "ZAuto::WakeLockCore")
+                    if not self.wakelock.isHeld():
+                        self.wakelock.acquire()
+                except Exception as e:
+                    logger.error(f"WakeLock error: {e}")
+                    self.wakelock = None
 
-                # ÉP WIFI KHÔNG ĐƯỢC NGẮT (MỨC 3 - HIGH PERFORMANCE)
-                WifiManager = autoclass('android.net.wifi.WifiManager')
-                wm = cast(WifiManager, PythonActivity.mActivity.getApplicationContext().getSystemService(Context.WIFI_SERVICE))
-                self.wifilock = wm.createWifiLock(3, "ZAuto::WifiLockCore")
-                if not self.wifilock.isHeld():
-                    self.wifilock.acquire()
+                try:
+                    WifiManager = autoclass('android.net.wifi.WifiManager')
+                    wm = cast(WifiManager, PythonActivity.mActivity.getApplicationContext().getSystemService(Context.WIFI_SERVICE))
+                    self.wifilock = wm.createWifiLock(3, "ZAuto::WifiLockCore")
+                    if not self.wifilock.isHeld():
+                        self.wifilock.acquire()
+                except Exception as e:
+                    logger.error(f"WifiLock error: {e}")
+                    self.wifilock = None
 
                 # KHỞI TẠO KIẾN TRÚC REALTIME
                 self.processed_msg_hashes = LRUCache(maxsize=1000)
