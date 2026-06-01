@@ -1,0 +1,27 @@
+{
+  "name": "zauto-taxi-core",
+  "version": "1.0.0",
+  "description": "Core logic backend for ZAuto Pro Taxi: Zalo QR login + group auto-reply via zalo-api-final, bridged to the app over Socket.IO.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "lint": "eslint .",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.1",
+    "zalo-api-final": "^2.1.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "eslint": "^9.18.0"
+  }
+}
