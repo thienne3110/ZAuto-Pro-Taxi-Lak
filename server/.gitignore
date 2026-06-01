@@ -1,0 +1,5 @@
+node_modules/
+.env
+qr.png
+*.log
+cookie.json
