@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "ZAuto Taxi",
+    "slug": "zauto-taxi",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#0f0f1a",
+    "splash": {
+      "backgroundColor": "#0f0f1a",
+      "resizeMode": "contain"
+    },
+    "android": {
+      "package": "com.zauto.taxilak",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#0f0f1a"
+      },
+      "permissions": [
+        "android.permission.INTERNET",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "color": "#e94560",
+          "sounds": []
+        }
+      ]
+    ]
+  }
+}
