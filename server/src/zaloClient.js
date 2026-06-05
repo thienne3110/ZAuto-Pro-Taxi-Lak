@@ -150,4 +150,30 @@ export class ZaloClient extends EventEmitter {
     this.#attachListener();
     return this.api;
   }
+
+  /** Trả về mảng các tin nhắn gần nhất (để gửi cho app vừa kết nối). */
+  getRecentMessages() {
+    return Array.from(this.recentMessages.values()).map((data) => ({
+      id: data.msgId,
+      groupId: data.threadId || "",
+      groupName: data.dName || "Nhóm Zalo",
+      content: typeof data.content === "string" ? data.content : (data.content?.title || ""),
+      time: data.time || Date.now(),
+    }));
+  }
+
+  /** Đăng xuất và reset trạng thái để có thể quét QR lại. */
+  async logout() {
+    try {
+      if (this.api && typeof this.api.logout === "function") {
+        await this.api.logout();
+      }
+    } catch (_) { /* bỏ qua lỗi logout */ }
+    this.api = null;
+    this.qrBase64 = null;
+    this.recentMessages.clear();
+    this.#setStatus("waiting");
+    // Bắt đầu lại flow đăng nhập QR
+    this.start().catch((err) => console.error("❌ Lỗi restart sau logout:", err));
+  }
 }
