@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-apk:
-    name: Build APK
+    name: Build APK Release
     runs-on: ubuntu-latest
 
     steps:
@@ -32,6 +32,8 @@ jobs:
       - name: 🔧 Expo Prebuild
         working-directory: android-app
         run: npx expo prebuild --platform android --clean
+        env:
+          NODE_ENV: production
 
       - name: 🔑 Cấp quyền gradlew
         working-directory: android-app/android
@@ -46,9 +48,45 @@ jobs:
           echo "android.enableJetifier=false" >> gradle.properties
           echo "android.useAndroidX=true" >> gradle.properties
 
-      - name: 🏗️ Build APK
+      - name: 🔐 Tạo keystore ký APK
         working-directory: android-app/android
-        run: ./gradlew assembleDebug --no-daemon --max-workers=2
+        run: |
+          keytool -genkeypair \
+            -v \
+            -keystore app/zauto-release.keystore \
+            -alias zauto \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass zauto123 \
+            -keypass zauto123 \
+            -dname "CN=ZAuto Taxi, OU=ZAuto, O=ZAuto, L=DakLak, S=DakLak, C=VN"
+
+      - name: 📝 Cấu hình ký APK Release
+        working-directory: android-app/android
+        run: |
+          cat >> app/build.gradle << 'EOF'
+
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file("zauto-release.keystore")
+                      storePassword "zauto123"
+                      keyAlias "zauto"
+                      keyPassword "zauto123"
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                  }
+              }
+          }
+          EOF
+
+      - name: 🏗️ Build APK Release
+        working-directory: android-app/android
+        run: ./gradlew assembleRelease --no-daemon --max-workers=2
         env:
           GRADLE_OPTS: "-Xmx4g -XX:MaxMetaspaceSize=512m"
           NODE_ENV: production
@@ -57,7 +95,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ZAuto-Taxi-APK
-          path: android-app/android/app/build/outputs/apk/debug/app-debug.apk
+          path: android-app/android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
 
       - name: 🏷️ Tạo Release
@@ -66,12 +104,12 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: "ZAuto Taxi v${{ github.run_number }}"
-          files: android-app/android/app/build/outputs/apk/debug/app-debug.apk
+          files: android-app/android/app/build/outputs/apk/release/app-release.apk
           body: |
             📱 Build tự động - Commit: ${{ github.sha }}
 
             **Cách cài:**
-            1. Tải file `app-debug.apk` bên dưới
+            1. Tải file `app-release.apk` bên dưới
             2. Copy sang điện thoại Android
             3. Bật "Cài từ nguồn không rõ" trong Settings
             4. Mở file APK để cài đặt
